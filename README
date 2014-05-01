@@ -11,8 +11,8 @@ localization reduction to refine abstractions.
 Some basic configurations to try:
 python synth.py = a basic fix point realizability check
 python synth.py -a -i 4 -l 2 = abstract algorithm starting with 1/4 of the
-	being visible and dropping all visible latches when 1/2 of them are
-	visible
+	latches being visible and dropping all visible latches when 1/2 of them
+	are visible
 
 Any of the above configurations with a -o and a filename yields a synthesis
 algorithm. The -m option attempts to minimize the resulting circuit even
