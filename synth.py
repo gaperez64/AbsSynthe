@@ -50,6 +50,7 @@ cached_block_funs = None
 cached_abs_eq = None
 abs_eq_procd_blocks = dict()
 # algorithms' options
+model_check = None
 ini_latch = None
 use_abs = None
 use_trans = None
@@ -322,6 +323,23 @@ def post_bdd(src_states_bdd, sys_strat=None):
             get_uncontrollable_inputs_bdds() +
             get_all_latches_as_bdds()))
     return unprime_latches_in_bdd(suc_bdd)
+
+
+def single_pre_bdd(dst_states_bdd, strat=None):
+    if strat is None:
+        strat = bdd.true()
+
+    latches = [x.lit for x in iterate_latches_and_error()]
+    latch_funs = [get_bdd_for_aig_lit(x.next) for x in
+                  iterate_latches_and_error()]
+    # take a transition step backwards
+    p_bdd = dst_states_bdd.compose(latches, latch_funs)
+    # use the given strategy
+    p_bdd &= strat
+    p_bdd = p_bdd.exist_abstract(
+        bdd.get_cube(get_uncontrollable_inputs_bdds() +
+                     get_controllable_inputs_bdds()))
+    return p_bdd
 
 
 def single_pre_env_bdd(dst_states_bdd, env_strat=None, get_strat=False):
@@ -698,9 +716,9 @@ def synthesize():
     # get the winning region for controller
     win_region = ~fp(error_bdd,
                      fun=lambda x: x | pre_env_bdd(x),
-                     early_exit=lambda x: x & init_state_bdd != bdd.true())
+                     early_exit=lambda x: x & init_state_bdd != bdd.false())
 
-    if win_region == bdd.false():
+    if win_region & init_state_bdd == bdd.false():
         log.LOG_MSG("The spec is unrealizable.")
         log.LOG_ACCUM()
         return None
@@ -726,7 +744,7 @@ def fp(s, fun, early_exit=never):
         cur = fun(prev)
         cnt += 1
         if early_exit(cur):
-            log.DBG_MSG("Eary exit after " + str(cnt) + " steps.")
+            log.DBG_MSG("Early exit after " + str(cnt) + " steps.")
             return cur
     log.DBG_MSG("Fixpoint reached after " + str(cnt) + " steps.")
     return cur
@@ -750,7 +768,7 @@ def initial_abstraction():
     return True
 
 
-def abs_synthesis():
+def abs_synthesis(out_file=None):
     global use_abs, loss_steps
 
     # update loss steps
@@ -758,12 +776,22 @@ def abs_synthesis():
     log.DBG_MSG("Loss steps = " + str(loss_steps))
 
     # declare winner
-    def declare_winner(controllable, over_lose=None):
+    def declare_winner(controllable, over_lose=None, conc_lose=None):
         log.LOG_MSG("Nr. of predicates: " + str(len(preds.abs_blocks)))
         log.LOG_ACCUM()
         if controllable:
             log.LOG_MSG("The spec is realizable.")
-            return ~(over_lose | bdd.BDD(error_fake_latch.lit))
+            if out_file:
+                # make sure we reached the fixpoint
+                log.DBG_MSG("Get winning region")
+                if over_lose is not None:
+                    return gamma(
+                        ~fp(alpha_under(bdd.BDD(error_fake_latch.lit)) |
+                            over_lose,
+                            fun=lambda x: x | pre_env_bdd_abs(x)))
+                elif conc_lose is not None:
+                    return ~fp(bdd.BDD(error_fake_latch.lit) | conc_lose,
+                               fun=lambda x: x | pre_env_bdd(x))
         else:
             log.LOG_MSG("The spec is unrealizable.")
             return None
@@ -828,7 +856,7 @@ def abs_synthesis():
                                         (x | pre_env_bdd_abs(x))))
             if (over_fp & init_state_bdd) == bdd.false():
                 log.DBG_MSG("FP of the over-approx losing region not initial")
-                return declare_winner(True, gamma(over_fp))
+                return declare_winner(True, over_lose=over_fp)
             # if there is no early exit we compute a strategy for Env
             env_strats = pre_env_bdd_abs(over_fp, get_strat=True)
             if no_reach:
@@ -851,7 +879,7 @@ def abs_synthesis():
         conc_step &= conc_reach
         if bdd.make_impl(conc_step, conc_under_fp) == bdd.true():
             log.DBG_MSG("The concrete step revealed we are at the FP")
-            return declare_winner(True, conc_under_fp)
+            return declare_winner(True, conc_lose=conc_under_fp)
         else:
             # drop latches every number of steps
             reset = False
@@ -890,16 +918,11 @@ def main(aiger_file_name, out_file):
     log.DBG_MSG("C. Inputs: " + str([x.lit for x in
                                      aig.iterate_controllable_inputs()]))
     if use_abs:
-        win_region = abs_synthesis()
+        win_region = abs_synthesis(out_file)
     else:
         win_region = synthesize()
 
     if out_file and win_region:
-        # make sure we reach the fixpoint
-        log.DBG_MSG("Get winning region")
-        win_region = fp(win_region,
-                        fun=lambda x: (bdd.BDD(error_fake_latch.lit) &
-                                       (x | pre_sys_bdd(x))))
         log.LOG_MSG("Win region bdd node count = " +
                     str(win_region.dag_size()))
         strategy = single_pre_sys_bdd(win_region, get_strat=True)
@@ -918,6 +941,14 @@ def main(aiger_file_name, out_file):
                 func_by_var[c_bdd] = func_bdd.safe_restrict(win_region)
                 log.DBG_MSG("Min'd version size " +
                             str(func_by_var[c_bdd].dag_size()))
+        # model check?
+        if model_check:
+            strategy = bdd.true()
+            for (c_bdd, func_bdd) in func_by_var.items():
+                strategy &= bdd.make_eq(c_bdd, func_bdd)
+            assert (fp(bdd.BDD(error_fake_latch.lit),
+                       fun=lambda x: x | single_pre_bdd(x, strategy)) &
+                    compose_init_state_bdd()) == bdd.false()
         # print out the strategy
         total_dag = 0
         for (c_bdd, func_bdd) in func_by_var.items():
@@ -960,6 +991,9 @@ if __name__ == "__main__":
     parser.add_argument("-t", "--transition", action="store_true",
                         dest="use_trans", default=False,
                         help="Compute a transition relation")
+    parser.add_argument("-mc", "--model_check", action="store_true",
+                        dest="model_check", default=False,
+                        help="Model check resulting strategy")
     # parser.add_argument("-p", "--precise", action="store_true",
     #                     dest="most_precise", default=False,
     #                     help="Use the most precise abstract operators")
@@ -983,6 +1017,7 @@ if __name__ == "__main__":
                         help="output file in AIGER format (if realizable)")
     args = parser.parse_args()
     # cluster_threshold = args.c_thresh
+    model_check = args.model_check
     loss_steps = args.loss_steps
     use_abs = args.use_abs
     use_trans = args.use_trans
