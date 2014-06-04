@@ -189,6 +189,33 @@ class BDD:
         b._cudd_bdd = self._cudd_bdd.VectorCompose(fun_array)
         return b
 
+    def bdd2cnf(self):
+        cache = dict()
+
+        def _rec_bdd2cnf(a_bdd):
+            if a_bdd in cache:
+                return cache[a_bdd]
+
+            if a_bdd.is_constant():
+                if a_bdd == false():
+                    return [[]]
+                else:
+                    return []
+
+            # not a leaf
+            a_lit = a_bdd.get_index()
+            then_clauses = _rec_bdd2cnf(a_bdd.then_child())
+            result = [(clause + [(a_lit * -1)]) for clause in
+                      then_clauses]
+            else_clauses = _rec_bdd2cnf(a_bdd.else_child())
+            result.extend([(clause + [a_lit]) for clause in
+                          else_clauses])
+            cache[a_bdd] = result
+            return result
+
+        # start recursion
+        return _rec_bdd2cnf(self)
+
 
 def true():
     b = BDD()

@@ -1,4 +1,3 @@
-#!/usr/bin/env python2.7
 # coding=utf-8
 
 """
@@ -50,14 +49,14 @@ cached_block_funs = None
 cached_abs_eq = None
 abs_eq_procd_blocks = dict()
 # algorithms' options
+restrict_like_crazy = None
 model_check = None
 ini_latch = None
 use_abs = None
 use_trans = None
-no_reach = None
+ini_reach_latches = None
 most_precise = None
 min_win = None
-cluster_threshold = None
 loss_steps = None
 ini_reach = None
 
@@ -298,6 +297,9 @@ def single_post_bdd(src_states_bdd, sys_strat=None):
                            get_bdd_for_aig_lit(x.next))
         b &= temp.and_abstract(strat,
                                bdd.get_cube(get_controllable_inputs_bdds()))
+        if restrict_like_crazy:
+            b = b.restrict(src_states_bdd)
+    b &= src_states_bdd
     b = b.exist_abstract(
         bdd.get_cube(get_all_latches_as_bdds() +
                      get_uncontrollable_inputs_bdds()))
@@ -315,6 +317,8 @@ def post_bdd(src_states_bdd, sys_strat=None):
     trans = transition_bdd
     if sys_strat is not None:
         trans &= sys_strat
+    if restrict_like_crazy:
+        trans = trans.restrict(src_states_bdd)
 
     suc_bdd = trans.and_abstract(
         src_states_bdd,
@@ -332,6 +336,8 @@ def single_pre_bdd(dst_states_bdd, strat=None):
     latches = [x.lit for x in iterate_latches_and_error()]
     latch_funs = [get_bdd_for_aig_lit(x.next) for x in
                   iterate_latches_and_error()]
+    if restrict_like_crazy:
+        latch_funs = [x.restrict(~dst_states_bdd) for x in latch_funs]
     # take a transition step backwards
     p_bdd = dst_states_bdd.compose(latches, latch_funs)
     # use the given strategy
@@ -351,6 +357,8 @@ def single_pre_env_bdd(dst_states_bdd, env_strat=None, get_strat=False):
     latches = [x.lit for x in iterate_latches_and_error()]
     latch_funs = [get_bdd_for_aig_lit(x.next) for x in
                   iterate_latches_and_error()]
+    if restrict_like_crazy:
+        latch_funs = [x.restrict(~dst_states_bdd) for x in latch_funs]
     # take a transition step backwards
     p_bdd = dst_states_bdd.compose(latches, latch_funs)
     # use the given strategy
@@ -397,6 +405,8 @@ def pre_env_bdd(dst_states_bdd, env_strat=None, get_strat=False):
     trans = transition_bdd
     if env_strat is not None:
         trans &= env_strat
+    if restrict_like_crazy:
+        trans = trans.restrict(~dst_states_bdd)
 
     primed_states = prime_latches_in_bdd(dst_states_bdd)
     primed_latches = prime_latches_in_bdd(bdd.get_cube(
@@ -663,7 +673,7 @@ def walk(a_bdd):
         return bdd_gate_cache[a_bdd]
 
     if a_bdd.is_constant():
-        res = int(a_bdd == bdd.true())   # in aiger 0/1 = False/Truesvn
+        res = int(a_bdd == bdd.true())   # in aiger 0/1 = False/True
         return res
     # get an index of variable,
     # all variables used in bdds also introduced in aiger,
@@ -674,9 +684,6 @@ def walk(a_bdd):
     assert (a_lit != error_fake_latch.lit), ("using error latch in the " +
                                              "definition of output " +
                                              "function is not allowed")
-    # TODO: what about really latching the error bit?
-    # TODO: this fake error latch introduced is bad if specify many safety
-    # properties (using bad) ?
     t_bdd = a_bdd.then_child()
     e_bdd = a_bdd.else_child()
     t_lit = walk(t_bdd)
@@ -713,19 +720,44 @@ def synthesize():
         log.stop_clock("trans_time")
     init_state_bdd = compose_init_state_bdd()
     error_bdd = bdd.BDD(error_fake_latch.lit)
+    reach_over = []
+    # use abstraction to minimize state space exploration
+    if ini_reach:
+        initial_abstraction()
+        for j in range(ini_reach):
+            preds.drop_latches()
+            # add some latches
+            make_vis = (aig.num_latches() + 1) // ini_reach_latches
+            log.DBG_MSG("Making visible " + str(make_vis) + " latches")
+            for i in range(make_vis):
+                preds.loc_red()
+            log.DBG_MSG("Computing reachable states over-app")
+            abs_reach_region = fp(compose_abs_init_state_bdd(),
+                                  fun=lambda x: x | post_bdd_abs(x))
+            reach_over.append(gamma(abs_reach_region))
     # get the winning region for controller
+
+    def min_pre(s):
+        for r in reach_over:
+            s = s.restrict(r)
+        result = pre_env_bdd(s)
+        for r in reach_over:
+            result = result.restrict(r)
+        return s | result
+
+    log.DBG_MSG("Computing fixpoint of UPRE")
     win_region = ~fp(error_bdd,
-                     fun=lambda x: x | pre_env_bdd(x),
+                     fun=min_pre,
                      early_exit=lambda x: x & init_state_bdd != bdd.false())
 
     if win_region & init_state_bdd == bdd.false():
         log.LOG_MSG("The spec is unrealizable.")
         log.LOG_ACCUM()
-        return None
+        return (None, None)
     else:
         log.LOG_MSG("The spec is realizable.")
         log.LOG_ACCUM()
-        return win_region
+        return (win_region, reach_over)
 
 
 # ########################## ABS ALGOS #############################
@@ -768,39 +800,121 @@ def initial_abstraction():
     return True
 
 
-def abs_synthesis(out_file=None):
-    global use_abs, loss_steps
-
-    # update loss steps
-    loss_steps = (aig.num_latches() + 1) // loss_steps
-    log.DBG_MSG("Loss steps = " + str(loss_steps))
+def abs_sat_synthesis(compute_win_region=False):
+    global use_abs
 
     # declare winner
-    def declare_winner(controllable, over_lose=None, conc_lose=None):
+    def declare_winner(controllable, conc_lose):
         log.LOG_MSG("Nr. of predicates: " + str(len(preds.abs_blocks)))
         log.LOG_ACCUM()
         if controllable:
             log.LOG_MSG("The spec is realizable.")
-            if out_file:
-                # make sure we reached the fixpoint
-                log.DBG_MSG("Get winning region")
-                if over_lose is not None:
-                    return gamma(
-                        ~fp(alpha_under(bdd.BDD(error_fake_latch.lit)) |
-                            over_lose,
-                            fun=lambda x: x | pre_env_bdd_abs(x)))
-                elif conc_lose is not None:
-                    return ~fp(bdd.BDD(error_fake_latch.lit) | conc_lose,
-                               fun=lambda x: x | pre_env_bdd(x))
+            return (~conc_lose, [])
         else:
             log.LOG_MSG("The spec is unrealizable.")
-            return None
+            return (None, [])
 
     # make sure that we have something to abstract
     if aig.num_latches() == 0:
         log.WRN_MSG("No latches in spec. Defaulting to regular synthesis.")
         use_abs = False
         return synthesize()
+    # registered quants
+    steps = 0
+    log.register_sum("ref_cnt", "Nr. of refinements: ")
+    log.register_sum("abs_time", "Time spent abstracting: ")
+    log.register_sum("oabs_time", "Time spent computing over-app of fp: ")
+    log.register_average("unsafe_bdd_size",
+                         "Average unsafe iterate bdd size: ")
+    # create the abstract game
+    initial_abstraction()
+    error_bdd = alpha_under(bdd.BDD(error_fake_latch.lit))
+
+    # The REAL algo
+    while True:
+        log.start_clock()
+        if use_trans:
+            transition_bdd = compose_abs_transition_bdd()
+            log.BDD_DMP(transition_bdd, "transition relation")
+        init_state_bdd = compose_abs_init_state_bdd()
+        log.BDD_DMP(init_state_bdd, "initial state set")
+        log.BDD_DMP(error_bdd, "unsafe state set")
+        log.stop_clock("abs_time")
+
+        # STEP 1: check if the over-approx is winning
+        log.DBG_MSG("Computing over approx of FP")
+        over_fp = fp(error_bdd,
+                     fun=lambda x: x | pre_env_bdd_abs(x))
+        if (over_fp & init_state_bdd) == bdd.false():
+            log.DBG_MSG("FP of the over-approx losing region not initial")
+            return declare_winner(True, gamma(over_fp))
+        log.stop_clock("oabs_time")
+
+        # STEP 2: refine or declare controllable
+        log.DBG_MSG("Concretizing the strategy of Env")
+        conc_env_strats = gamma(env_strats)
+        conc_reach = gamma(reach)
+        conc_under_fp = gamma(under_fp)
+        log.DBG_MSG("Taking one step of UPRE in the concrete game")
+        conc_step = single_pre_env_bdd(conc_under_fp,
+                                       env_strat=conc_env_strats)
+        conc_step &= conc_reach
+        if bdd.make_impl(conc_step, conc_under_fp) == bdd.true():
+            log.DBG_MSG("The concrete step revealed we are at the FP")
+            return declare_winner(True, conc_under_fp)
+        else:
+            # drop latches every number of steps
+            reset = False
+            if (steps != 0 and steps % local_loss_steps == 0):
+                log.DBG_MSG("Dropping all visible latches!")
+                reset = preds.drop_latches()
+            # add new predicates and reset caches if necessary
+            nu_losing_region = conc_step | conc_under_fp
+            reset |= preds.add_fixed_pred("reach", conc_reach)
+            reset |= preds.add_fixed_pred("unsafe", nu_losing_region)
+            # find interesting set of latches
+            log.DBG_MSG("Localization reduction step.")
+            reset |= preds.loc_red(not_imply=nu_losing_region)
+            log.DBG_MSG("# of predicates = " + str(len(preds.abs_blocks)))
+            if reset:
+                reset_caches()
+            # update error bdd
+            log.push_accumulated("unsafe_bdd_size",
+                                 nu_losing_region.dag_size())
+            error_bdd = alpha_under(nu_losing_region)
+            # update reachable area
+            reachable_bdd = alpha_over(conc_reach)
+            steps += 1
+            log.push_accumulated("ref_cnt", 1)
+
+
+def abs_synthesis(compute_win_region=False):
+    global use_abs
+
+    # declare winner
+    def declare_winner(controllable, conc_lose):
+        log.LOG_MSG("Nr. of predicates: " + str(len(preds.abs_blocks)))
+        log.LOG_ACCUM()
+        if controllable:
+            log.LOG_MSG("The spec is realizable.")
+            if compute_win_region:
+                # make sure we reached the fixpoint
+                log.DBG_MSG("Get winning region")
+                return (~fp(bdd.BDD(error_fake_latch.lit) | conc_lose,
+                            fun=lambda x: x | pre_env_bdd(x)), [])
+            else:
+                return (~conc_lose, [])
+            log.LOG_MSG("The spec is unrealizable.")
+            return (None, [])
+
+    # make sure that we have something to abstract
+    if aig.num_latches() == 0:
+        log.WRN_MSG("No latches in spec. Defaulting to regular synthesis.")
+        use_abs = False
+        return synthesize()
+    # update loss steps
+    local_loss_steps = (aig.num_latches() + 1) // loss_steps
+    log.DBG_MSG("Loss steps = " + str(local_loss_steps))
     # registered quants
     steps = 0
     log.register_sum("ref_cnt", "Nr. of refinements: ")
@@ -813,9 +927,9 @@ def abs_synthesis(out_file=None):
     initial_abstraction()
     error_bdd = alpha_under(bdd.BDD(error_fake_latch.lit))
     # add some latches
-    make_vis = (aig.num_latches() + 1) // ini_latch
-    log.DBG_MSG("Making visible " + str(make_vis) + " latches")
     if ini_latch:
+        make_vis = (aig.num_latches() + 1) // ini_latch
+        log.DBG_MSG("Making visible " + str(make_vis) + " latches")
         for i in range(make_vis):
             preds.loc_red()
     # first over-approx of the reachable region
@@ -856,16 +970,13 @@ def abs_synthesis(out_file=None):
                                         (x | pre_env_bdd_abs(x))))
             if (over_fp & init_state_bdd) == bdd.false():
                 log.DBG_MSG("FP of the over-approx losing region not initial")
-                return declare_winner(True, over_lose=over_fp)
+                return declare_winner(True, gamma(under_fp))
             # if there is no early exit we compute a strategy for Env
             env_strats = pre_env_bdd_abs(over_fp, get_strat=True)
-            if no_reach:
-                break  # avoid reachability analysis
-            else:
-                log.DBG_MSG("Computing over approx of Reach")
-                reach = fp(init_state_bdd,
-                           fun=lambda x: (reach & (x | post_bdd_abs(x,
-                                                   env_strats))))
+            log.DBG_MSG("Computing over approx of Reach")
+            reach = fp(init_state_bdd,
+                       fun=lambda x: (reach & (x | post_bdd_abs(x,
+                                               env_strats))))
         log.stop_clock("oabs_time")
 
         # STEP 3: refine or declare controllable
@@ -879,12 +990,11 @@ def abs_synthesis(out_file=None):
         conc_step &= conc_reach
         if bdd.make_impl(conc_step, conc_under_fp) == bdd.true():
             log.DBG_MSG("The concrete step revealed we are at the FP")
-            return declare_winner(True, conc_lose=conc_under_fp)
+            return declare_winner(True, conc_under_fp)
         else:
             # drop latches every number of steps
             reset = False
-            if (loss_steps is not None and steps != 0 and
-                    steps % loss_steps == 0):
+            if (steps != 0 and steps % local_loss_steps == 0):
                 log.DBG_MSG("Dropping all visible latches!")
                 reset = preds.drop_latches()
             # add new predicates and reset caches if necessary
@@ -917,10 +1027,11 @@ def main(aiger_file_name, out_file):
                                      aig.iterate_uncontrollable_inputs()]))
     log.DBG_MSG("C. Inputs: " + str([x.lit for x in
                                      aig.iterate_controllable_inputs()]))
+    # realizability and preliminary synthesis
     if use_abs:
-        win_region = abs_synthesis(out_file)
+        (win_region, reach_over) = abs_synthesis(out_file is not None)
     else:
-        win_region = synthesize()
+        (win_region, reach_over) = synthesize()
 
     if out_file and win_region:
         log.LOG_MSG("Win region bdd node count = " +
@@ -929,6 +1040,12 @@ def main(aiger_file_name, out_file):
         log.LOG_MSG("Strategy bdd node count = " +
                     str(strategy.dag_size()))
         func_by_var = extract_output_funcs(strategy, win_region)
+        # attempt to minimize the winning region
+        for r in reach_over:
+            for (c_bdd, func_bdd) in func_by_var.items():
+                func_by_var[c_bdd] = func_bdd.safe_restrict(r)
+                log.DBG_MSG("Min'd version size " +
+                            str(func_by_var[c_bdd].dag_size()))
         # attempt to minimize the winning region
         if min_win:
             bdd.disable_reorder()
@@ -959,16 +1076,8 @@ def main(aiger_file_name, out_file):
         aig.write_spec(out_file)
         return True
     elif win_region:
-        log.LOG_MSG("")
-        log.LOG_MSG("")
-        log.LOG_MSG("")
-        log.LOG_MSG("")
         return True
     else:
-        log.LOG_MSG("")
-        log.LOG_MSG("")
-        log.LOG_MSG("")
-        log.LOG_MSG("")
         return False
 
 
@@ -982,15 +1091,19 @@ if __name__ == "__main__":
     parser.add_argument("-m", "--minimize", action="store_true",
                         default=False, dest="min_win",
                         help="Minimization using restrict and reach")
-    # parser.add_argument("-nr", "--no_reach", action="store_true",
-    #                     dest="no_reach", default=False,
-    #                     help="Don't do reachability analysis on over-app")
-    # parser.add_argument("-r", "--ini_reach", action="store_true",
-    #                     dest="ini_reach", default=False,
-    #                     help="Do reachability restriction")
+    parser.add_argument("-r", "--ini_reach", default=0,
+                        type=int, dest="ini_reach",
+                        help="Do reachability restriction ini_reach times")
+    parser.add_argument("-ri", "--ini_reach_latches", default=2,
+                        dest="ini_reach_latches", type=int,
+                        help="Do reachability restriction with " +
+                             "#latches/ini_reach_latches latches visible")
     parser.add_argument("-t", "--transition", action="store_true",
                         dest="use_trans", default=False,
                         help="Compute a transition relation")
+    parser.add_argument("-rc", "--restrict_crazy", action="store_true",
+                        dest="restrict_like_crazy", default=False,
+                        help="Use restrict to minimize BDDs everywhere")
     parser.add_argument("-mc", "--model_check", action="store_true",
                         dest="model_check", default=False,
                         help="Model check resulting strategy")
@@ -1001,11 +1114,8 @@ if __name__ == "__main__":
                         default="", required=False,
                         help="Verbose level = (D)ebug, (W)arnings, " +
                              "(L)og messages, (B)DD dot dumps")
-    # parser.add_argument("-c", "--cthreshold", dest="c_thresh",
-    #                     default=2, type=int, required=False,
-    #                     help="Clustering threshold")
     parser.add_argument("-i", "--initial", dest="ini_latch",
-                        default=1, type=int, required=False,
+                        default=0, type=int, required=False,
                         help="Number latches to start with = " +
                              "#latches/ini_latch")
     parser.add_argument("-l", "--lossiness", dest="loss_steps",
@@ -1016,14 +1126,14 @@ if __name__ == "__main__":
                         required=False, default=None,
                         help="output file in AIGER format (if realizable)")
     args = parser.parse_args()
-    # cluster_threshold = args.c_thresh
     model_check = args.model_check
     loss_steps = args.loss_steps
     use_abs = args.use_abs
     use_trans = args.use_trans
-    # no_reach = args.no_reach
-    # ini_reach = args.ini_reach
+    ini_reach = args.ini_reach
+    ini_reach_latches = args.ini_reach_latches
     min_win = args.min_win
+    restrict_like_crazy = args.restrict_like_crazy
     ini_latch = args.ini_latch
     # most_precise = args.most_precise
     log.parse_verbose_level(args.verbose_level)

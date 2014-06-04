@@ -159,7 +159,7 @@ class SmartPreds:
             rand_list = list(interesting)
             random.shuffle(rand_list)
             var = rand_list.pop()
-            log.DBG_MSG("Making visible useful latch " + str(var))
+            log.DBG_MSG("Making visible interesting latch " + str(var))
             return self.direct_add_pred(bdd.BDD(var))
         # desperate measures... SHOULD NOT HAPPEN!
         assert False
