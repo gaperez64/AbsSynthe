@@ -1,16 +1,29 @@
 #!/bin/bash
-# change python version
-PYVER="python2.6"
+# choose python command
+export PYTHON=python
+
+# change python version in sources
+PYVER="python2.7"
 mkdir ./binary
+
 # python scripts
 cp ./code/*.py ./binary
+
 # aiger_swig
 cd ./code/aiger_swig
-sed -i "s/python2.7/${PYVER}/g" Makefile
+sed -i "s/python2.6/${PYVER}/g" Makefile
 make
 cd ../..
 mkdir ./binary/aiger_swig
 cp ./code/aiger_swig/*.py ./code/aiger_swig/*.so ./binary/aiger_swig
+
+# pycosat
+tar -xvf ./code/pycosat-0.6.0.tar.gz
+cd ./pycosat-0.6.0
+make
+cd ..
+cp ./pycosat-0.6.0/pycosat.so ./binary
+
 # pycudd
 tar -xvf ./code/pycudd2.0.2.tar.gz
 cd ./pycudd2.0.2/cudd-2.4.2
