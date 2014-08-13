@@ -51,6 +51,10 @@ def num_latches():
     return spec.num_latches
 
 
+def max_var():
+    return int(spec.maxvar) * 2
+
+
 def next_lit():
     return (int(spec.maxvar) + 1) * 2
 
@@ -170,7 +174,7 @@ def latch_dependency_map():
     cache = {}
 
     # recursive worker
-    def rec_dependencies(lit):
+    def _rec_dependencies(lit):
         if lit in cache:
             return cache[lit]
         (i, l, a) = get_lit_type(lit)
@@ -190,5 +194,5 @@ def latch_dependency_map():
     # call the recursive worker for each gate with the next step
     # value of a latch and map the sets to each latch lit
     for l in iterate_latches():
-        m[l.lit] = rec_dependencies(l.next)
+        m[l.lit] = _rec_dependencies(l.next)
     return m
