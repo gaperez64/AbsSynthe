@@ -1,7 +1,7 @@
 """
 Copyright (c) 2014, Guillermo A. Perez, Universite Libre de Bruxelles
 
-This file is part of a the AbsSynthe tool.
+This file is part of the AbsSynthe tool.
 
 AbsSynthe is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -37,7 +37,10 @@ from aiger_swig.aiger_wrap import (
     #aiger_ascii_mode
 )
 
+
+# global variables to keep a spec and a fake latch for the error bit
 spec = None
+error_fake_latch = None
 
 
 def new_aiger_symbol():
@@ -67,14 +70,34 @@ def strip_lit(l):
 def iterate_latches():
     for i in range(int(spec.num_latches)):
         yield get_aiger_symbol(spec.latches, i)
+    if error_fake_latch is not None:
+        yield error_fake_latch
 
 
-def parse_into_spec(aiger_file_name):
+def introduce_error_latch(after_intro=None):
+    global error_fake_latch
+
+    if error_fake_latch is not None:
+        return
+    error_fake_latch = new_aiger_symbol()
+    error_symbol = get_err_symbol()
+    error_fake_latch.lit = next_lit()
+    error_fake_latch.name = "fake_error_latch"
+    error_fake_latch.next = error_symbol.lit
+    # if after_intro was provided we shall call it
+    if after_intro is not None:
+        after_intro(error_fake_latch)
+
+
+def parse_into_spec(aiger_file_name, intro_error_latch=False,
+                    after_intro=None):
     global spec
 
     spec = aiger_init()
     err = aiger_open_and_read_from_file(spec, aiger_file_name)
     assert not err, err
+    # if required, introduce a fake latch for the error and call the given hook
+    introduce_error_latch(after_intro)
 
 
 def change_input_to_and(c_lit, func_as_aiger_lit):
@@ -86,10 +109,14 @@ def write_spec(out_file):
     aiger_open_and_write_to_file(spec, out_file)
 
 
-def get_lit_type(stripped_lit):
+def get_lit_type(lit):
+    stripped_lit = strip_lit(lit)
+    if error_fake_latch is not None and stripped_lit == error_fake_latch.lit:
+        return None, error_fake_latch, None
+
     input_ = aiger_is_input(spec, stripped_lit)
     latch_ = aiger_is_latch(spec, stripped_lit)
-    and_ = aiger_is_and(spec, strip_lit(stripped_lit))
+    and_ = aiger_is_and(spec, stripped_lit)
 
     return input_, latch_, and_
 
@@ -136,3 +163,32 @@ def get_optimized_and_lit(a_lit, b_lit):
         add_gate(a_b_lit, a_lit, b_lit)
         return a_b_lit
     assert 0, 'impossible'
+
+
+def latch_dependency_map():
+    m = {}
+    cache = {}
+
+    # recursive worker
+    def rec_dependencies(lit):
+        if lit in cache:
+            return cache[lit]
+        (i, l, a) = get_lit_type(lit)
+        # latches count towards one
+        if l:
+            result = set([l.lit])
+        # ands require union of siblings
+        elif a:
+            result = rec_dependencies(a.rhs0) | rec_dependencies(a.rhs1)
+        # inputs or terminals
+        else:
+            result = set([])
+
+        cache[lit] = result
+        return result
+
+    # call the recursive worker for each gate with the next step
+    # value of a latch and map the sets to each latch lit
+    for l in iterate_latches():
+        m[l.lit] = rec_dependencies(l.next)
+    return m

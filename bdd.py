@@ -1,7 +1,7 @@
 """
 Copyright (c) 2014, Guillermo A. Perez, Universite Libre de Bruxelles
 
-This file is part of a the AbsSynthe tool.
+This file is part of the AbsSynthe tool.
 
 AbsSynthe is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
