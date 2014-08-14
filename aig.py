@@ -136,6 +136,11 @@ def get_lit_type(lit):
     return input_, latch_, and_
 
 
+def lit_is_and(lit):
+    (i, l, a) = get_lit_type(lit)
+    return a
+
+
 def get_err_symbol():
     assert spec.num_outputs == 1
     return spec.outputs
@@ -194,7 +199,7 @@ def latch_dependency_map():
             result = set([l.lit])
         # ands require union of siblings
         elif a:
-            result = rec_dependencies(a.rhs0) | rec_dependencies(a.rhs1)
+            result = _rec_dependencies(a.rhs0) | _rec_dependencies(a.rhs1)
         # inputs or terminals
         else:
             result = set([])

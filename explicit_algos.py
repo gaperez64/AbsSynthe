@@ -23,8 +23,19 @@ gperezme@ulb.ac.be
 """
 
 import aig
-import log
+#import log
+import sat
 
 
 def load_file(aiger_file_name):
     aig.parse_into_spec(aiger_file_name, True)
+    print sat.trans_rel_CNF().to_string()
+    for i in range(1, 2):
+        (c, m) = sat.unroll_CNF(i)
+        print c.to_string()
+        c.add_cube([x.lit * -1 for x in aig.iterate_latches()])
+        c.add_clause([mm[aig.error_fake_latch.lit] for mm in m])
+        print c.sat_solve()
+
+if __name__ == "__main__":
+    load_file("../gaperez-svn/syntcomp/tool/benchmarking/benchmarks/add2n.aag")
