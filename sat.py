@@ -22,6 +22,7 @@ Universite Libre de Bruxelles
 gperezme@ulb.ac.be
 """
 
+import math
 import pycosat
 #import log
 import aig
@@ -36,7 +37,8 @@ class CNF:
                     for x in frozenset.union(*self.clauses)])
 
     def to_string(self):
-        return " ".join(["(" + " ".join(map(str,x)) + ")" for x in self.clauses])
+        return " ".join(["(" + " ".join(map(str, x)) + ")"
+                         for x in self.clauses])
 
     def sat_solve(self):
         result = pycosat.solve([[y for y in x] for x in self.clauses])
@@ -69,6 +71,14 @@ class CNF:
         self.append_clauses(cnf.clauses)
         return self
 
+    def remove_clauses(self, clauses):
+        self.clauses = set(filter(lambda x: x not in clauses, self.clauses))
+        return self
+
+    def remove_cnf(self, cnf):
+        self.remove_clauses(cnf.clauses)
+        return self
+
     # add clauses for a boolean formula of the form l <=> AND(x0,x1,..,xn)
     # where xi could be a negated literal
     def add_land(self, o, lits):
@@ -79,9 +89,9 @@ class CNF:
 
     def rename_vars(self, name_map):
         self.clauses = set(
-            frozenset(-1 * name_map[y] if y < 0 and y in name_map
-                      else name_map[y] if y in name_map
-                      else y for y in x) for x in self.clauses)
+            frozenset([int(math.copysign(name_map[abs(y)], y))
+                       for y in x if abs(y) in name_map])
+            for x in self.clauses)
         return self
 
 

@@ -29,10 +29,11 @@ import sat
 
 def load_file(aiger_file_name):
     aig.parse_into_spec(aiger_file_name, True)
-    print sat.trans_rel_CNF().to_string()
-    for i in range(1, 2):
+    #print sat.trans_rel_CNF().to_string()
+    #print "\n"
+    for i in range(1, 100):
         (c, m) = sat.unroll_CNF(i)
-        print c.to_string()
+        #print sat.CNF().append_cnf(c).remove_cnf(sat.trans_rel_CNF()).to_string()
         c.add_cube([x.lit * -1 for x in aig.iterate_latches()])
         c.add_clause([mm[aig.error_fake_latch.lit] for mm in m])
         print c.sat_solve()
