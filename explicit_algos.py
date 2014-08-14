@@ -1,18 +1,30 @@
+"""
+Copyright (c) 2014, Guillermo A. Perez, Universite Libre de Bruxelles
+
+This file is part of the AbsSynthe tool.
+
+AbsSynthe is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+AbsSynthe is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with AbsSynthe.  If not, see <http://www.gnu.org/licenses/>.
+
+
+Guillermo A. Perez
+Universite Libre de Bruxelles
+gperezme@ulb.ac.be
+"""
+
 import aig
 import log
 
 
-def run():
-    load_file("../gaperez-svn/syntcomp/tool/benchmarking/benchmarks/add2n.aag")
-
 def load_file(aiger_file_name):
     aig.parse_into_spec(aiger_file_name, True)
-    log.DBG_MSG("AIG spec file parsed")
-    log.LOG_MSG("Nr. of latches: " + str(aig.num_latches()))
-    log.DBG_MSG("Latches: " + str([x.lit for x in
-                                   aig.iterate_latches()]))
-    log.DBG_MSG("U. Inputs: " + str([x.lit for x in
-                                     aig.iterate_uncontrollable_inputs()]))
-    log.DBG_MSG("C. Inputs: " + str([x.lit for x in
-                                     aig.iterate_controllable_inputs()]))
-    return aig.latch_dependency_map()

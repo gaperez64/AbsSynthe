@@ -36,6 +36,7 @@ from aiger_swig.aiger_wrap import (
     aiger_redefine_input_as_and,
     #aiger_ascii_mode
 )
+import log
 
 
 # global variables to keep a spec and a fake latch for the error bit
@@ -97,7 +98,17 @@ def parse_into_spec(aiger_file_name, intro_error_latch=False,
     err = aiger_open_and_read_from_file(spec, aiger_file_name)
     assert not err, err
     # if required, introduce a fake latch for the error and call the given hook
-    introduce_error_latch(after_intro)
+    if intro_error_latch:
+        introduce_error_latch(after_intro)
+    # dump some info about the spec
+    log.DBG_MSG("AIG spec file parsed")
+    log.LOG_MSG("Nr. of latches: " + str(num_latches()))
+    log.DBG_MSG("Latches: " + str([x.lit for x in
+                                   iterate_latches()]))
+    log.DBG_MSG("U. Inputs: " + str([x.lit for x in
+                                     iterate_uncontrollable_inputs()]))
+    log.DBG_MSG("C. Inputs: " + str([x.lit for x in
+                                     iterate_controllable_inputs()]))
 
 
 def change_input_to_and(c_lit, func_as_aiger_lit):
