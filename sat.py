@@ -22,16 +22,51 @@ Universite Libre de Bruxelles
 gperezme@ulb.ac.be
 """
 
-import pycosat
+#import pycosat
 import log
+import aig
+
 
 class CNF:
     """ A CNF object """
-    _cudd_bdd = None
+    clauses = []
 
-    def __init__(self, var=None):
-        if var is None:
-            return
-        if next_free_var <= var:
-            next_free_var = var + 1
-        self._cudd_bdd = cudd.IthVar(var)
+    def add_clause(lits):
+        clauses.append(lits)
+
+    def add_land(o, lits):
+
+
+
+
+cached_tr_cnf = None
+
+
+def trans_rel_CNF():
+    global cached_tr_cnf
+
+    if cached_tr_cnf is not None:
+        return cached_tr_cnf
+
+    next_v = aig.max_var() + 2
+    cache = {}
+
+    def _rec_lit_cnf(lit):
+        if lit in cache:
+            return cache[lit]
+
+        (i, l, a) = get_lit_type(lit)
+        # base cases: inputs or latches
+        if l or i:
+            result = (l.lit, [[l.lit]])
+        # ands require union of siblings
+        elif a:
+            result = rec_dependencies(a.rhs0) | rec_dependencies(a.rhs1)
+        # inputs or terminals
+        else:
+            result = set([])
+        cache[lit] = result
+        return result
+
+    cached_tr_cnf = c
+    return c
