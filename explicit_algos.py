@@ -29,8 +29,9 @@ import sat
 
 def load_file(aiger_file_name):
     aig.parse_into_spec(aiger_file_name, True)
-    #print sat.trans_rel_CNF().to_string()
-    #print "\n"
+    #aig.trans_rel_CNF().to_bdd().dump_dot()
+    aig.trans_rel_BDD().dump_dot()
+    assert aig.trans_rel_CNF().to_bdd() == aig.trans_rel_BDD()
     for i in range(1, 100):
         (c, m) = sat.unroll_CNF(i)
         #print sat.CNF().append_cnf(c).remove_cnf(sat.trans_rel_CNF()).to_string()

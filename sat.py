@@ -22,10 +22,9 @@ Universite Libre de Bruxelles
 gperezme@ulb.ac.be
 """
 
-import math
+from math import copysign
 import pycosat
-#import log
-import aig
+import bdd
 
 
 class CNF:
@@ -89,123 +88,19 @@ class CNF:
 
     def rename_vars(self, name_map):
         self.clauses = set(
-            frozenset([int(math.copysign(name_map[abs(y)], y))
+            frozenset([int(copysign(name_map[abs(y)], y))
                        for y in x if abs(y) in name_map])
             for x in self.clauses)
         return self
 
-
-cached_unrolled = {}
-
-
-def unroll_CNF(n):
-    assert n >= 1
-
-    # we need the transition relation CNF and we will copy it n times
-    # and make latch variables match, we will also return a map of the
-    # variables to the renamed version
-
-    mv = aig.max_var()
-    T = trans_rel_CNF()
-    trash_vars = T.literals() - set([x.lit for x in aig.iterate_latches()] +
-                                    [x.next for x in
-                                        aig.iterate_controllable_inputs()] +
-                                    [x.lit for x in
-                                        aig.iterate_controllable_inputs()] +
-                                    [x.lit for x in
-                                        aig.iterate_uncontrollable_inputs()])
-
-    # recursive handling
-    def _rec_unroll(n):
-        global cached_unrolled
-        if n in cached_unrolled:
-            return cached_unrolled[n]
-
-        if n == 0:
-            var_map = dict([(x.lit, x.lit)
-                            for x in aig.iterate_latches()] +
-                           [(x.next, x.next)
-                            for x in aig.iterate_latches()] +
-                           [(x.lit, x.lit)
-                            for x in aig.iterate_controllable_inputs()] +
-                           [(x.lit, x.lit)
-                            for x in aig.iterate_uncontrollable_inputs()] +
-                           [(x, x) for x in trash_vars])
-            form = CNF().append_cnf(T)
-        else:
-            (form, var_map) = _rec_unroll(n - 1)
-            var_map = dict([(x.lit, var_map[x.next])
-                            for x in aig.iterate_latches()] +
-                           [(x.next, var_map[x.next] + mv)
-                            for x in aig.iterate_latches()] +
-                           [(x.lit, var_map[x.lit] + mv)
-                            for x in aig.iterate_controllable_inputs()] +
-                           [(x.lit, var_map[x.lit] + mv)
-                            for x in aig.iterate_uncontrollable_inputs()] +
-                           [(x, var_map[x] + mv) for x in trash_vars])
-            form.append_cnf(
-                CNF().append_cnf(T).rename_vars(var_map))
-            cached_unrolled[n] = (form, var_map)
-        return (form, var_map)
-
-    (form, var_map) = _rec_unroll(n)
-    return (form, [cached_unrolled[i][1] for i in cached_unrolled])
-
-
-cached_tr_cnf = None
-
-
-def trans_rel_CNF():
-    global cached_tr_cnf
-
-    if cached_tr_cnf is not None:
-        return cached_tr_cnf
-
-    # We need to do a first pass to determine which variables are to be
-    # created because a negation took place, we will also create the first
-    # part of the formula on the way.
-    cache = {}
-
-    # returns the lits for the conjunction and a set of variables that have to
-    # be further explored as a sub tree
-    def _rec_dfs(lit):
-        if lit in cache:
-            return cache[lit]
-        (i, l, a) = aig.get_lit_type(lit)
-        # base cases: inputs or latches
-        if l or i:
-            result = (set([lit]), set())
-        # ands require we recurse if the sibling is not negated
-        elif a:
-            if aig.lit_is_negated(a.rhs0) and aig.lit_is_and(a.rhs0):
-                x = aig.strip_lit(a.rhs0)
-                result0 = (set([x * -1]), set([x]))
-            else:
-                result0 = _rec_dfs(a.rhs0)
-            if aig.lit_is_negated(a.rhs1) and aig.lit_is_and(a.rhs1):
-                x = aig.strip_lit(a.rhs1)
-                result1 = (set([x * -1]), set([x]))
-            else:
-                result1 = _rec_dfs(a.rhs1)
-
-            result = tuple(map(set.union, result0, result1))
-        # terminals
-        else:
-            assert aig.lit_is_negated(lit)
-            result = (set(), set())
-        cache[lit] = result
-        return result
-
-    # initialize sub tree list with latches
-    sub_trees = set([x.next * -1 if aig.lit_is_negated(x.next) and x.next > 1
-                     else x.next for x in aig.iterate_latches()])
-    # call _rec_dfs for each sub tree
-    T = CNF()
-    while sub_trees:
-        x = sub_trees.pop()
-        (v, t) = _rec_dfs(abs(x))
-        T.add_land(x, v)
-        sub_trees |= t
-
-    cached_tr_cnf = T
-    return T
+    def to_bdd(self):
+        b = bdd.true()
+        for c in self.clauses:
+            nu_clause = bdd.false()
+            for l in c:
+                nu_var = bdd.BDD(abs(l))
+                if l < 0:
+                    nu_var = ~nu_var
+                nu_clause |= nu_var
+            b &= nu_clause
+        return b
