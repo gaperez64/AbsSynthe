@@ -266,7 +266,7 @@ def get_bdd_for_lit(lit):
 cached_transition = None
 
 
-def trans_rel_BDD():
+def trans_rel_bdd():
     global cached_transition
 
     # check cache

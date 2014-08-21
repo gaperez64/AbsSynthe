@@ -22,6 +22,7 @@ Universite Libre de Bruxelles
 gperezme@ulb.ac.be
 """
 
+from itertools import imap, chain
 import random
 import log
 import aig
@@ -55,16 +56,17 @@ class Abstraction:
                 self.support_set_rel[v] = self.support_set & v_supp
 
     def __init__(self):
-        all_latches = [x.lit for x in aig.aig.iterate_latches()]
-        all_latches_and_error = list(all_latches + [aig.error_fake_latch.lit])
-        all_latches_and_error_next = (
-            [aig.aig.get_bdd_for_aig_lit(x.next) for x in aig.aig.iterate_latches()] +
-            [aig.aig.get_bdd_for_aig_lit(aig.error_fake_latch.next)])
-        self.initialize(supp=all_latches_and_error,
-                        supp_next=all_latches_and_error_next)
+        all_latches = [x.lit for x in aig.iterate_latches()]
+        all_latches = list(all_latches + [aig.error_fake_latch.lit])
+        all_latches_next = (
+            [aig.get_bdd_for_lit(x.next)
+             for x in aig.iterate_latches()] +
+            [aig.get_bdd_for_lit(aig.error_fake_latch.next)])
+        self.initialize(supp=all_latches,
+                        supp_next=all_latches_next)
         self.add_fixed_pred("unsafe", bdd.BDD(aig.error_fake_latch.lit))
-        self.add_fixed_pred("init", bdd.aig.get_clause([bdd.BDD(l)
-                                                     for l in all_latches]))
+        self.add_fixed_pred("init", bdd.get_clause(imap(bdd.BDD,
+                                                   iter(all_latches))))
         log.DBG_MSG("Initial abstraction of the system computed.")
         return self
 
@@ -237,9 +239,9 @@ class Abstraction:
 
     """ WARNING!
     Methods implemented below use CACHE to achieve better
-    efficiency. However, if the set of predicates is further modified after some
-    element has been cached then cached information becomes trash (and this is
-    not verified).
+    efficiency. However, if the set of predicates is further modified after
+    some element has been cached then cached information becomes trash (and
+    this is not verified).
     """
     def compose_abs_eq_bdd(self):
         # check cache
@@ -258,8 +260,7 @@ class Abstraction:
         self.cached_abs_eq = c
         return c
 
-
-    def compose_abs_transition_bdd(self):
+    def abs_trans_rel_bdd(self):
         # check cache
         if self.cached_abs_transition is None:
             log.DBG_MSG("Rebuilding abstract transition relation")
@@ -269,81 +270,80 @@ class Abstraction:
         else:
             c = self.cached_abs_transition
 
-        latches = [x.lit for x in aig.iterate_latches_and_error()]
-        latches_bdd = bdd.aig.get_cube(aig.get_all_latches_as_bdds())
+        latches = [x.lit for x in aig.iterate_latches()]
+        latches_bdd = bdd.get_cube(
+            imap(bdd.BDD, aig.iterate_latches()))
         latch_funs = [aig.get_bdd_for_aig_lit(x.next) for x in
-                      aig.iterate_latches_and_error()]
+                      aig.iterate_latches()]
         for b in self.abs_blocks:
             if b not in self.procd_blocks or not self.procd_blocks[b]:
                 self.procd_blocks[b] = True
-                temp = bdd.make_eq(bdd.BDD(aig.get_primed_variable(b)),
+                temp = bdd.make_eq(bdd.BDD(aig.get_primed_var(b)),
                                    self.block_to_bdd[b])
                 c &= temp.compose(latches, latch_funs)
         # cache c
         self.cached_abs_transition = c
         return c.and_abstract(self.compose_abs_eq_bdd(), latches_bdd)
 
-
     def alpha_over(self, conc_bdd):
         c = self.compose_abs_eq_bdd()
-        latches_bdd = bdd.aig.get_cube(aig.get_all_latches_as_bdds())
+        latches_bdd = bdd.get_cube(imap(bdd.BDD, aig.iterate_latches()))
         c = c.and_abstract(conc_bdd, latches_bdd)
         return c
 
-
     def alpha_under(self, conc_bdd):
         return ~self.alpha_over(~conc_bdd)
-
 
     def gamma(self, abs_bdd):
         return abs_bdd.compose(self.block_to_bdd.keys(),
                                self.block_to_bdd.values())
 
-
     def abs_init_state_bdd(self):
         return self.alpha_over(aig.init_state_bdd())
-
 
     """
     GAME operators are implemented here
     """
-    def update_block_funs():
-        latches = [x.lit for x in aig.iterate_latches_and_error()]
+    def update_block_funs(self):
+        latches = [x.lit for x in aig.iterate_latches()]
         latch_funs = [aig.get_bdd_for_aig_lit(x.next) for x in
-                      aig.iterate_latches_and_error()]
+                      aig.iterate_latches()]
         # check cache
-        if cached_block_funs is None:
+        if self.cached_block_funs is None:
             log.DBG_MSG("Rebuilding block_funs")
             block_funs = dict()
             for b in self.abs_blocks:
-                block_funs[b] = gamma(self.block_to_bdd[b]).compose(latches,
-                                                                     latch_funs)
+                block_funs[b] = self.gamma(
+                    self.block_to_bdd[b]).compose(latches, latch_funs)
         else:
             for b in self.abs_blocks:
                 if b not in block_funs:
-                    block_funs[b] = gamma(self.block_to_bdd[b])
+                    block_funs[b] = self.gamma(self.block_to_bdd[b])
                     block_funs[b] = block_funs[b].compose(latches,
                                                           latch_funs)
         # set cache
-        cached_block_funs = bdd.true()
+        self.cached_block_funs = bdd.true()
 
-
-    def single_pre_env_bdd_abs(dst_states_bdd, get_strat=False):
+    def single_pre_env_bdd(self, dst_states_bdd, get_strat=False,
+                           most_precise=False):
         # if we want the most precise version of the operator
         if most_precise:
-            return alpha_over(single_pre_env_bdd(gamma(dst_states_bdd),
-                                                 get_strat=get_strat))
+            return self.alpha_over(
+                aig.single_pre_env_bdd(self.gamma(dst_states_bdd),
+                                       get_strat=get_strat))
         # make sure the block_funs are current
-        update_block_funs()
+        self.update_block_funs()
         # take one step backwards and over-app
-        tmp_bdd = dst_states_bdd.compose(block_funs.keys(),
-                                         block_funs.values())
-        tmp_bdd = alpha_over(tmp_bdd)
+        tmp_bdd = dst_states_bdd.compose(self.block_funs.keys(),
+                                         self.block_funs.values())
+        tmp_bdd = self.alpha_over(tmp_bdd)
         # there is an uncontrollable action, such that for all contro...
         tmp_bdd = tmp_bdd.univ_abstract(
-            bdd.aig.get_cube(aig.get_controllable_inputs_bdds()))
+            bdd.get_cube(
+                imap(bdd.BDD, aig.iterate_controllable_inputs())))
         p_bdd = tmp_bdd.exist_abstract(
-            bdd.aig.get_cube(aig.get_uncontrollable_inputs_bdds()))
+            bdd.get_cube(
+                imap(bdd.BDD, aig.iterate_uncontrollable_inputs())))
 
         # was a strategy asked for?
         if get_strat:
@@ -351,77 +351,83 @@ class Abstraction:
         else:
             return p_bdd
 
-
-    def single_pre_env_bdd_uabs(dst_states_bdd, env_strat=None):
+    def single_pre_env_bdd_uabs(self, dst_states_bdd, env_strat=None,
+                                most_precise=False):
         # if we want the most precise version of the operator
         if most_precise:
             if env_strat is not None:
-                strat = gamma(env_strat)
+                strat = self.gamma(env_strat)
             else:
                 strat = None
-            return alpha_under(single_pre_env_bdd(gamma(dst_states_bdd),
-                                                  env_strat=strat))
+            return self.alpha_under(
+                self.single_pre_env_bdd(self.gamma(dst_states_bdd),
+                                        env_strat=strat))
         # make sure the block_funs are current
-        update_block_funs()
+        self.update_block_funs()
         # take one step backwards and over-app
         tmp_bdd = ~dst_states_bdd
-        tmp_bdd = tmp_bdd.compose(block_funs.keys(),
-                                  block_funs.values())
-        tmp_bdd = alpha_over(tmp_bdd)
+        tmp_bdd = tmp_bdd.compose(self.block_funs.keys(),
+                                  self.block_funs.values())
+        tmp_bdd = self.alpha_over(tmp_bdd)
         if env_strat is not None:
             tmp_bdd &= env_strat
         # we are using the complement of the original formula so
         # we want that for all uncontrollable, there is a contro...
         tmp_bdd = tmp_bdd.exist_abstract(
-            bdd.aig.get_cube(aig.get_controllable_inputs_bdds()))
+            bdd.get_cube(
+                imap(bdd.BDD, aig.iterate_controllable_inputs())))
         p_bdd = tmp_bdd.univ_abstract(
-            bdd.aig.get_cube(aig.get_uncontrollable_inputs_bdds()))
+            bdd.get_cube(
+                imap(bdd.BDD, aig.iterate_uncontrollable_inputs())))
 
         return ~p_bdd
 
-
-    def over_post_bdd_abs(src_states_bdd, env_strat=None):
+    def over_post_bdd(self, src_states_bdd, env_strat=None):
         # make sure the block_funs are current
-        update_block_funs()
+        self.update_block_funs()
         # take the step forward and get rid of latches
-        conc_src = gamma(src_states_bdd)
+        conc_src = self.gamma(src_states_bdd)
         if env_strat is not None:
-            conc_strat = gamma(env_strat)
+            conc_strat = self.gamma(env_strat)
         else:
             conc_strat = bdd.true()
         # to do this, we use an over-simplified transition relation, EXu,Xc
         simple_trans = bdd.true()
         for b in self.abs_blocks:
-            trans_b = bdd.make_eq(bdd.BDD(b), block_funs[b])
+            trans_b = bdd.make_eq(bdd.BDD(b), self.block_funs[b])
             simple_trans &= trans_b.exist_abstract(
-                bdd.aig.get_cube(aig.get_controllable_inputs_bdds()))
+                bdd.get_cube(
+                    imap(bdd.BDD, aig.iterate_controllable_inputs())))
         simple_trans &= conc_strat & conc_src
         return simple_trans.exist_abstract(
-            bdd.aig.get_cube(aig.get_all_latches_as_bdds() +
-                         aig.get_uncontrollable_inputs_bdds()))
+            bdd.get_cube(
+                imap(bdd.BDD, chain(aig.iterate_latches(),
+                                    aig.iterate_uncontrollable_inputs()))))
 
-
-    def pre_env_bdd_abs(dst_states_bdd, get_strat=False):
+    def pre_env_bdd(self, dst_states_bdd, get_strat=False,
+                    use_trans=False, most_precise=False):
         """ UPRE_abs = EXu.AXc.EP' : T_abs(P,Xu,Xc,P') ^ dst(P') """
         # if there is no transition bdd then return the version that can be
         # computed without one
         if not use_trans:
-            return single_pre_env_bdd_abs(dst_states_bdd, get_strat)
+            return self.ingle_pre_env_bdd(dst_states_bdd, get_strat)
         # if we are using the de Alfaro version of the operators, i.e.
         # the most precise ones
         if most_precise:
-            return alpha_over(pre_env_bdd(gamma(dst_states_bdd),
-                                          get_strat=get_strat))
+            return self.alpha_over(self.pre_env_bdd(self.gamma(dst_states_bdd),
+                                                    get_strat=get_strat))
         # else, compute as the initial comment reads
-        transition_bdd = compose_abs_transition_bdd()
-        primed_states = prime_blocks_in_bdd(dst_states_bdd)
-        primed_blocks = bdd.aig.get_cube([bdd.BDD(aig.get_primed_variable(x))
-                                      for x in self.abs_blocks])
+        transition_bdd = self.ompose_abs_transition_bdd()
+        primed_states = self.prime_blocks_in_bdd(dst_states_bdd)
+        primed_blocks = bdd.get_cube(
+            imap(bdd.BDD, imap(aig.get_primed_var, iter(self.abs_blocks))))
         tmp_bdd = transition_bdd.and_abstract(primed_states, primed_blocks)
         tmp_bdd = tmp_bdd.univ_abstract(
-            bdd.aig.get_cube(aig.get_controllable_inputs_bdds()))
+            bdd.get_cube(
+                imap(bdd.BDD, aig.iterate_controllable_inputs())))
         p_bdd = tmp_bdd.exist_abstract(
-            bdd.aig.get_cube(aig.get_uncontrollable_inputs_bdds()))
+            bdd.get_cube(
+                imap(bdd.BDD, aig.iterate_uncontrollable_inputs())))
 
         # return the "good actions" if they are needed
         if get_strat:
@@ -429,59 +435,61 @@ class Abstraction:
         else:
             return p_bdd
 
-
-    def pre_env_bdd_uabs(dst_states_bdd, env_strat=None):
-        """ UPRE_uabs = EXu.AXc.AP' : T_abs(P,Xu,Xc,P') [^St(L,Xu)] => dst(P') """
+    def pre_env_bdd_uabs(self, dst_states_bdd, env_strat=None,
+                         use_trans=False, most_precise=False):
+        """ UPRE_u = EXu.AXc.AP' : T_abs(P,Xu,Xc,P') [^St(L,Xu)] => dst(P') """
         # if there is no transition relation, use the single version
         if not use_trans:
-            return single_pre_env_bdd_uabs(dst_states_bdd, env_strat)
+            return self.single_pre_env_bdd_uabs(dst_states_bdd, env_strat)
         # if we want the most precise version of the operator
         if most_precise:
             if env_strat is not None:
-                strat = gamma(env_strat)
+                strat = self.gamma(env_strat)
             else:
                 strat = None
-            return alpha_under(pre_env_bdd(gamma(dst_states_bdd),
-                                           env_strat=strat))
+            return self.alpha_under(
+                self.pre_env_bdd(self.gamma(dst_states_bdd), env_strat=strat))
         # else, do as we promised in the first comment
-        transition_bdd = compose_abs_transition_bdd()
+        transition_bdd = self.abs_trans_rel_bdd()
         trans = transition_bdd
         if env_strat is not None:
             trans &= env_strat
 
-        primed_states = prime_blocks_in_bdd(dst_states_bdd)
-        primed_blocks = bdd.aig.get_cube([bdd.BDD(aig.get_primed_variable(x))
+        primed_states = self.prime_blocks_in_bdd(dst_states_bdd)
+        primed_blocks = bdd.get_cube([bdd.BDD(aig.get_primed_var(x))
                                       for x in self.abs_blocks])
         tmp_bdd = bdd.make_impl(transition_bdd, primed_states)
         tmp_bdd = tmp_bdd.univ_abstract(primed_blocks)
         tmp_bdd = tmp_bdd.univ_abstract(
-            bdd.aig.get_cube(aig.get_controllable_inputs_bdds()))
+            bdd.get_cube(
+                imap(bdd.BDD, aig.iterate_controllable_inputs())))
         p_bdd = tmp_bdd.exist_abstract(
-            bdd.aig.get_cube(aig.get_uncontrollable_inputs_bdds()))
+            bdd.get_cube(
+                imap(bdd.BDD, aig.iterate_uncontrollable_inputs())))
 
         return p_bdd
 
-
-    def post_bdd_abs(src_states_bdd, env_strat=None):
+    def post_bdd_abs(self, src_states_bdd, env_strat=None,
+                     use_trans=False, most_precise=False):
         """
         POST_abs = EP.EXu.EXc : src(P) ^ T(P,Xu,Xc,P') [^St(P,Xu)]
         optional argument fixes possible actions for the environment
         """
         # if there is no transition_bdd we do what we can
         if not use_trans:
-            return over_post_bdd_abs(src_states_bdd, env_strat)
+            return self.over_post_bdd_abs(src_states_bdd, env_strat)
         # otherwise, we compute as the first comment reads
-        transition_bdd = compose_abs_transition_bdd()
+        transition_bdd = self.abs_trans_rel_bdd()
         trans = transition_bdd
         if env_strat is not None:
             trans &= env_strat
 
-        self_as_bdds = [bdd.BDD(x) for x in self.abs_blocks]
         suc_bdd = trans.and_abstract(
             src_states_bdd,
-            bdd.aig.get_cube(
-                aig.get_controllable_inputs_bdds() +
-                aig.get_uncontrollable_inputs_bdds() +
-                self_as_bdds))
+            bdd.get_cube(
+                imap(bdd.BDD,
+                     chain(aig.iterate_controllable_inputs(),
+                           aig.iterate_uncontrollable_inputs(),
+                           iter(self.abs_blocks)))))
 
-        return unprime_blocks_in_bdd(suc_bdd)
+        return self.unprime_blocks_in_bdd(suc_bdd)
