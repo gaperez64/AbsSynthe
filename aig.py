@@ -37,6 +37,7 @@ from aiger_swig.aiger_wrap import (
     aiger_redefine_input_as_and,
     #aiger_ascii_mode
 )
+from utils import funcomp
 import sat
 import bdd
 import log
@@ -111,7 +112,6 @@ def parse_into_spec(aiger_file_name, intro_error_latch=False,
         introduce_error_latch(after_intro)
     # dump some info about the spec
     log.DBG_MSG("AIG spec file parsed")
-    log.LOG_MSG("Nr. of latches: " + str(num_latches()))
     log.DBG_MSG("Latches: " + str([x.lit for x in
                                    iterate_latches()]))
     log.DBG_MSG("U. Inputs: " + str([x.lit for x in
@@ -120,7 +120,7 @@ def parse_into_spec(aiger_file_name, intro_error_latch=False,
                                      iterate_controllable_inputs()]))
 
 
-def change_input_to_and(c_lit, func_as_aiger_lit):
+def input2and(c_lit, func_as_aiger_lit):
     aiger_redefine_input_as_and(spec, c_lit,
                                 func_as_aiger_lit, func_as_aiger_lit)
 
@@ -172,6 +172,10 @@ def iterate_uncontrollable_inputs():
 def iterate_controllable_inputs():
     for i in _iterate_inputs(lambda name: name.startswith("controllable")):
         yield i
+
+
+def symbol_lit(x):
+    return x.lit
 
 
 def get_optimized_and_lit(a_lit, b_lit):
@@ -241,16 +245,12 @@ def get_bdd_for_lit(lit):
     stripped_lit = strip_lit(lit)
     (intput, latch, and_gate) = get_lit_type(stripped_lit)
     # is it an input, latch, gate or constant
-    print lit
     if intput or latch:
-        print "input or latch"
         result = bdd.BDD(stripped_lit)
     elif and_gate:
-        print "gate"
         result = (get_bdd_for_lit(and_gate.rhs0) &
                   get_bdd_for_lit(and_gate.rhs1))
     else:  # 0 literal, 1 literal and errors
-        print "terminal"
         result = bdd.false()
     # cache result
     lit_to_bdd[stripped_lit] = result
@@ -291,7 +291,7 @@ def trans_rel_bdd():
         b &= bdd.make_eq(bdd.BDD(get_primed_var(x.lit)),
                          get_bdd_for_lit(x.next))
     cached_transition = b
-    log.BDD_DMP(b, "Composed and cached the concrete transition relation")
+    log.BDD_DMP(b, "Composed and cached the concrete transition relation.")
     return b
 
 
@@ -317,14 +317,14 @@ def over_post_bdd(src_states_bdd, sys_strat=None,
         b &= temp.and_abstract(
             strat,
             bdd.get_cube(imap(
-                bdd.BDD,
+                funcomp(bdd.BDD, symbol_lit),
                 iterate_controllable_inputs()
             )))
         if restrict_like_crazy:
             b = b.restrict(src_states_bdd)
     b &= src_states_bdd
     b = b.exist_abstract(
-        bdd.get_cube(imap(bdd.BDD,
+        bdd.get_cube(imap(funcomp(bdd.BDD, symbol_lit),
                      chain(iterate_latches(),
                            iterate_uncontrollable_inputs()))))
     return unprime_latches_in_bdd(b)
@@ -347,7 +347,7 @@ def post_bdd(src_states_bdd, sys_strat=None, restrict_like_crazy=False,
 
     suc_bdd = trans.and_abstract(
         src_states_bdd,
-        bdd.get_cube(imap(bdd.BDD, chain(
+        bdd.get_cube(imap(funcomp(bdd.BDD, symbol_lit), chain(
             iterate_controllable_inputs(),
             iterate_uncontrollable_inputs(),
             iterate_latches())
@@ -355,7 +355,7 @@ def post_bdd(src_states_bdd, sys_strat=None, restrict_like_crazy=False,
     return unprime_latches_in_bdd(suc_bdd)
 
 
-def substitute_latches_next(bdd, use_trans=False, restrict_fun=None):
+def substitute_latches_next(b, use_trans=False, restrict_fun=None):
     latches = [x.lit for x in iterate_latches()]
     latch_funs = [get_bdd_for_lit(x.next) for x in
                   iterate_latches()]
@@ -364,9 +364,9 @@ def substitute_latches_next(bdd, use_trans=False, restrict_fun=None):
         trans = transition_bdd
         if restrict_fun is not None:
             trans = trans.restrict(restrict_fun)
-        primed_bdd = prime_latches_in_bdd(bdd)
+        primed_bdd = prime_latches_in_bdd(b)
         primed_latches = bdd.get_cube(
-            imap(lambda x: bdd.BDD(get_primed_var(x)),
+            imap(funcomp(bdd.BDD, get_primed_var, symbol_lit),
                  iterate_latches()))
         return trans.and_abstract(primed_bdd,
                                   primed_latches)
@@ -374,7 +374,7 @@ def substitute_latches_next(bdd, use_trans=False, restrict_fun=None):
         if restrict_fun is not None:
             latch_funs = [x.restrict(restrict_fun) for x in latch_funs]
         # take a transition step backwards
-        return bdd.compose(latches, latch_funs)
+        return b.compose(latches, latch_funs)
 
 
 def upre_bdd(dst_states_bdd, env_strat=None, get_strat=False,
@@ -391,9 +391,11 @@ def upre_bdd(dst_states_bdd, env_strat=None, get_strat=False,
         p_bdd &= env_strat
     # there is an uncontrollable action such that for all contro...
     temp_bdd = p_bdd.univ_abstract(
-        bdd.get_cube(imap(bdd.BDD, iterate_controllable_inputs())))
+        bdd.get_cube(imap(funcomp(bdd.BDD, symbol_lit),
+                          iterate_controllable_inputs())))
     p_bdd = temp_bdd.exist_abstract(
-        bdd.get_cube(imap(bdd.BDD, iterate_uncontrollable_inputs())))
+        bdd.get_cube(imap(funcomp(bdd.BDD, symbol_lit),
+                          iterate_uncontrollable_inputs())))
     # prepare the output
     if get_strat:
         return temp_bdd
@@ -401,7 +403,7 @@ def upre_bdd(dst_states_bdd, env_strat=None, get_strat=False,
         return p_bdd
 
 
-def pre_sys_bdd(dst_states_bdd, get_strat=False, use_trans=False):
+def cpre_bdd(dst_states_bdd, get_strat=False, use_trans=False):
     """ CPRE = AXu.EXc.EL' : T(L,Xu,Xc,L') ^ dst(L') """
     # take a transition step backwards
     p_bdd = substitute_latches_next(dst_states_bdd,
@@ -411,10 +413,58 @@ def pre_sys_bdd(dst_states_bdd, get_strat=False, use_trans=False):
     # controllable actions in the bdd
     if not get_strat:
         p_bdd = p_bdd.exist_abstract(
-            bdd.get_cube(imap(bdd.BDD, iterate_controllable_inputs())))
+            bdd.get_cube(imap(funcomp(bdd.BDD, symbol_lit),
+                              iterate_controllable_inputs())))
     p_bdd = p_bdd.univ_abstract(
-        bdd.get_cube(imap(bdd.BDD, iterate_uncontrollable_inputs())))
+        bdd.get_cube(imap(funcomp(bdd.BDD, symbol_lit),
+                          iterate_uncontrollable_inputs())))
     return p_bdd
+
+
+bdd_gate_cache = dict()
+
+
+def bdd2aig(a_bdd):
+    global bdd_gate_cache
+    """
+    Walk given BDD node (recursively).  If given input BDD requires
+    intermediate AND gates for its representation, the function adds them.
+    Literal representing given input BDD is `not` added to the spec.
+    """
+    if a_bdd in bdd_gate_cache:
+        return bdd_gate_cache[a_bdd]
+
+    if a_bdd.is_constant():
+        res = int(a_bdd == bdd.true())   # in aiger 0/1 = False/True
+        return res
+    # get an index of variable,
+    # all variables used in bdds also introduced in aiger,
+    # except fake error latch literal,
+    # but fake error latch will not be used in output functions (at least we
+    # don't need this..)
+    a_lit = a_bdd.get_index()
+    assert (a_lit != error_fake_latch.lit), ("using error latch in the " +
+                                             "definition of output " +
+                                             "function is not allowed")
+    t_bdd = a_bdd.then_child()
+    e_bdd = a_bdd.else_child()
+    t_lit = bdd2aig(t_bdd)
+    e_lit = bdd2aig(e_bdd)
+    # ite(a_bdd, then_bdd, else_bdd)
+    # = a*then + !a*else
+    # = !(!(a*then) * !(!a*else))
+    # -> in general case we need 3 more ANDs
+    a_t_lit = get_optimized_and_lit(a_lit, t_lit)
+    na_e_lit = get_optimized_and_lit(negate_lit(a_lit), e_lit)
+    n_a_t_lit = negate_lit(a_t_lit)
+    n_na_e_lit = negate_lit(na_e_lit)
+    ite_lit = get_optimized_and_lit(n_a_t_lit, n_na_e_lit)
+    res = negate_lit(ite_lit)
+    if a_bdd.is_complement():
+        res = negate_lit(res)
+    # cache result
+    bdd_gate_cache[a_bdd] = res
+    return res
 
 
 ###################### CNF stuff ################

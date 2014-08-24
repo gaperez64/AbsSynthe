@@ -242,7 +242,7 @@ def make_impl(b, c):
 
 
 def get_clause(bs):
-    assert len(bs)
+    assert bs
     bs
     clause = false()
     for b in bs:
@@ -251,7 +251,7 @@ def get_clause(bs):
 
 
 def get_cube(bs):
-    assert len(bs)
+    assert bs
 
     cube = true()
     for b in bs:

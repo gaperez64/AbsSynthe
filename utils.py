@@ -22,6 +22,7 @@ Universite Libre de Bruxelles
 gperezme@ulb.ac.be
 """
 
+from functools import reduce
 import log
 
 
@@ -43,3 +44,7 @@ def fixpoint(s, fun, early_exit=never):
             return cur
     log.DBG_MSG("Fixpoint reached after " + str(cnt) + " steps.")
     return cur
+
+
+def funcomp(*functions):
+    return reduce(lambda f, g: lambda x: f(g(x)), functions)

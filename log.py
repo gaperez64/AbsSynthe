@@ -26,7 +26,7 @@ import time
 
 debug = False
 log = False
-warn = False
+warn = True
 bdd_dmp = False
 reg_accum = dict()
 run_clk = None

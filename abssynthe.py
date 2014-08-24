@@ -23,10 +23,12 @@ gperezme@ulb.ac.be
 """
 
 import argparse
-from utils import fixpoint
+from algos import (
+    backward_upre_synth,
+    extract_output_funs
+)
 import aig
 import log
-import bdd
 
 
 EXIT_STATUS_REALIZABLE = 10
@@ -34,26 +36,20 @@ EXIT_STATUS_UNREALIZABLE = 20
 
 
 def synth(argv):
-    init_state_bdd = aig.trans_rel_bdd_bdd()
-    error_bdd = bdd.BDD(aig.error_fake_latch.lit)
-
-    log.DBG_MSG("Computing fixpoint of UPRE")
-    win_region = ~fixpoint(
-        error_bdd,
-        fun=lambda x: aig.upre_bdd(
-            x, restrict_like_crazy=argv.restrict_like_crazy,
-            use_trans=argv.use_trans),
-        early_exit=lambda x: x & init_state_bdd != bdd.false()
-    )
-
-    if win_region & init_state_bdd == bdd.false():
-        log.LOG_MSG("The spec is unrealizable.")
-        log.LOG_ACCUM()
+    w = backward_upre_synth(restrict_like_crazy=argv.restrict_like_crazy,
+                            use_trans=argv.use_trans)
+    # check if realizable and write output file
+    if w is None:
         return False
-    else:
-        log.LOG_MSG("The spec is realizable.")
-        log.LOG_ACCUM()
-        return True
+
+    if argv.out_file is not None:
+        n_strategy = aig.cpre_bdd(w, get_strat=True)
+        func_per_output = extract_output_funs(n_strategy, care_set=w)
+        for (c, func_bdd) in func_per_output.items():
+            aig.input2and(c, aig.bdd2aig(func_bdd))
+        aig.write_spec(argv.out_file)
+
+    return True
 
 
 def main():
@@ -78,6 +74,9 @@ def main():
     args = parser.parse_args()
     # initialize the log verbose level
     log.parse_verbose_level(args.verbose_level)
+    # parse the input spec
+    aig.parse_into_spec(args.spec, intro_error_latch=True)
+    # realizability / synthesis
     is_realizable = synth(args)
     exit([EXIT_STATUS_UNREALIZABLE, EXIT_STATUS_REALIZABLE][is_realizable])
 
