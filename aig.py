@@ -22,7 +22,7 @@ Universite Libre de Bruxelles
 gperezme@ulb.ac.be
 """
 
-from itertools import imap
+from itertools import imap, chain
 from aiger_swig.aiger_wrap import (
     get_aiger_symbol,
     aiger_init,
@@ -263,6 +263,20 @@ def get_bdd_for_lit(lit):
     return result
 
 
+def prime_latches_in_bdd(bdd):
+    # unfortunately swap_variables needs a list
+    latches = [x.lit for x in iterate_latches()]
+    platches = map(get_primed_var, latches)
+    return bdd.swap_variables(latches, platches)
+
+
+def unprime_latches_in_bdd(bdd):
+    # unfortunately swap_variables needs a list
+    latches = [x.lit for x in iterate_latches()]
+    platches = map(get_primed_var, latches)
+    return bdd.swap_variables(platches, latches)
+
+
 cached_transition = None
 
 
@@ -288,7 +302,8 @@ def init_state_bdd():
     return b
 
 
-def single_post_bdd(src_states_bdd, sys_strat=None):
+def over_post_bdd(src_states_bdd, sys_strat=None,
+                  restrict_like_crazy=False):
     """ Over-approximated version of concrete post which can be done even
     without the transition relation """
     strat = bdd.true()
@@ -299,26 +314,31 @@ def single_post_bdd(src_states_bdd, sys_strat=None):
     for x in iterate_latches():
         temp = bdd.make_eq(bdd.BDD(get_primed_var(x.lit)),
                            get_bdd_for_lit(x.next))
-        b &= temp.and_abstract(strat,
-                               bdd.get_cube(imap(bdd.BDD,
-                                            iterate_controllable_inputs())))
+        b &= temp.and_abstract(
+            strat,
+            bdd.get_cube(imap(
+                bdd.BDD,
+                iterate_controllable_inputs()
+            )))
         if restrict_like_crazy:
             b = b.restrict(src_states_bdd)
     b &= src_states_bdd
     b = b.exist_abstract(
-        bdd.get_cube(get_all_latches_as_bdds() +
-                     get_uncontrollable_inputs_bdds()))
+        bdd.get_cube(imap(bdd.BDD,
+                     chain(iterate_latches(),
+                           iterate_uncontrollable_inputs()))))
     return unprime_latches_in_bdd(b)
 
 
-def post_bdd(src_states_bdd, sys_strat=None, restrict_like_crazy=False):
+def post_bdd(src_states_bdd, sys_strat=None, restrict_like_crazy=False,
+             use_trans=False, over_approx=False):
     """
     POST = EL.EXu.EXc : src(L) ^ T(L,Xu,Xc,L') [^St(L,Xu,Xc)]
     optional argument fixes possible actions for the environment
     """
-    if not use_trans:
-        return single_post_bdd(src_states_bdd, sys_strat)
-    transition_bdd = compose_transition_bdd()
+    if not use_trans or over_approx:
+        return over_post_bdd(src_states_bdd, sys_strat)
+    transition_bdd = trans_rel_bdd()
     trans = transition_bdd
     if sys_strat is not None:
         trans &= sys_strat
@@ -327,126 +347,73 @@ def post_bdd(src_states_bdd, sys_strat=None, restrict_like_crazy=False):
 
     suc_bdd = trans.and_abstract(
         src_states_bdd,
-        bdd.get_cube(
-            get_controllable_inputs_bdds() +
-            get_uncontrollable_inputs_bdds() +
-            get_all_latches_as_bdds()))
+        bdd.get_cube(imap(bdd.BDD, chain(
+            iterate_controllable_inputs(),
+            iterate_uncontrollable_inputs(),
+            iterate_latches())
+        )))
     return unprime_latches_in_bdd(suc_bdd)
 
 
-def single_pre_bdd(dst_states_bdd, strat=None, restrict_like_crazy=False):
-    if strat is None:
-        strat = bdd.true()
-
+def substitute_latches_next(bdd, use_trans=False, restrict_fun=None):
     latches = [x.lit for x in iterate_latches()]
     latch_funs = [get_bdd_for_lit(x.next) for x in
                   iterate_latches()]
-    if restrict_like_crazy:
-        latch_funs = [x.restrict(~dst_states_bdd) for x in latch_funs]
-    # take a transition step backwards
-    p_bdd = dst_states_bdd.compose(latches, latch_funs)
-    # use the given strategy
-    p_bdd &= strat
-    p_bdd = p_bdd.exist_abstract(
-        bdd.get_cube(get_uncontrollable_inputs_bdds() +
-                     get_controllable_inputs_bdds()))
-    return p_bdd
-
-
-def single_pre_env_bdd(dst_states_bdd, env_strat=None, get_strat=False,
-                       restrict_like_crazy=False):
-    if env_strat is not None:
-        strat = env_strat
+    if use_trans:
+        transition_bdd = trans_rel_bdd()
+        trans = transition_bdd
+        if restrict_fun is not None:
+            trans = trans.restrict(restrict_fun)
+        primed_bdd = prime_latches_in_bdd(bdd)
+        primed_latches = bdd.get_cube(
+            imap(lambda x: bdd.BDD(get_primed_var(x)),
+                 iterate_latches()))
+        return trans.and_abstract(primed_bdd,
+                                  primed_latches)
     else:
-        strat = bdd.true()
+        if restrict_fun is not None:
+            latch_funs = [x.restrict(restrict_fun) for x in latch_funs]
+        # take a transition step backwards
+        return bdd.compose(latches, latch_funs)
 
-    latches = [x.lit for x in iterate_latches()]
-    latch_funs = [get_bdd_for_lit(x.next) for x in
-                  iterate_latches()]
-    if restrict_like_crazy:
-        latch_funs = [x.restrict(~dst_states_bdd) for x in latch_funs]
+
+def upre_bdd(dst_states_bdd, env_strat=None, get_strat=False,
+             restrict_like_crazy=False, use_trans=False):
+    """
+    UPRE = EXu.AXc.EL' : T(L,Xu,Xc,L') ^ dst(L') [^St(L,Xu)]
+    """
     # take a transition step backwards
-    p_bdd = dst_states_bdd.compose(latches, latch_funs)
+    p_bdd = substitute_latches_next(dst_states_bdd,
+                                    restrict_fun=~dst_states_bdd,
+                                    use_trans=use_trans)
     # use the given strategy
-    p_bdd &= strat
+    if env_strat is not None:
+        p_bdd &= env_strat
     # there is an uncontrollable action such that for all contro...
     temp_bdd = p_bdd.univ_abstract(
-        bdd.get_cube(get_controllable_inputs_bdds()))
+        bdd.get_cube(imap(bdd.BDD, iterate_controllable_inputs())))
     p_bdd = temp_bdd.exist_abstract(
-        bdd.get_cube(get_uncontrollable_inputs_bdds()))
+        bdd.get_cube(imap(bdd.BDD, iterate_uncontrollable_inputs())))
+    # prepare the output
     if get_strat:
         return temp_bdd
     else:
         return p_bdd
 
 
-def single_pre_sys_bdd(dst_states_bdd, get_strat=False):
-    latches = [x.lit for x in iterate_latches()]
-    latch_funs = [get_bdd_for_lit(x.next) for x in
-                  iterate_latches()]
+def pre_sys_bdd(dst_states_bdd, get_strat=False, use_trans=False):
+    """ CPRE = AXu.EXc.EL' : T(L,Xu,Xc,L') ^ dst(L') """
     # take a transition step backwards
-    p_bdd = dst_states_bdd.compose(latches, latch_funs)
+    p_bdd = substitute_latches_next(dst_states_bdd,
+                                    use_trans=use_trans)
     # for all uncontrollable action there is a contro...
-    # note: if argument as_strat == True then we leave the "good"
+    # note: if argument get_strat == True then we leave the "good"
     # controllable actions in the bdd
     if not get_strat:
         p_bdd = p_bdd.exist_abstract(
-            bdd.get_cube(get_controllable_inputs_bdds()))
-        p_bdd = p_bdd.univ_abstract(
-            bdd.get_cube(get_uncontrollable_inputs_bdds()))
-    return p_bdd
-
-
-def pre_env_bdd(dst_states_bdd, env_strat=None, get_strat=False,
-                restrict_like_crazy=False):
-    """
-    UPRE = EXu.AXc.EL' : T(L,Xu,Xc,L') ^ dst(L') [^St(L,Xu)]
-    optional arguments fix possible actions for the environment
-    and possible actions for the controller
-    """
-    # can we use the transition relation?
-    if not use_trans:
-        return single_pre_env_bdd(dst_states_bdd, env_strat, get_strat)
-    # do as promised
-    transition_bdd = compose_transition_bdd()
-    trans = transition_bdd
-    if env_strat is not None:
-        trans &= env_strat
-    if restrict_like_crazy:
-        trans = trans.restrict(~dst_states_bdd)
-
-    primed_states = prime_latches_in_bdd(dst_states_bdd)
-    primed_latches = prime_latches_in_bdd(bdd.get_cube(
-        get_all_latches_as_bdds()))
-    p_bdd = trans.and_abstract(primed_states,
-                               primed_latches)
-    temp_bdd = p_bdd.univ_abstract(
-        bdd.get_cube(get_controllable_inputs_bdds()))
-    p_bdd = temp_bdd.exist_abstract(
-        bdd.get_cube(get_uncontrollable_inputs_bdds()))
-
-    if get_strat:
-        return temp_bdd
-    else:
-        return p_bdd
-
-
-def pre_sys_bdd(dst_states_bdd):
-    """ CPRE = AXu.EXc.EL' : T(L,Xu,Xc,L') ^ dst(L') """
-    # can se use the transition relation?
-    if not use_trans:
-        return single_pre_sys_bdd(dst_states_bdd)
-    # get the transition relation and do as usual
-    transition_bdd = compose_transition_bdd()
-    primed_states = prime_latches_in_bdd(dst_states_bdd)
-    abstract_bdd = prime_latches_in_bdd(bdd.get_cube(
-        get_all_latches_as_bdds() +
-        get_controllable_inputs_bdds()))
-    p_bdd = transition_bdd.and_abstract(primed_states,
-                                        abstract_bdd)
+            bdd.get_cube(imap(bdd.BDD, iterate_controllable_inputs())))
     p_bdd = p_bdd.univ_abstract(
-        bdd.get_cube(get_uncontrollable_inputs_bdds()))
-
+        bdd.get_cube(imap(bdd.BDD, iterate_uncontrollable_inputs())))
     return p_bdd
 
 

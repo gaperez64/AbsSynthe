@@ -156,9 +156,9 @@ def get_all_latches_as_bdds():
 
 
 def unprime_latches_in_bdd(states_bdd):
-    latches = [x.lit for x in iterate_latches_and_error()]
-    platches = [get_primed_variable(x.lit) for x in
-                iterate_latches_and_error()]
+    # unfortunately swap_variables requires a list and not an iterator
+    latches = [x.lit for x in iterate_latches()]
+    platches = map(get_primed_variable, latches)
     return states_bdd.swap_variables(platches, latches)
 
 
