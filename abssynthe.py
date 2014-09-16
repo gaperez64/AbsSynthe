@@ -61,7 +61,7 @@ def main():
                         help="Compute a transition relation")
     parser.add_argument("-rc", "--restrict_like_crazy", action="store_true",
                         dest="restrict_like_crazy", default=False,
-                        help=("Use restrict to minimize BDDs" +
+                        help=("Use restrict to minimize BDDs " +
                               "everywhere possible"))
     parser.add_argument("-v", "--verbose", dest="verbose_level",
                         default="", required=False,
