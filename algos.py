@@ -48,11 +48,11 @@ def backward_upre_synth(restrict_like_crazy=False, use_trans=False):
 
     if win_region & init_state_bdd == bdd.false():
         log.LOG_MSG("The spec is unrealizable.")
-        log.LOG_ACCUM()
         return None
     else:
         log.LOG_MSG("The spec is realizable.")
-        log.LOG_ACCUM()
+        log.DBG_MSG("Win region bdd node count = " +
+                    str(win_region.dag_size()))
         return win_region
 
 

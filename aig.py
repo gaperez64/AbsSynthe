@@ -415,9 +415,9 @@ def cpre_bdd(dst_states_bdd, get_strat=False, use_trans=False):
         p_bdd = p_bdd.exist_abstract(
             bdd.get_cube(imap(funcomp(bdd.BDD, symbol_lit),
                               iterate_controllable_inputs())))
-    p_bdd = p_bdd.univ_abstract(
-        bdd.get_cube(imap(funcomp(bdd.BDD, symbol_lit),
-                          iterate_uncontrollable_inputs())))
+        p_bdd = p_bdd.univ_abstract(
+            bdd.get_cube(imap(funcomp(bdd.BDD, symbol_lit),
+                              iterate_uncontrollable_inputs())))
     return p_bdd
 
 

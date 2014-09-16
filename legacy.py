@@ -708,7 +708,7 @@ def walk(a_bdd):
 def model_to_aiger(c_bdd, func_bdd):
     c_lit = c_bdd.get_index()
     func_as_aiger_lit = walk(func_bdd)
-    aig.change_input_to_and(c_lit, func_as_aiger_lit)
+    aig.input2and(c_lit, func_as_aiger_lit)
 
 
 def synthesize():
