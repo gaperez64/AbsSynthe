@@ -1,6 +1,7 @@
 /***************************************************************************
 Copyright (c) 2011, Siert Wieringa, Aalto University, Finland.
 Copyright (c) 2006-2011, Armin Biere, Johannes Kepler University.
+Copyright (c) 2014, Guillermo A. Perez, Universite Libre de Bruxelles.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to
@@ -282,7 +283,7 @@ aiger_delete_symbols_aux (aiger_private * private,
   return res;
 }
 
-void
+static void
 aiger_delete_symbols (aiger_private * private,
 		      aiger_symbol * symbols, unsigned size)
 {
@@ -2718,16 +2719,20 @@ aiger_is_and (aiger * public, unsigned lit)
   return res;
 }
 
-/******** ADDITIONAL STUFF FOR AIGER SWIG ************/
-aiger_symbol* get_aiger_symbol(aiger_symbol* c, int i) { return &c[i]; }
-void swap_values(void* a, void* b, unsigned size) {
+/* Additional helpers to be able to manipulate AIGER miters after synthesis
+ * of the specification has been successful.
+ */
+static void
+swap_values(void* a, void* b, unsigned size) {
     char tmp[size];
 
     memcpy(tmp, a, size);
     memcpy(a, b, size);
     memcpy(b, tmp, size);
 }
-void aiger_remove_input(aiger* public, unsigned input_lit) {
+
+static void
+aiger_remove_input(aiger* public, unsigned input_lit) {
     IMPORT_private_FROM (public);
     assert (!aiger_error (public));
     aiger_symbol* input_symbol = aiger_is_input(public, input_lit);
@@ -2738,7 +2743,8 @@ void aiger_remove_input(aiger* public, unsigned input_lit) {
         aiger_symbol* cur = public->inputs + i;
         if (cur >= input_symbol) { //assumes that inputs were allocated on heap..
             swap_values(cur, cur + 1, sizeof(aiger_symbol));
-            // we also have to exchange type->idx, which is an address of aiger_symbol
+            // we also have to exchange type->idx,
+            // which is an address of aiger_symbol
             // within public->inputs
             aiger_type* cur_type = aiger_lit2type(public, cur->lit);
             aiger_type* next_type = aiger_lit2type(public, (cur+1)->lit);
@@ -2750,14 +2756,25 @@ void aiger_remove_input(aiger* public, unsigned input_lit) {
     aiger_symbol* where_to_del = public->inputs + public->num_inputs - 1;
     aiger_delete_symbols_aux(private, where_to_del, 1);
     aiger_type* type = aiger_import_literal(private, input_lit);
-    //clean to provent from being id'd as input
+    //clean to prevent from being id'd as input
     type->and = 0;
     type->input = 0;
     type->latch = 0;
 
     public->num_inputs--;
 }
-void aiger_redefine_input_as_and(aiger* public, unsigned input_lit, unsigned rhs0, unsigned rhs1){
+
+void
+aiger_redefine_input_as_and(aiger* public, unsigned input_lit, 
+                            unsigned rhs0, unsigned rhs1){
     aiger_remove_input(public, input_lit);
     aiger_add_and(public, input_lit, rhs0, rhs1);
+}
+
+void
+aiger_remove_outputs(aiger* public) {
+    IMPORT_private_FROM (public);
+    assert (!aiger_error (public));
+    aiger_delete_symbols_aux (private, public->outputs, private->size_outputs);
+    public->num_outputs--;
 }

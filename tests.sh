@@ -620,7 +620,7 @@ do
      #------------------------------------------------------------------------------
      # BEGIN execution of synthesis tool
      echo " Running the synthesizer ... "
-     ${GNU_TIME} --output=${RES_TXT_FILE} -a -f "Synthesis time: %e sec (Real time) / %U sec (User CPU time)" ${CALL_SYNTH_TOOL} $infile_path "-o" $outfile_path >> ${RES_TXT_FILE}
+     ${GNU_TIME} --output=${RES_TXT_FILE} -a -f "Synthesis time: %e sec (Real time) / %U sec (User CPU time)" ${CALL_SYNTH_TOOL} $infile_path "-o" $outfile_path "-ot" >> ${RES_TXT_FILE}
      exit_code=$?
      echo "  Done running the synthesizer. "
      # END execution of synthesis tool
@@ -645,18 +645,18 @@ do
 
      #------------------------------------------------------------------------------
      # BEGIN analyze realizability verdict
-     if [[ $exit_code == $REAL && $correct_real == $UNREAL ]];
-     then
-         echo "  ERROR: Tool reported 'realizable' for an unrealizable spec!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-         echo "Realizability correct: 0 (tool reported 'realizable' instead of 'unrealizable')" 1>> $RES_TXT_FILE
-         continue
-     fi
-     if [[ $exit_code == $UNREAL && $correct_real == $REAL ]];
-     then
-         echo "  ERROR: Tool reported 'unrealizable' for a realizable spec!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-         echo "Realizability correct: 0 (tool reported 'unrealizable' instead of 'realizable')" 1>> $RES_TXT_FILE
-         continue
-     fi
+#     if [[ $exit_code == $REAL && $correct_real == $UNREAL ]];
+#     then
+#         echo "  ERROR: Tool reported 'realizable' for an unrealizable spec!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+#         echo "Realizability correct: 0 (tool reported 'realizable' instead of 'unrealizable')" 1>> $RES_TXT_FILE
+#         continue
+#     fi
+#     if [[ $exit_code == $UNREAL && $correct_real == $REAL ]];
+#     then
+#         echo "  ERROR: Tool reported 'unrealizable' for a realizable spec!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+#         echo "Realizability correct: 0 (tool reported 'unrealizable' instead of 'realizable')" 1>> $RES_TXT_FILE
+#         continue
+#     fi
      if [[ $exit_code == $UNREAL ]];
      then
          echo "  The spec has been correctly identified as 'unrealizable'."
@@ -664,50 +664,50 @@ do
      else
          echo "  The spec has been correctly identified as 'realizable'."
          echo "Realizability correct: 1 (realizable)" 1>> $RES_TXT_FILE
-
-         # END analyze realizability verdict
-
-         #------------------------------------------------------------------------------
-         # BEGIN syntactic check
-         echo " Checking the synthesis result syntactically ... "
-         if [ -f $outfile_path ];
-         then
-             echo "  Output file has been created."
-             python $SYNT_CHECKER $infile_path $outfile_path
-             exit_code=$?
-             if [[ $exit_code == 0 ]];
-             then
-               echo "  Output file is OK syntactically."
-               echo "Output file OK: 1" 1>> $RES_TXT_FILE
-             else
-               echo "  Output file is NOT OK syntactically."
-               echo "Output file OK: 0" 1>> $RES_TXT_FILE
-             fi
-         else
-             echo "  Output file has NOT been created!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-             echo "Output file OK: 0 (no output file created)" 1>> $RES_TXT_FILE
-             continue
-         fi
-         # TODO: perform syntactic check here.
-         # END syntactic check
-
-         #------------------------------------------------------------------------------
-         # BEGIN model checking
-         echo -n " Model checking the synthesis result ... "
-         ${GNU_TIME} --output=${RES_TXT_FILE} -a -f "Model-checking time: %e sec (Real time) / %U sec (User CPU time)" $MODEL_CHECKER $outfile_path > /dev/null 2>&1
-         check_res=$?
-         echo " done. "
-         if [[ $check_res == 20 ]];
-         then
-             echo "  Model-checking was successful."
-             echo "Model-checking: 1" 1>> $RES_TXT_FILE
-         else
-             echo "  Model-checking the resulting circuit failed!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-             echo "Model-checking: 0 (exit code: $check_res)" 1>> $RES_TXT_FILE
-         fi
-         # END end checking
-
-         #------------------------------------------------------------------------------
+#
+#         # END analyze realizability verdict
+#
+#         #------------------------------------------------------------------------------
+#         # BEGIN syntactic check
+#         echo " Checking the synthesis result syntactically ... "
+#         if [ -f $outfile_path ];
+#         then
+#             echo "  Output file has been created."
+#             python $SYNT_CHECKER $infile_path $outfile_path
+#             exit_code=$?
+#             if [[ $exit_code == 0 ]];
+#             then
+#               echo "  Output file is OK syntactically."
+#               echo "Output file OK: 1" 1>> $RES_TXT_FILE
+#             else
+#               echo "  Output file is NOT OK syntactically."
+#               echo "Output file OK: 0" 1>> $RES_TXT_FILE
+#             fi
+#         else
+#             echo "  Output file has NOT been created!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+#             echo "Output file OK: 0 (no output file created)" 1>> $RES_TXT_FILE
+#             continue
+#         fi
+#         # TODO: perform syntactic check here.
+#         # END syntactic check
+#
+#         #------------------------------------------------------------------------------
+#         # BEGIN model checking
+#         echo -n " Model checking the synthesis result ... "
+#         ${GNU_TIME} --output=${RES_TXT_FILE} -a -f "Model-checking time: %e sec (Real time) / %U sec (User CPU time)" $MODEL_CHECKER $outfile_path > /dev/null 2>&1
+#         check_res=$?
+#         echo " done. "
+#         if [[ $check_res == 20 ]];
+#         then
+#             echo "  Model-checking was successful."
+#             echo "Model-checking: 1" 1>> $RES_TXT_FILE
+#         else
+#             echo "  Model-checking the resulting circuit failed!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+#             echo "Model-checking: 0 (exit code: $check_res)" 1>> $RES_TXT_FILE
+#         fi
+#         # END end checking
+#
+#         #------------------------------------------------------------------------------
          # BEGIN determining circuit size
          aig_header_in=$(head -n 1 $infile_path)
          aig_header_out=$(head -n 1 $outfile_path)
@@ -715,7 +715,7 @@ do
          echo "Raw AIGER output size: $aig_header_out" 1>> $RES_TXT_FILE
          # START ABC optimization to compare sizes
          ../aiger/aigtoaig $outfile_path "${outfile_path}.aig"
-         ../ABC/abc -c "read_aiger ${outfile_path}.aig; strash; refactor; rewrite; dfraig; rewrite; dfraig    ; write_aiger -s ${outfile_path}_opt.aig"
+         ../ABC/abc -c "read_aiger ${outfile_path}.aig; strash; refactor; rewrite; dfraig; scleanup; rewrite; dfraig; write_aiger -s ${outfile_path}_opt.aig"
          ../aiger/aigtoaig "${outfile_path}_opt.aig" "${outfile_path}_opt.aag"
          aig_header_opt=$(head -n 1 "${outfile_path}_opt.aag")
          echo "Raw AIGER opt size: $aig_header_opt" 1>> $RES_TXT_FILE

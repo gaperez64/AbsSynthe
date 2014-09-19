@@ -1,5 +1,6 @@
 /***************************************************************************
 Copyright (c) 2006 - 2011, Armin Biere, Johannes Kepler University.
+Copyright (c) 2014, Guillermo A. Perez, Universite Libre de Bruxelles.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to
@@ -289,7 +290,8 @@ const unsigned char * aiger_coi (aiger *);		/* [1..maxvar] */
  * used.  The latter returns the previously returned error message.
  */
 const char *aiger_read_from_file (aiger *, FILE *);
-const char *aiger_read_from_string (aiger *, const char *str);
+/* this is not actually implemented:
+const char *aiger_read_from_string (aiger *, const char *str);*/
 const char *aiger_read_generic (aiger *, void *state, aiger_get);
 
 /*------------------------------------------------------------------------*/
@@ -352,5 +354,13 @@ int aiger_lit2tag (aiger *, unsigned lit);
 aiger_symbol *aiger_is_input (aiger *, unsigned lit);
 aiger_symbol *aiger_is_latch (aiger *, unsigned lit);
 aiger_and *aiger_is_and (aiger *, unsigned lit);
+
+/*------------------------------------------------------------------------*/
+/* Mods to be able to redefine inputs as and gates and remove outputs. This are
+ * necessary to dump the composition of a given miter spec with a synthesized
+ * transducer for the spec and/or just the transducer itself.
+ */
+void aiger_redefine_input_as_and(aiger*, unsigned, unsigned, unsigned);
+void aiger_remove_outputs(aiger*);
 
 #endif

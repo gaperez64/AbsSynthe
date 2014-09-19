@@ -43,10 +43,18 @@ def synth(argv):
         return False
 
     if argv.out_file is not None:
+        c_input_info = []
         n_strategy = aig.cpre_bdd(w, get_strat=True)
         func_per_output = extract_output_funs(n_strategy, care_set=w)
+        if argv.only_transducer:
+            for c in aig.iterate_controllable_inputs():
+                c_input_info.append((c.lit, c.name))
         for (c, func_bdd) in func_per_output.items():
             aig.input2and(c, aig.bdd2aig(func_bdd))
+        if argv.only_transducer:
+            aig.remove_outputs()
+            for (l, n) in c_input_info:
+                aig.add_output(l, n)
         aig.write_spec(argv.out_file)
 
     return True
@@ -63,14 +71,21 @@ def main():
                         dest="restrict_like_crazy", default=False,
                         help=("Use restrict to minimize BDDs " +
                               "everywhere possible"))
-    parser.add_argument("-v", "--verbose", dest="verbose_level",
+    parser.add_argument("-v", "--verbose_level", dest="verbose_level",
                         default="", required=False,
                         help="Verbose level = (D)ebug, (W)arnings, " +
                              "(L)og messages, (B)DD dot dumps")
-    parser.add_argument("--out", "-o", dest="out_file", type=str,
+    parser.add_argument("-o", "--out_file", dest="out_file", type=str,
                         required=False, default=None,
-                        help=("output file (only used if "
-                              "spec is realizable)"))
+                        help=("Output file path. If file extension = .aig, " +
+                              "binary output format will be used, if " +
+                              "file extension = .aag, ASCII output will be " +
+                              "used. The argument is ignored if the spec is " +
+                              "not realizable."))
+    parser.add_argument("-ot", "--only_transducer", action="store_true",
+                        dest="only_transducer", default=False,
+                        help=("Output only the synth'd transducer (i.e. " +
+                              "remove the error monitor logic)."))
     args = parser.parse_args()
     # initialize the log verbose level
     log.parse_verbose_level(args.verbose_level)

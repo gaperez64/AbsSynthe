@@ -31,11 +31,11 @@ from aiger_swig.aiger_wrap import (
     aiger_is_latch,
     aiger_is_and,
     aiger_add_and,
+    aiger_add_output,
     aiger_symbol,
     aiger_open_and_write_to_file,
-    #aiger_write_to_string,
     aiger_redefine_input_as_and,
-    #aiger_ascii_mode
+    aiger_remove_outputs,
 )
 from utils import funcomp
 import sat
@@ -155,6 +155,14 @@ def get_err_symbol():
 
 def add_gate(fresh_var, conjunct1, conjunct2):
     return aiger_add_and(spec, fresh_var, conjunct1, conjunct2)
+
+
+def add_output(lit, name):
+    return aiger_add_output(spec, lit, name)
+
+
+def remove_outputs():
+    return aiger_remove_outputs(spec)
 
 
 def _iterate_inputs(filter_func):
