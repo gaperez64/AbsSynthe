@@ -481,59 +481,85 @@ cached_tr_cnf = None
 
 def trans_rel_CNF():
     global cached_tr_cnf
+    # we create a fake latch for the error
+    introduce_error_latch()
 
     if cached_tr_cnf is not None:
         return cached_tr_cnf
 
-    # We need to do a first pass to determine which variables are to be
-    # created because a negation took place, we will also create the first
-    # part of the formula on the way.
     cache = {}
 
-    # returns the lits for the conjunction and a set of variables that have to
-    # be further explored as a sub tree
-    def _rec_dfs(lit):
+    # returns the set A = {a_0,a_1,...} from the expression AND(a_0,a_1,...)
+    # and a subset B <= A of those that were negated and need more exploring
+    def _rec_mand(lit):
+        assert not lit_is_negated(lit)
         if lit in cache:
             return cache[lit]
         (i, l, a) = get_lit_type(lit)
-        # base cases: inputs or latches
-        if l or i:
-            result = (set([lit]), set())
-        # ands require we recurse if the sibling is not negated
-        elif a:
-            if lit_is_negated(a.rhs0) and lit_is_and(a.rhs0):
-                x = strip_lit(a.rhs0)
-                result0 = (set([x * -1]), set([x]))
+        assert (a and not i and not l)
+        # init variables
+        A = set()
+        B = set()
+        # base cases: children are leaves
+        (i, l, aa) = get_lit_type(a.rhs0)
+        if i or l:
+            if lit_is_negated(a.rhs0):
+                A.add(strip_lit(a.rhs0) * -1)
             else:
-                result0 = _rec_dfs(a.rhs0)
-            if lit_is_negated(a.rhs1) and lit_is_and(a.rhs1):
-                x = strip_lit(a.rhs1)
-                result1 = (set([x * -1]), set([x]))
+                A.add(strip_lit(a.rhs0))
+        elif lit_is_negated(a.rhs0):  # AND with negation
+            A.add(strip_lit(a.rhs0) * -1)
+            B.add(strip_lit(a.rhs0))
+        else:  # recursive case: AND gate without negation
+            (rA, rB) = _rec_mand(strip_lit(a.rhs0))
+            A |= rA
+            B |= rB
+        # symmetric handling for a.rhs1
+        # base cases: children are leaves
+        (i, l, aa) = get_lit_type(a.rhs1)
+        if i or l:
+            if lit_is_negated(a.rhs1):
+                A.add(strip_lit(a.rhs1) * -1)
             else:
-                result1 = _rec_dfs(a.rhs1)
+                A.add(strip_lit(a.rhs1))
+        elif lit_is_negated(a.rhs1):  # AND with negation
+            A.add(strip_lit(a.rhs1) * -1)
+            B.add(strip_lit(a.rhs1))
+        else:  # recursive case: AND gate without negation
+            (rA, rB) = _rec_mand(strip_lit(a.rhs1))
+            A |= rA
+            B |= rB
+        # cache handling
+        cache[lit] = (A, B)
+        return (A, B)
 
-            result = tuple(map(set.union, result0, result1))
-        # terminals
-        else:
-            assert lit_is_negated(lit)
-            result = (set(), set())
-        cache[lit] = result
-        return result
-
-    # initialize sub tree list with latches
-    # TODO: handle latches.next being other stuff than just and gates...
-    sub_trees = set([(get_primed_var(x.lit) * -1, strip_lit(x.next))
-                     if lit_is_negated(x.next) and x.next > 1
-                     else (get_primed_var(x.lit), strip_lit(x.next))
-                     for x in iterate_latches()])
-    # call _rec_dfs for each sub tree
+    # per latch, handle the next function
     T = sat.CNF()
-    while sub_trees:
-        (o, x) = sub_trees.pop()
-        (v, t) = _rec_dfs(abs(x))
-        T.add_land(o, v)
-        sub_trees |= set([(y, y) for y in t])
-
+    for l in iterate_latches():
+        # easy case, the latch just directly maps input or terminal
+        (ii, ll, a) = get_lit_type(l.next)
+        if not a:
+            if l.next == 0 or l.next == 1:  # is it a terminal?
+                T.add_mand(get_primed_var(l.lit), [l.next])
+            else:  # otherwise
+                x = strip_lit(l.next) * -1 if lit_is_negated(l.next)\
+                    else strip_lit(l.next)
+                T.add_mand(get_primed_var(l.lit), [x])
+        else:  # complicated case, l.next is an AND
+            if lit_is_negated(l.next):
+                A = set([strip_lit(l.next) * -1])
+                B = set([strip_lit(l.next)])
+            else:
+                (A, B) = _rec_mand(l.next)
+            T.add_mand(get_primed_var(l.lit), A)
+            pending = B
+            # handle CNF for each pending gate
+            while pending:
+                cur = pending.pop()
+                (A, B) = _rec_mand(cur)
+                pending |= B
+                T.add_mand(cur, A)
+    # handle caching
     cached_tr_cnf = T
     return T
 
