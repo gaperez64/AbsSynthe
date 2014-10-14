@@ -28,6 +28,8 @@ from algos import (
     extract_output_funs
 )
 import aig
+import aig2bdd
+import bdd2aig
 import log
 
 
@@ -44,13 +46,13 @@ def synth(argv):
 
     if argv.out_file is not None:
         c_input_info = []
-        n_strategy = aig.cpre_bdd(w, get_strat=True)
+        n_strategy = aig2bdd.cpre_bdd(w, get_strat=True)
         func_per_output = extract_output_funs(n_strategy, care_set=w)
         if argv.only_transducer:
             for c in aig.iterate_controllable_inputs():
                 c_input_info.append((c.lit, c.name))
         for (c, func_bdd) in func_per_output.items():
-            aig.input2and(c, aig.bdd2aig(func_bdd))
+            aig.input2and(c, bdd2aig.bdd2aig(func_bdd))
         if argv.only_transducer:
             aig.remove_outputs()
             for (l, n) in c_input_info:

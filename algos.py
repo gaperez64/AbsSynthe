@@ -26,6 +26,7 @@ gperezme@ulb.ac.be
 from utils import fixpoint
 import log
 import aig
+import aig2bdd
 import bdd
 
 
@@ -34,13 +35,13 @@ import bdd
 # Returns None if Eve loses the game and a bdd with the winning states
 # otherwise.
 def backward_upre_synth(restrict_like_crazy=False, use_trans=False):
-    init_state_bdd = aig.init_state_bdd()
+    init_state_bdd = aig2bdd.init_state_bdd()
     error_bdd = bdd.BDD(aig.error_fake_latch.lit)
 
     log.DBG_MSG("Computing fixpoint of UPRE.")
     win_region = ~fixpoint(
         error_bdd,
-        fun=lambda x: x | aig.upre_bdd(
+        fun=lambda x: x | aig2bdd.upre_bdd(
             x, restrict_like_crazy=restrict_like_crazy,
             use_trans=use_trans),
         early_exit=lambda x: x & init_state_bdd != bdd.false()
