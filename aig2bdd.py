@@ -38,7 +38,6 @@ import bdd
 import log
 
 
-###################### BDD stuff ################
 lit_to_bdd = dict()
 bdd_to_lit = dict()
 
@@ -163,9 +162,6 @@ def post_bdd(src_states_bdd, sys_strat=None, restrict_like_crazy=False,
 
 
 def substitute_latches_next(b, use_trans=False, restrict_fun=None):
-    latches = [x.lit for x in iterate_latches()]
-    latch_funs = [get_bdd_for_lit(x.next) for x in
-                  iterate_latches()]
     if use_trans:
         transition_bdd = trans_rel_bdd()
         trans = transition_bdd
@@ -178,6 +174,9 @@ def substitute_latches_next(b, use_trans=False, restrict_fun=None):
         return trans.and_abstract(primed_bdd,
                                   primed_latches)
     else:
+        latches = [x.lit for x in iterate_latches()]
+        latch_funs = [get_bdd_for_lit(x.next) for x in
+                      iterate_latches()]
         if restrict_fun is not None:
             latch_funs = [x.restrict(restrict_fun) for x in latch_funs]
         # take a transition step backwards

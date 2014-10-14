@@ -24,6 +24,7 @@ gperezme@ulb.ac.be
 
 import argparse
 from algos import (
+    ABS_TECH,
     backward_upre_synth,
     extract_output_funs
 )
@@ -39,7 +40,8 @@ EXIT_STATUS_UNREALIZABLE = 20
 
 def synth(argv):
     w = backward_upre_synth(restrict_like_crazy=argv.restrict_like_crazy,
-                            use_trans=argv.use_trans)
+                            use_trans=argv.use_trans, use_abs=argv.use_abs,
+                            only_real=argv.out_file is None)
     # check if realizable and write output file
     if w is None:
         return False
@@ -62,10 +64,26 @@ def synth(argv):
     return True
 
 
+def parse_abs_tech(abs_arg):
+    if "D" == abs_arg:
+        return ABS_TECH.LOC_RED
+    elif "L" == abs_arg:
+        return ABS_TECH.PRED_ABS
+    elif "" == abs_arg:
+        return ABS_TECH.NONE
+    else:
+        log.WRN_MSG("Abs. tech '" + abs_arg + "' not valid. Ignored it.")
+        return None
+
+
 def main():
     parser = argparse.ArgumentParser(description="AIG Format Based Synth")
     parser.add_argument("spec", metavar="spec", type=str,
                         help="input specification in extended AIGER format")
+    parser.add_argument("-a", "--use_abs", dest="use_abs",
+                        default="", required=False,
+                        help=("Use abstraction techniques = (L)ocalization " +
+                              "reduction or (P)redicate abstraction"))
     parser.add_argument("-t", "--use_trans", action="store_true",
                         dest="use_trans", default=False,
                         help="Compute a transition relation")
@@ -91,6 +109,8 @@ def main():
     args = parser.parse_args()
     # initialize the log verbose level
     log.parse_verbose_level(args.verbose_level)
+    # parse the abstraction tech
+    args.use_abs = parse_abs_tech(args.use_abs)
     # parse the input spec
     aig.parse_into_spec(args.spec, intro_error_latch=True)
     # realizability / synthesis

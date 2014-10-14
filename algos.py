@@ -28,13 +28,118 @@ import log
 import aig
 import aig2bdd
 import bdd
+from bdd_abs import Abstraction
+
+
+class ABS_TECH:
+    LOC_RED = 1,
+    PRED_ABS = 2,
+    NONE = 3
+
+
+# Construct an initial abstraction of the game
+def init_abstraction():
+    all_latches = [x.lit for x in aig.iterate_latches()]
+    all_latches_next = (
+        [aig2bdd.get_bdd_for_lit(x.next) for x in aig.iterate_latches()] +
+        [aig2bdd.get_bdd_for_lit(aig.error_fake_latch.next)])
+    preds = Abstraction(supp=all_latches,
+                        supp_next=all_latches_next)
+    preds.add_fixed_pred("unsafe", bdd.BDD(aig.error_fake_latch.lit))
+    preds.add_fixed_pred("init", bdd.get_clause([bdd.BDD(l)
+                                                 for l in all_latches]))
+    log.DBG_MSG("Initial abstraction of the system computed.")
+    return preds
 
 
 # Our standard solver: compute the fixpoint MX.X U Upre(X) starting from the
 # error states (the transitionless version is a.k.a. Romain's algo).
 # Returns None if Eve loses the game and a bdd with the winning states
 # otherwise.
-def backward_upre_synth(restrict_like_crazy=False, use_trans=False):
+def backward_upre_synth(restrict_like_crazy=False, use_trans=False,
+                        use_abs=ABS_TECH.NONE, only_real=False):
+    # make sure that we have something to abstract
+    if use_abs != ABS_TECH.NONE and aig.num_latches() == 0:
+        log.WRN_MSG("No latches in spec. Defaulting to regular synthesis.")
+        use_abs = ABS_TECH.NONE
+
+    if use_abs == ABS_TECH.LOC_RED:
+        preds = init_abstraction()
+        abs_error_bdd = preds.alpha_under(bdd.BDD(aig.error_fake_latch.lit))
+        abs_init_bdd = preds.alpha_under(aig.init_state_bdd())
+        
+        while True:
+            # STEP 1: check if under-approx is losing
+            log.DBG_MSG("Computing over approx of FP")
+            under_fp = fixpoint(abs_error_bdd,
+                                fun=lambda x: x | preds.uupre_bdd(x))))
+            if (init_state_bdd & under_fp) != bdd.false():
+                return declare_winner(False)
+
+            # STEP 2: exhaust information from the abstract game, i.e.
+            # update the reachability information we have
+            log.start_clock()
+            prev_reach = bdd.false()
+            reach = reachable_bdd
+            while prev_reach != reach:
+                prev_reach = reach
+                # STEP 2.1: check if the over-approx is winning
+                log.DBG_MSG("Computing over approx of FP")
+                over_fp = fp(under_fp,
+                             fun=lambda x: (reach &
+                                            (x | pre_env_bdd_abs(x))))
+                if (over_fp & init_state_bdd) == bdd.false():
+                    log.DBG_MSG("FP of the over-approx losing region not initial")
+                    return declare_winner(True, gamma(under_fp))
+                # if there is no early exit we compute a strategy for Env
+                env_strats = pre_env_bdd_abs(over_fp, get_strat=True)
+                log.DBG_MSG("Computing over approx of Reach")
+                reach = fp(init_state_bdd,
+                           fun=lambda x: (reach & (x | post_bdd_abs(x,
+                                                   env_strats))))
+            log.stop_clock("oabs_time")
+
+            # STEP 3: refine or declare controllable
+            log.DBG_MSG("Concretizing the strategy of Env")
+            conc_env_strats = gamma(env_strats)
+            conc_reach = gamma(reach)
+            conc_under_fp = gamma(under_fp)
+            log.DBG_MSG("Taking one step of UPRE in the concrete game")
+            conc_step = single_pre_env_bdd(conc_under_fp,
+                                           env_strat=conc_env_strats)
+            conc_step &= conc_reach
+            if bdd.make_impl(conc_step, conc_under_fp) == bdd.true():
+                log.DBG_MSG("The concrete step revealed we are at the FP")
+                return declare_winner(True, conc_under_fp)
+            else:
+                # drop latches every number of steps
+                reset = False
+                if (steps != 0 and steps % local_loss_steps == 0):
+                    log.DBG_MSG("Dropping all visible latches!")
+                    reset = preds.drop_latches()
+                # add new predicates and reset caches if necessary
+                nu_losing_region = conc_step | conc_under_fp
+                reset |= preds.add_fixed_pred("reach", conc_reach)
+                reset |= preds.add_fixed_pred("unsafe", nu_losing_region)
+                # find interesting set of latches
+                log.DBG_MSG("Localization reduction step.")
+                reset |= preds.loc_red(not_imply=nu_losing_region)
+                log.DBG_MSG("# of predicates = " + str(len(preds.abs_blocks)))
+                if reset:
+                    reset_caches()
+                # update error bdd
+                log.push_accumulated("unsafe_bdd_size",
+                                     nu_losing_region.dag_size())
+                error_bdd = alpha_under(nu_losing_region)
+                # update reachable area
+                reachable_bdd = alpha_over(conc_reach)
+                steps += 1
+                log.push_accumulated("ref_cnt", 1)
+
+    elif use_abs == ABS_TECH.PRED_ABS:
+        log.WRN_MSG("Not implemented")
+        exit()
+
     init_state_bdd = aig2bdd.init_state_bdd()
     error_bdd = bdd.BDD(aig.error_fake_latch.lit)
 

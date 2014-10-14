@@ -22,18 +22,29 @@ Universite Libre de Bruxelles
 gperezme@ulb.ac.be
 """
 
-from itertools import imap, chain
+from itertools import imap
 import random
 import log
-import aig
+from aig import (
+    iterate_latches,
+    iterate_controllable_inputs,
+    iterate_uncontrollable_inputs,
+    get_primed_var,
+    error_fake_latch,
+    symbol_lit
+)
+from aig2bdd import (
+    get_bdd_for_lit
+)
+from utils import funcomp
 import bdd
 
 
 class Abstraction:
-    block_to_bdd = dict()
-    block_to_lset = dict()
+    pred_to_bdd = dict()
+    pred_to_lset = dict()
     fixed_self = dict()
-    abs_blocks = []
+    abs_preds = []
     cluster_threshold = None
     support_set = None
     support_set_rel = None
@@ -41,8 +52,8 @@ class Abstraction:
     # caches
     cached_abs_transition = None
     cached_abs_eq = None
-    procd_blocks = dict()
-    abs_eq_procd_blocks = dict()
+    procd_preds = dict()
+    abs_eq_procd_preds = dict()
 
     def initialize(self, k=None, supp=None, loss=0, supp_next=None):
         self.cluster_threshold = k
@@ -56,19 +67,33 @@ class Abstraction:
                 self.support_set_rel[v] = self.support_set & v_supp
 
     def __init__(self):
-        all_latches = [x.lit for x in aig.iterate_latches()]
-        all_latches = list(all_latches + [aig.error_fake_latch.lit])
+        all_latches = [x.lit for x in iterate_latches()]
+        all_latches = list(all_latches + [error_fake_latch.lit])
         all_latches_next = (
-            [aig.get_bdd_for_lit(x.next)
-             for x in aig.iterate_latches()] +
-            [aig.get_bdd_for_lit(aig.error_fake_latch.next)])
+            [get_bdd_for_lit(x.next)
+             for x in iterate_latches()] +
+            [get_bdd_for_lit(error_fake_latch.next)])
         self.initialize(supp=all_latches,
                         supp_next=all_latches_next)
-        self.add_fixed_pred("unsafe", bdd.BDD(aig.error_fake_latch.lit))
+        self.add_fixed_pred("unsafe", bdd.BDD(error_fake_latch.lit))
         self.add_fixed_pred("init", bdd.get_clause(imap(bdd.BDD,
                                                    iter(all_latches))))
         log.DBG_MSG("Initial abstraction of the system computed.")
         return self
+
+    def iterate_preds(self):
+        for a in self.abs_preds:
+            yield a
+
+    def prime_preds_in_bdd(self, bdd):
+        preds = [x for x in self.iterate_preds()]
+        ppreds = map(get_primed_var, preds)
+        return bdd.swap_variables(preds, ppreds)
+
+    def unprime_preds_in_bdd(self, bdd):
+        preds = [x for x in self.iterate_preds()]
+        ppreds = map(get_primed_var, preds)
+        return bdd.swap_variables(ppreds, preds)
 
     # return true if insert was successful
     def direct_add_pred(self, f):
@@ -77,15 +102,15 @@ class Abstraction:
         if f == bdd.true() or f == bdd.false():
             log.DBG_MSG("Attempting to add trivial predicate T/F.")
             return False
-        for a in self.abs_blocks:
-            if (f == self.block_to_bdd[a]):
+        for a in self.abs_preds:
+            if (f == self.pred_to_bdd[a]):
                 log.BDD_DMP(f, "Predicate already exists.")
                 return False
-        self.abs_blocks.append(bdd.next_var())
-        log.BDD_DMP(f, "Adding predicate " + str(self.abs_blocks[-1]))
+        self.abs_preds.append(bdd.next_var())
+        log.BDD_DMP(f, "Adding predicate " + str(self.abs_preds[-1]))
         bdd.next_var()  # throw one away to save it for the primed version
-        self.block_to_bdd[self.abs_blocks[-1]] = f
-        self.block_to_lset[self.abs_blocks[-1]] = latch_set
+        self.pred_to_bdd[self.abs_preds[-1]] = f
+        self.pred_to_lset[self.abs_preds[-1]] = latch_set
         return True
 
     # all the methods below return True if they remove predicates, False
@@ -95,20 +120,20 @@ class Abstraction:
             return False
 
         # clean object variables
-        old = self.abs_blocks
-        self.abs_blocks = [x for x in self.abs_blocks if x not in to_del]
+        old = self.abs_preds
+        self.abs_preds = [x for x in self.abs_preds if x not in to_del]
         for b in to_del:
-            if b in self.block_to_lset:
-                del self.block_to_lset[b]
-            if b in self.block_to_bdd:
-                del self.block_to_bdd[b]
-        return old != self.abs_blocks
+            if b in self.pred_to_lset:
+                del self.pred_to_lset[b]
+            if b in self.pred_to_bdd:
+                del self.pred_to_bdd[b]
+        return old != self.abs_preds
 
     def drop_latches(self):
         to_del = []
         latch_bdds = [bdd.BDD(x) for x in self.support_set]
-        for b in self.abs_blocks:
-            if self.block_to_bdd[b] in latch_bdds:
+        for b in self.abs_preds:
+            if self.pred_to_bdd[b] in latch_bdds:
                 to_del.append(b)
         return self.remove_predicates(to_del)
 
@@ -126,16 +151,16 @@ class Abstraction:
         if name in self.fixed_self:
             to_del = [self.fixed_self[name]]
         if rem_implicants:
-            for b in self.abs_blocks:
-                if (bdd.make_impl(self.block_to_bdd[b], f) == bdd.true() or
-                        bdd.make_impl(~self.block_to_bdd[b], f) == bdd.true()):
+            for b in self.abs_preds:
+                if (bdd.make_impl(self.pred_to_bdd[b], f) == bdd.true() or
+                        bdd.make_impl(~self.pred_to_bdd[b], f) == bdd.true()):
                     to_del.append(b)
                     log.DBG_MSG("Implicant " + str(b) +
                                 " will be removed")
         rem = False
         # insert and update the new fixed pred, if possible
         if self.direct_add_pred(f):
-            self.fixed_self[name] = self.abs_blocks[-1]
+            self.fixed_self[name] = self.abs_preds[-1]
             rem = self.remove_predicates(to_del)
             log.DBG_MSG("Updated fixed predicate: " + str(name))
         return rem
@@ -149,7 +174,7 @@ class Abstraction:
         # visible latches
         visible_supp = set([b for b in self.support_set
                             if bdd.BDD(b) in
-                            self.block_to_bdd.values()])
+                            self.pred_to_bdd.values()])
         not_visible = self.support_set - visible_supp
         if not not_visible:
             log.WRN_MSG("All latches visible already")
@@ -204,14 +229,14 @@ class Abstraction:
             log.DBG_MSG("Clustering threshold set to NONE.")
             return False
         # clustering phase
-        clusters = [set([x]) for x in self.abs_blocks]
-        clusters_lset = [self.block_to_lset[x] for x in self.abs_blocks]
+        clusters = [set([x]) for x in self.abs_preds]
+        clusters_lset = [self.pred_to_lset[x] for x in self.abs_preds]
         change = True
         while change:
             change = False
-            for i in range(len(self.abs_blocks) - 1):
+            for i in range(len(self.abs_preds) - 1):
                 if len(clusters[i]) > 0:
-                    for j in range(i + 1, len(self.abs_blocks)):
+                    for j in range(i + 1, len(self.abs_preds)):
                         inter = (clusters_lset[i] &
                                  clusters_lset[j])
                         if len(inter) > self.cluster_threshold:
@@ -222,7 +247,7 @@ class Abstraction:
                             break
         # cleaning predicate set based on clustering results
         to_del = []
-        for i in range(len(self.abs_blocks)):
+        for i in range(len(self.abs_preds)):
             if (len(clusters[i]) > 1 and
                     len(clusters[i]) >= len(clusters_lset[i])):
                 log.DBG_MSG("Cleaning predicates " + str(clusters[i]))
@@ -234,7 +259,7 @@ class Abstraction:
         self.remove_predicates(to_del)
         self.direct_add_pred(f)
         log.DBG_MSG("Current number of predicates: " +
-                    str(len(self.abs_blocks)))
+                    str(len(self.abs_preds)))
         return len(to_del) > 0
 
     """ WARNING!
@@ -247,15 +272,15 @@ class Abstraction:
         # check cache
         if self.cached_abs_eq is None:
             log.DBG_MSG("Rebuilding abs_eq")
-            for b in self.abs_blocks:
-                self.abs_eq_procd_blocks[b] = False
+            for b in self.abs_preds:
+                self.abs_eq_procd_preds[b] = False
             c = bdd.true()
         else:
             c = self.cached_abs_eq
 
-        for b in self.abs_blocks:
-            if b not in self.procd_blocks or not self.procd_blocks[b]:
-                c &= bdd.make_eq(bdd.BDD(b), self.block_to_bdd[b])
+        for b in self.abs_preds:
+            if b not in self.procd_preds or not self.procd_preds[b]:
+                c &= bdd.make_eq(bdd.BDD(b), self.pred_to_bdd[b])
         # cache c
         self.cached_abs_eq = c
         return c
@@ -264,22 +289,22 @@ class Abstraction:
         # check cache
         if self.cached_abs_transition is None:
             log.DBG_MSG("Rebuilding abstract transition relation")
-            for b in self.abs_blocks:
-                self.procd_blocks[b] = False
+            for b in self.abs_preds:
+                self.procd_preds[b] = False
             c = bdd.true()
         else:
             c = self.cached_abs_transition
 
-        latches = [x.lit for x in aig.iterate_latches()]
+        latches = [x.lit for x in iterate_latches()]
         latches_bdd = bdd.get_cube(
-            imap(bdd.BDD, aig.iterate_latches()))
-        latch_funs = [aig.get_bdd_for_aig_lit(x.next) for x in
-                      aig.iterate_latches()]
-        for b in self.abs_blocks:
-            if b not in self.procd_blocks or not self.procd_blocks[b]:
-                self.procd_blocks[b] = True
-                temp = bdd.make_eq(bdd.BDD(aig.get_primed_var(b)),
-                                   self.block_to_bdd[b])
+            imap(bdd.BDD, iterate_latches()))
+        latch_funs = [get_bdd_for_lit(x.next) for x in
+                      iterate_latches()]
+        for b in self.abs_preds:
+            if b not in self.procd_preds or not self.procd_preds[b]:
+                self.procd_preds[b] = True
+                temp = bdd.make_eq(bdd.BDD(get_primed_var(b)),
+                                   self.pred_to_bdd[b])
                 c &= temp.compose(latches, latch_funs)
         # cache c
         self.cached_abs_transition = c
@@ -287,7 +312,7 @@ class Abstraction:
 
     def alpha_over(self, conc_bdd):
         c = self.compose_abs_eq_bdd()
-        latches_bdd = bdd.get_cube(imap(bdd.BDD, aig.iterate_latches()))
+        latches_bdd = bdd.get_cube(imap(bdd.BDD, iterate_latches()))
         c = c.and_abstract(conc_bdd, latches_bdd)
         return c
 
@@ -295,201 +320,107 @@ class Abstraction:
         return ~self.alpha_over(~conc_bdd)
 
     def gamma(self, abs_bdd):
-        return abs_bdd.compose(self.block_to_bdd.keys(),
-                               self.block_to_bdd.values())
-
-    def abs_init_state_bdd(self):
-        return self.alpha_over(aig.init_state_bdd())
+        return abs_bdd.compose(self.pred_to_bdd.keys(),
+                               self.pred_to_bdd.values())
 
     """
     GAME operators are implemented here
     """
-    def update_block_funs(self):
-        latches = [x.lit for x in aig.iterate_latches()]
-        latch_funs = [aig.get_bdd_for_aig_lit(x.next) for x in
-                      aig.iterate_latches()]
+    def update_pred_funs(self):
+        latches = [x.lit for x in iterate_latches()]
+        latch_funs = [get_bdd_for_lit(x.next) for x in
+                      iterate_latches()]
         # check cache
-        if self.cached_block_funs is None:
-            log.DBG_MSG("Rebuilding block_funs")
-            block_funs = dict()
-            for b in self.abs_blocks:
-                block_funs[b] = self.gamma(
-                    self.block_to_bdd[b]).compose(latches, latch_funs)
+        if self.cached_pred_funs is None:
+            log.DBG_MSG("Rebuilding pred_funs")
+            pred_funs = dict()
+            for b in self.abs_preds:
+                pred_funs[b] = self.gamma(
+                    self.pred_to_bdd[b]).compose(latches, latch_funs)
         else:
-            for b in self.abs_blocks:
-                if b not in block_funs:
-                    block_funs[b] = self.gamma(self.block_to_bdd[b])
-                    block_funs[b] = block_funs[b].compose(latches,
-                                                          latch_funs)
+            for b in self.abs_preds:
+                if b not in pred_funs:
+                    pred_funs[b] = self.gamma(self.pred_to_bdd[b])
+                    pred_funs[b] = pred_funs[b].compose(latches,
+                                                        latch_funs)
         # set cache
-        self.cached_block_funs = bdd.true()
+        self.cached_pred_funs = bdd.true()
 
-    def single_pre_env_bdd(self, dst_states_bdd, get_strat=False,
-                           most_precise=False):
-        # if we want the most precise version of the operator
-        if most_precise:
-            return self.alpha_over(
-                aig.single_pre_env_bdd(self.gamma(dst_states_bdd),
-                                       get_strat=get_strat))
-        # make sure the block_funs are current
-        self.update_block_funs()
-        # take one step backwards and over-app
-        tmp_bdd = dst_states_bdd.compose(self.block_funs.keys(),
-                                         self.block_funs.values())
-        tmp_bdd = self.alpha_over(tmp_bdd)
-        # there is an uncontrollable action, such that for all contro...
-        tmp_bdd = tmp_bdd.univ_abstract(
-            bdd.get_cube(
-                imap(bdd.BDD, aig.iterate_controllable_inputs())))
-        p_bdd = tmp_bdd.exist_abstract(
-            bdd.get_cube(
-                imap(bdd.BDD, aig.iterate_uncontrollable_inputs())))
+    def get_bdd_for_pred(self, pred):
+        return self.pred_to_bdd[pred]
 
-        # was a strategy asked for?
+    def substitute_preds_under(self, b, use_trans=False, restrict_fun=None):
+        self.update_pred_funs()
+        if use_trans:
+            transition_bdd = self.abs_trans_rel_bdd()
+            trans = transition_bdd
+            if restrict_fun is not None:
+                trans = trans.restrict(restrict_fun)
+            primed_bdd = self.prime_preds_in_bdd(b)
+            primed_preds = bdd.get_cube(
+                imap(funcomp(bdd.BDD, get_primed_var),
+                     self.iterate_preds()))
+            return trans.and_abstract(primed_bdd,
+                                      primed_preds)
+        else:
+            preds = [x for x in self.iterate_preds()]
+            pred_funs = [self.get_bdd_for_pred(x) for x in
+                         self.iterate_preds()]
+            if restrict_fun is not None:
+                pred_funs = [x.restrict(restrict_fun) for x in pred_funs]
+            # take a transition step backwards
+            tmp_bdd = (~b).compose(preds, pred_funs)
+            return self.alpha_over(tmp_bdd)
+
+    def uupre_bdd():
+        """
+        UUPRE_abs = ~ AXu.EXc.AP' : T_a(P,Xu,Xc,P') ^ ~dst(P') [^St(P,Xu)]
+        """
+
+    def substitute_preds_over(self, b, use_trans=False, restrict_fun=None):
+        self.update_pred_funs()
+        if use_trans:
+            transition_bdd = self.abs_trans_rel_bdd()
+            trans = transition_bdd
+            if restrict_fun is not None:
+                trans = trans.restrict(restrict_fun)
+            primed_bdd = self.prime_preds_in_bdd(b)
+            primed_preds = bdd.get_cube(
+                imap(funcomp(bdd.BDD, get_primed_var),
+                     self.iterate_preds()))
+            return trans.and_abstract(primed_bdd,
+                                      primed_preds)
+        else:
+            preds = [x for x in self.iterate_preds()]
+            pred_funs = [bdd.BDD(x) for x in
+                         self.iterate_preds()]
+            if restrict_fun is not None:
+                pred_funs = [x.restrict(restrict_fun) for x in pred_funs]
+            # take a transition step backwards
+            tmp_bdd = b.compose(preds, pred_funs)
+            return self.alpha_over(tmp_bdd)
+
+    def oupre_bdd(self, dst_states_bdd, env_strat=None, get_strat=False,
+                  restrict_like_crazy=False, use_trans=False):
+        """
+        OUPRE_abs = EXu.AXc.EP' : T_a(P,Xu,Xc,P') ^ dst(P') [^St(P,Xu)]
+        """
+        # take a transition step backwards
+        p_bdd = self.substitute_preds_over(dst_states_bdd,
+                                           restrict_fun=~dst_states_bdd,
+                                           use_trans=use_trans)
+        # use the given strategy
+        if env_strat is not None:
+            p_bdd &= env_strat
+        # there is an uncontrollable action such that for all contro...
+        temp_bdd = p_bdd.univ_abstract(
+            bdd.get_cube(imap(funcomp(bdd.BDD, symbol_lit),
+                              iterate_controllable_inputs())))
+        p_bdd = temp_bdd.exist_abstract(
+            bdd.get_cube(imap(funcomp(bdd.BDD, symbol_lit),
+                              iterate_uncontrollable_inputs())))
+        # prepare the output
         if get_strat:
-            return tmp_bdd
+            return temp_bdd
         else:
             return p_bdd
-
-    def single_pre_env_bdd_uabs(self, dst_states_bdd, env_strat=None,
-                                most_precise=False):
-        # if we want the most precise version of the operator
-        if most_precise:
-            if env_strat is not None:
-                strat = self.gamma(env_strat)
-            else:
-                strat = None
-            return self.alpha_under(
-                self.single_pre_env_bdd(self.gamma(dst_states_bdd),
-                                        env_strat=strat))
-        # make sure the block_funs are current
-        self.update_block_funs()
-        # take one step backwards and over-app
-        tmp_bdd = ~dst_states_bdd
-        tmp_bdd = tmp_bdd.compose(self.block_funs.keys(),
-                                  self.block_funs.values())
-        tmp_bdd = self.alpha_over(tmp_bdd)
-        if env_strat is not None:
-            tmp_bdd &= env_strat
-        # we are using the complement of the original formula so
-        # we want that for all uncontrollable, there is a contro...
-        tmp_bdd = tmp_bdd.exist_abstract(
-            bdd.get_cube(
-                imap(bdd.BDD, aig.iterate_controllable_inputs())))
-        p_bdd = tmp_bdd.univ_abstract(
-            bdd.get_cube(
-                imap(bdd.BDD, aig.iterate_uncontrollable_inputs())))
-
-        return ~p_bdd
-
-    def over_post_bdd(self, src_states_bdd, env_strat=None):
-        # make sure the block_funs are current
-        self.update_block_funs()
-        # take the step forward and get rid of latches
-        conc_src = self.gamma(src_states_bdd)
-        if env_strat is not None:
-            conc_strat = self.gamma(env_strat)
-        else:
-            conc_strat = bdd.true()
-        # to do this, we use an over-simplified transition relation, EXu,Xc
-        simple_trans = bdd.true()
-        for b in self.abs_blocks:
-            trans_b = bdd.make_eq(bdd.BDD(b), self.block_funs[b])
-            simple_trans &= trans_b.exist_abstract(
-                bdd.get_cube(
-                    imap(bdd.BDD, aig.iterate_controllable_inputs())))
-        simple_trans &= conc_strat & conc_src
-        return simple_trans.exist_abstract(
-            bdd.get_cube(
-                imap(bdd.BDD, chain(aig.iterate_latches(),
-                                    aig.iterate_uncontrollable_inputs()))))
-
-    def pre_env_bdd(self, dst_states_bdd, get_strat=False,
-                    use_trans=False, most_precise=False):
-        """ UPRE_abs = EXu.AXc.EP' : T_abs(P,Xu,Xc,P') ^ dst(P') """
-        # if there is no transition bdd then return the version that can be
-        # computed without one
-        if not use_trans:
-            return self.ingle_pre_env_bdd(dst_states_bdd, get_strat)
-        # if we are using the de Alfaro version of the operators, i.e.
-        # the most precise ones
-        if most_precise:
-            return self.alpha_over(self.pre_env_bdd(self.gamma(dst_states_bdd),
-                                                    get_strat=get_strat))
-        # else, compute as the initial comment reads
-        transition_bdd = self.ompose_abs_transition_bdd()
-        primed_states = self.prime_blocks_in_bdd(dst_states_bdd)
-        primed_blocks = bdd.get_cube(
-            imap(bdd.BDD, imap(aig.get_primed_var, iter(self.abs_blocks))))
-        tmp_bdd = transition_bdd.and_abstract(primed_states, primed_blocks)
-        tmp_bdd = tmp_bdd.univ_abstract(
-            bdd.get_cube(
-                imap(bdd.BDD, aig.iterate_controllable_inputs())))
-        p_bdd = tmp_bdd.exist_abstract(
-            bdd.get_cube(
-                imap(bdd.BDD, aig.iterate_uncontrollable_inputs())))
-
-        # return the "good actions" if they are needed
-        if get_strat:
-            return tmp_bdd
-        else:
-            return p_bdd
-
-    def pre_env_bdd_uabs(self, dst_states_bdd, env_strat=None,
-                         use_trans=False, most_precise=False):
-        """ UPRE_u = EXu.AXc.AP' : T_abs(P,Xu,Xc,P') [^St(L,Xu)] => dst(P') """
-        # if there is no transition relation, use the single version
-        if not use_trans:
-            return self.single_pre_env_bdd_uabs(dst_states_bdd, env_strat)
-        # if we want the most precise version of the operator
-        if most_precise:
-            if env_strat is not None:
-                strat = self.gamma(env_strat)
-            else:
-                strat = None
-            return self.alpha_under(
-                self.pre_env_bdd(self.gamma(dst_states_bdd), env_strat=strat))
-        # else, do as we promised in the first comment
-        transition_bdd = self.abs_trans_rel_bdd()
-        trans = transition_bdd
-        if env_strat is not None:
-            trans &= env_strat
-
-        primed_states = self.prime_blocks_in_bdd(dst_states_bdd)
-        primed_blocks = bdd.get_cube([bdd.BDD(aig.get_primed_var(x))
-                                      for x in self.abs_blocks])
-        tmp_bdd = bdd.make_impl(transition_bdd, primed_states)
-        tmp_bdd = tmp_bdd.univ_abstract(primed_blocks)
-        tmp_bdd = tmp_bdd.univ_abstract(
-            bdd.get_cube(
-                imap(bdd.BDD, aig.iterate_controllable_inputs())))
-        p_bdd = tmp_bdd.exist_abstract(
-            bdd.get_cube(
-                imap(bdd.BDD, aig.iterate_uncontrollable_inputs())))
-
-        return p_bdd
-
-    def post_bdd_abs(self, src_states_bdd, env_strat=None,
-                     use_trans=False, most_precise=False):
-        """
-        POST_abs = EP.EXu.EXc : src(P) ^ T(P,Xu,Xc,P') [^St(P,Xu)]
-        optional argument fixes possible actions for the environment
-        """
-        # if there is no transition_bdd we do what we can
-        if not use_trans:
-            return self.over_post_bdd_abs(src_states_bdd, env_strat)
-        # otherwise, we compute as the first comment reads
-        transition_bdd = self.abs_trans_rel_bdd()
-        trans = transition_bdd
-        if env_strat is not None:
-            trans &= env_strat
-
-        suc_bdd = trans.and_abstract(
-            src_states_bdd,
-            bdd.get_cube(
-                imap(bdd.BDD,
-                     chain(aig.iterate_controllable_inputs(),
-                           aig.iterate_uncontrollable_inputs(),
-                           iter(self.abs_blocks)))))
-
-        return self.unprime_blocks_in_bdd(suc_bdd)
