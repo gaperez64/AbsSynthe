@@ -63,6 +63,15 @@ class BDD:
         b._cudd_bdd = self._cudd_bdd.E()
         return b
 
+    def get_one_minterm(self, vars):
+        b = BDD()
+        num_vars = len(vars)
+        var_array = pycudd.DdArray(num_vars)
+        for i in range(num_vars):
+            var_array.Push(cudd.IthVar(vars[i]))
+        b._cudd_bdd = self._cudd_bdd.PickOneMinterm(var_array, num_vars)
+        return b
+
     def cofactor(self, var_bdd):
         b = BDD()
         b._cudd_bdd = self._cudd_bdd.Cofactor(var_bdd._cudd_bdd)

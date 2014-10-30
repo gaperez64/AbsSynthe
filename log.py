@@ -22,14 +22,10 @@ Universite Libre de Bruxelles
 gperezme@ulb.ac.be
 """
 
-import time
-
 debug = False
 log = False
 warn = True
 bdd_dmp = False
-reg_accum = dict()
-run_clk = None
 
 
 def parse_verbose_level(lvl_str):
@@ -65,68 +61,3 @@ def BDD_DMP(b, message):
         DBG_MSG("bdd node count: " + str(b.dag_size()))
         b.dump_dot()
         raw_input("Press ENTER to continue...")
-
-
-def LOG_ACCUM():
-    if log:
-        for name in reg_accum:
-            vals = reg_accum[name]
-            x = vals[1](vals[2:])
-            LOG_MSG(vals[0] + str(x))
-
-
-def register_accumulated(name, msg, func):
-    if log:
-        if name not in reg_accum:
-            reg_accum[name] = [msg, func]
-
-
-def get_accumulated(name):
-    if log:
-        vals = reg_accum[name]
-        return vals[1](vals[2:])
-    else:
-        return None
-
-
-def register_average(name, msg):
-    def avg(l):
-        result = 0
-        for x in l:
-            result += x
-        return result / len(l)
-
-    register_accumulated(name, msg, avg)
-    push_accumulated(name, 0)
-
-
-def register_sum(name, msg):
-    def sum(l):
-        result = 0
-        for x in l:
-            result += x
-        return result
-
-    register_accumulated(name, msg, sum)
-
-
-def start_clock():
-    global run_clk
-
-    if log:
-        run_clk = time.clock()
-        return run_clk
-
-
-def push_accumulated(name, val):
-    if log:
-        assert name in reg_accum
-        reg_accum[name].append(val)
-
-
-def stop_clock(name=None):
-    if log:
-        t = time.clock() - run_clk
-        if name is not None:
-            push_accumulated(name, t)
-        return t

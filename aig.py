@@ -36,7 +36,6 @@ from aiger_swig.aiger_wrap import (
     aiger_redefine_input_as_and,
     aiger_remove_outputs,
 )
-import bdd
 import log
 
 
@@ -92,6 +91,20 @@ def introduce_error_latch():
     error_fake_latch.next = error_symbol.lit
 
 
+_error_f_stack = []
+
+
+def push_error_function(e):
+    introduce_error_latch()
+    _error_f_stack.append(error_fake_latch.next)
+    error_fake_latch.next = e
+
+
+def pop_error_function():
+    assert _error_f_stack
+    error_fake_latch.next = _error_f_stack.pop()
+
+
 def parse_into_spec(aiger_file_name, intro_error_latch=False):
     global spec
 
@@ -102,13 +115,15 @@ def parse_into_spec(aiger_file_name, intro_error_latch=False):
     if intro_error_latch:
         introduce_error_latch()
     # dump some info about the spec
+    if not log.debug:
+        return
     log.DBG_MSG("AIG spec file parsed")
-    log.DBG_MSG("Latches: " + str([x.lit for x in
-                                   iterate_latches()]))
-    log.DBG_MSG("U. Inputs: " + str([x.lit for x in
-                                     iterate_uncontrollable_inputs()]))
-    log.DBG_MSG("C. Inputs: " + str([x.lit for x in
-                                     iterate_controllable_inputs()]))
+    latches = [x.lit for x in iterate_latches()]
+    log.DBG_MSG(str(len(latches)) + " Latches: " + str(latches))
+    uinputs = [x.lit for x in iterate_uncontrollable_inputs()]
+    log.DBG_MSG(str(len(uinputs)) + " U. Inputs: " + str(uinputs))
+    cinputs = [x.lit for x in iterate_controllable_inputs()]
+    log.DBG_MSG(str(len(cinputs)) + " C. Inputs: " + str(cinputs))
 
 
 def input2and(c_lit, func_as_aiger_lit):
@@ -177,32 +192,90 @@ def symbol_lit(x):
     return x.lit
 
 
-def latch_dependency_map():
-    m = {}
-    cache = {}
+_1l_land_cache = dict()
 
-    # recursive worker
-    def _rec_dependencies(lit):
-        if lit in cache:
-            return cache[lit]
+
+# returns the set A = {a_0,a_1,...} from the expression AND(a_0,a_1,...)
+# and a subset B <= A of the latches that were not completely explored
+def get_1l_land(lit):
+    assert not lit_is_negated(lit)
+    if lit in _1l_land_cache:
+        return _1l_land_cache[lit]
+    (i, l, a) = get_lit_type(lit)
+    assert (a and not i and not l)
+    # init variables
+    A = set()
+    B = set()
+    # base cases: children are leaves
+    (i, l, aa) = get_lit_type(a.rhs0)
+    if i or l:
+            A.add(a.rhs0)
+    elif lit_is_negated(a.rhs0):  # AND with negation
+        A.add(a.rhs0)
+        B.add(strip_lit(a.rhs0))
+    else:  # recursive case: AND gate without negation
+        (rA, rB) = get_1l_land(strip_lit(a.rhs0))
+        A |= rA
+        B |= rB
+    # symmetric handling for a.rhs1
+    # base cases: children are leaves
+    (i, l, aa) = get_lit_type(a.rhs1)
+    if i or l:
+            A.add(a.rhs1)
+    elif lit_is_negated(a.rhs1):  # AND with negation
+        A.add(a.rhs1)
+        B.add(strip_lit(a.rhs1))
+    else:  # recursive case: AND gate without negation
+        (rA, rB) = get_1l_land(strip_lit(a.rhs1))
+        A |= rA
+        B |= rB
+    # cache handling
+    _1l_land_cache[lit] = (A, B)
+    return (A, B)
+
+
+_deps_cache = dict()
+
+
+def get_lit_deps(lit):
+    if lit in _deps_cache:
+        return _deps_cache[lit]
+    (i, l, a) = get_lit_type(lit)
+    # latches count towards one
+    if l:
+        result = set([l.lit])
+    # ands require union of siblings
+    elif a:
+        result = get_lit_deps(a.rhs0) | get_lit_deps(a.rhs1)
+    # inputs
+    elif i:
+        result = set([i.lit])
+    else:
+        result = set()
+
+    _deps_cache[lit] = result
+    return result
+
+
+def get_rec_latch_deps(lit):
+    latchset = set([x.lit for x in iterate_latches()])
+    latch_deps = get_lit_deps(lit) & latchset
+    to_visit = set() | latch_deps
+    while to_visit:
         (i, l, a) = get_lit_type(lit)
-        # latches count towards one
-        if l:
-            result = set([l.lit])
-        # ands require union of siblings
-        elif a:
-            result = _rec_dependencies(a.rhs0) | _rec_dependencies(a.rhs1)
-        # inputs or terminals
-        else:
-            result = set([])
+        nu_deps = get_lit_deps(l.next) & latchset
+        to_visit |= nu_deps - latch_deps
+        latch_deps |= nu_deps
+    return latch_deps
 
-        cache[lit] = result
-        return result
 
+def latch_dependency_map():
+    m = dict()
+    latchset = set([x.lit for x in iterate_latches()])
     # call the recursive worker for each gate with the next step
     # value of a latch and map the sets to each latch lit
     for l in iterate_latches():
-        m[l.lit] = _rec_dependencies(l.next)
+        m[l.lit] = get_lit_deps(l.next) & latchset
     return m
 
 

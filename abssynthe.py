@@ -26,8 +26,10 @@ import argparse
 from algos import (
     ABS_TECH,
     backward_upre_synth,
-    extract_output_funs
+    extract_output_funs,
+    forward_explicit_synth
 )
+import bdd
 import aig
 import aig2bdd
 import bdd2aig
@@ -39,14 +41,50 @@ EXIT_STATUS_UNREALIZABLE = 20
 
 
 def synth(argv):
-    w = backward_upre_synth(restrict_like_crazy=argv.restrict_like_crazy,
-                            use_trans=argv.use_trans, use_abs=argv.use_abs,
-                            only_real=argv.out_file is None)
-    # check if realizable and write output file
-    if w is None:
-        return False
+    # Explicit approach
+    if argv.use_symb:
+        w = forward_explicit_synth()
+        if w is None:
+            return False
+    # Symbolic approach with some optimizations
+    elif not argv.no_decomp and aig.lit_is_negated(aig.error_fake_latch.next):
+        log.DBG_MSG("Decomposition opt possible")
+        (A, B) = aig.get_1l_land(aig.strip_lit(aig.error_fake_latch.next))
+        s = bdd.true()
+        for a in A:
+            log.DBG_MSG("Solving sub-safety game for var " + str(a))
+            latchset = set([x.lit for x in aig.iterate_latches()])
+            log.DBG_MSG("Avoidable latch # = " +
+                        str(len(latchset - aig.get_rec_latch_deps(a))))
+            aig.push_error_function(aig.negate_lit(a))
+            w = backward_upre_synth(
+                restrict_like_crazy=argv.restrict_like_crazy,
+                use_trans=argv.use_trans, abs_tech=argv.abs_tech,
+                only_real=argv.out_file is None)
+            if w is None:
+                return False
+            s &= aig2bdd.cpre_bdd(w, get_strat=True)
+            aig.pop_error_function()
+            if (s == bdd.false() or
+                    aig2bdd.init_state_bdd() & s == bdd.false()):
+                return False
+        # we have to make sure the controller can stay in the win'n area
+        if not aig2bdd.strat_is_inductive(s, use_trans=argv.use_trans):
+            return False
+    # Symbolic approach (allows for abstraction techniques)
+    else:
+        w = backward_upre_synth(
+            restrict_like_crazy=argv.restrict_like_crazy,
+            use_trans=argv.use_trans, abs_tech=argv.abs_tech,
+            only_real=argv.out_file is None)
+        # check if realizable and write output file
+        if w is None:
+            return False
 
+    # synthesis from the realizability analysis
     if argv.out_file is not None:
+        log.DBG_MSG("Win region bdd node count = " +
+                    str(w.dag_size()))
         c_input_info = []
         n_strategy = aig2bdd.cpre_bdd(w, get_strat=True)
         func_per_output = extract_output_funs(n_strategy, care_set=w)
@@ -80,13 +118,19 @@ def main():
     parser = argparse.ArgumentParser(description="AIG Format Based Synth")
     parser.add_argument("spec", metavar="spec", type=str,
                         help="input specification in extended AIGER format")
-    parser.add_argument("-a", "--use_abs", dest="use_abs",
+    parser.add_argument("-a", "--abs_tech", dest="abs_tech",
                         default="", required=False,
                         help=("Use abstraction techniques = (L)ocalization " +
                               "reduction or (P)redicate abstraction"))
     parser.add_argument("-t", "--use_trans", action="store_true",
                         dest="use_trans", default=False,
                         help="Compute a transition relation")
+    parser.add_argument("-s", "--use_symb", action="store_true",
+                        dest="use_symb", default=False,
+                        help="Use the symblicit forward approach")
+    parser.add_argument("-nd", "--no_decomp", action="store_true",
+                        dest="no_decomp", default=False,
+                        help="Inhibits the decomposition optimization")
     parser.add_argument("-rc", "--restrict_like_crazy", action="store_true",
                         dest="restrict_like_crazy", default=False,
                         help=("Use restrict to minimize BDDs " +
@@ -110,11 +154,12 @@ def main():
     # initialize the log verbose level
     log.parse_verbose_level(args.verbose_level)
     # parse the abstraction tech
-    args.use_abs = parse_abs_tech(args.use_abs)
+    args.abs_tech = parse_abs_tech(args.abs_tech)
     # parse the input spec
     aig.parse_into_spec(args.spec, intro_error_latch=True)
     # realizability / synthesis
     is_realizable = synth(args)
+    log.LOG_MSG("Realizable? " + str(bool(is_realizable)))
     exit([EXIT_STATUS_UNREALIZABLE, EXIT_STATUS_REALIZABLE][is_realizable])
 
 

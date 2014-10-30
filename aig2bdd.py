@@ -76,6 +76,22 @@ def prime_latches_in_bdd(bdd):
     return bdd.swap_variables(latches, platches)
 
 
+def prime_all_inputs_in_bdd(bdd):
+    # unfortunately swap_variables needs a list
+    inputs = [x.lit for x in chain(iterate_uncontrollable_inputs(),
+                                   iterate_controllable_inputs())]
+    pinputs = map(get_primed_var, inputs)
+    return bdd.swap_variables(inputs, pinputs)
+
+
+def unprime_all_inputs_in_bdd(bdd):
+    # unfortunately swap_variables needs a list
+    inputs = [x.lit for x in chain(iterate_uncontrollable_inputs(),
+                                   iterate_controllable_inputs())]
+    pinputs = map(get_primed_var, inputs)
+    return bdd.swap_variables(pinputs, inputs)
+
+
 def unprime_latches_in_bdd(bdd):
     # unfortunately swap_variables needs a list
     latches = [x.lit for x in iterate_latches()]
@@ -225,3 +241,12 @@ def cpre_bdd(dst_states_bdd, get_strat=False, use_trans=False):
             bdd.get_cube(imap(funcomp(bdd.BDD, symbol_lit),
                               iterate_uncontrollable_inputs())))
     return p_bdd
+
+
+def strat_is_inductive(strat, use_trans=False):
+    strat_dom = strat.exist_abstract(
+        bdd.get_cube(imap(funcomp(bdd.BDD, symbol_lit),
+                          chain(iterate_controllable_inputs(),
+                                iterate_uncontrollable_inputs()))))
+    p_bdd = substitute_latches_next(strat_dom, use_trans=use_trans)
+    return bdd.make_impl(strat, p_bdd) == bdd.true()

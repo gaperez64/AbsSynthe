@@ -31,12 +31,21 @@ from aig import (
     get_primed_var,
     max_var,
     iterate_controllable_inputs,
-    iterate_uncontrollable_inputs
+    iterate_uncontrollable_inputs,
+    get_1l_land
 )
 import sat
 
 
 ###################### CNF stuff ################
+def get_mand(lit):
+    (A, B) = get_1l_land(lit)
+    A2 = set(map(A, lambda x: strip_lit(x) * -1
+                 if lit_is_negated(x)
+                 else x))
+    return (A2, B)
+
+
 cached_tr_cnf = None
 
 
@@ -47,52 +56,6 @@ def trans_rel_CNF():
 
     if cached_tr_cnf is not None:
         return cached_tr_cnf
-
-    cache = {}
-
-    # returns the set A = {a_0,a_1,...} from the expression AND(a_0,a_1,...)
-    # and a subset B <= A of those that were negated and need more exploring
-    def _rec_mand(lit):
-        assert not lit_is_negated(lit)
-        if lit in cache:
-            return cache[lit]
-        (i, l, a) = get_lit_type(lit)
-        assert (a and not i and not l)
-        # init variables
-        A = set()
-        B = set()
-        # base cases: children are leaves
-        (i, l, aa) = get_lit_type(a.rhs0)
-        if i or l:
-            if lit_is_negated(a.rhs0):
-                A.add(strip_lit(a.rhs0) * -1)
-            else:
-                A.add(strip_lit(a.rhs0))
-        elif lit_is_negated(a.rhs0):  # AND with negation
-            A.add(strip_lit(a.rhs0) * -1)
-            B.add(strip_lit(a.rhs0))
-        else:  # recursive case: AND gate without negation
-            (rA, rB) = _rec_mand(strip_lit(a.rhs0))
-            A |= rA
-            B |= rB
-        # symmetric handling for a.rhs1
-        # base cases: children are leaves
-        (i, l, aa) = get_lit_type(a.rhs1)
-        if i or l:
-            if lit_is_negated(a.rhs1):
-                A.add(strip_lit(a.rhs1) * -1)
-            else:
-                A.add(strip_lit(a.rhs1))
-        elif lit_is_negated(a.rhs1):  # AND with negation
-            A.add(strip_lit(a.rhs1) * -1)
-            B.add(strip_lit(a.rhs1))
-        else:  # recursive case: AND gate without negation
-            (rA, rB) = _rec_mand(strip_lit(a.rhs1))
-            A |= rA
-            B |= rB
-        # cache handling
-        cache[lit] = (A, B)
-        return (A, B)
 
     # per latch, handle the next function
     T = sat.CNF()
@@ -111,13 +74,13 @@ def trans_rel_CNF():
                 A = set([strip_lit(l.next) * -1])
                 B = set([strip_lit(l.next)])
             else:
-                (A, B) = _rec_mand(l.next)
+                (A, B) = get_mand(l.next)
             T.add_mand(get_primed_var(l.lit), A)
             pending = B
             # handle CNF for each pending gate
             while pending:
                 cur = pending.pop()
-                (A, B) = _rec_mand(cur)
+                (A, B) = get_mand(cur)
                 pending |= B
                 T.add_mand(cur, A)
     # handle caching
