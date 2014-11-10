@@ -22,12 +22,14 @@ Universite Libre de Bruxelles
 gperezme@ulb.ac.be
 """
 
+from itertools import imap
 import argparse
+from utils import funcomp
 from algos import (
-    ABS_TECH,
-    backward_upre_synth,
+    Game,
+    backward_safety_synth,
     extract_output_funs,
-    forward_explicit_synth
+    forward_safety_synth
 )
 import bdd
 import aig
@@ -40,13 +42,113 @@ EXIT_STATUS_REALIZABLE = 10
 EXIT_STATUS_UNREALIZABLE = 20
 
 
+class ABS_TECH:
+    LOC_RED = 1,
+    PRED_ABS = 2,
+    NONE = 3
+
+
+class ConcGame(Game):
+    def __init__(self, restrict_like_crazy=False,
+                 use_trans=False):
+        self.restrict_like_crazy = restrict_like_crazy
+        self.use_trans = use_trans
+
+    def init(self):
+        return aig2bdd.init_state_bdd()
+
+    def error(self):
+        return aig2bdd.get_bdd_for_lit(aig.error_fake_latch.lit)
+
+    def upre(self, dst):
+        return aig2bdd.upre_bdd(
+            dst, restrict_like_crazy=self.restrict_like_crazy,
+            use_trans=self.use_trans)
+
+
+class SymblicitGame(Game):
+    def __init__(self):
+        self.uinputs = [x.lit for x in aig.iterate_uncontrollable_inputs()]
+        self.latches = [x.lit for x in aig.iterate_latches()]
+        self.trans = aig2bdd.trans_rel_bdd()
+        self.latch_cube = bdd.get_cube(imap(funcomp(bdd.BDD,
+                                                    aig.symbol_lit),
+                                            aig.iterate_latches()))
+        self.platch_cube = bdd.get_cube(imap(funcomp(bdd.BDD,
+                                                     aig.get_primed_var,
+                                                     aig.symbol_lit),
+                                             aig.iterate_latches()))
+        self.cinputs_cube = bdd.get_cube(
+            imap(funcomp(bdd.BDD, aig.symbol_lit),
+                 aig.iterate_controllable_inputs()))
+        self.uinputs_cube = bdd.get_cube(
+            imap(funcomp(bdd.BDD, aig.symbol_lit),
+                 aig.iterate_uncontrollable_inputs()))
+        self.init_state_bdd = aig2bdd.init_state_bdd()
+        self.error_bdd = aig2bdd.get_bdd_for_lit(aig.error_fake_latch.lit)
+        self.Venv = dict()
+        self.Venv[self.init_state_bdd] = True
+        self.succ_cache = dict()
+
+    def init(self):
+        return self.init_state_bdd
+
+    def error(self):
+        return self.error_bdd
+
+    def upost(self, q):
+        if q in self.succ_cache:
+            return self.succ_cache[q]
+        A = bdd.true()
+        M = set()
+        while A != bdd.false():
+            a = A.get_one_minterm(self.uinputs)
+            lhs = self.trans.and_abstract(a & q, self.latch_cube)
+            rhs = aig2bdd.prime_all_inputs_in_bdd(self.trans & q)\
+                .exist_abstract(self.latch_cube)
+            simd = bdd.make_impl(lhs, rhs).univ_abstract(self.platch_cube)\
+                .exist_abstract(self.cinputs_cube)\
+                .univ_abstract(self.uinputs_cube)
+            simd = aig2bdd.unprime_all_inputs_in_bdd(simd)
+
+            A &= ~simd
+            for m in M:
+                if bdd.make_impl(m, simd) == bdd.true():
+                    M.remove(m)
+            M.add(a)
+        log.DBG_MSG("|M| = " + str(len(M)))
+        self.succ_cache[q] = M
+        return set([(q, m) for m in M])
+
+    def cpost(self, s):
+        q = s[0]
+        au = s[1]
+        if s in self.succ_cache:
+            return self.succ_cache[s]
+        L = aig2bdd.unprime_latches_in_bdd(
+            self.trans.and_abstract(q & au, self.latch_cube &
+                                    self.uinputs_cube & self.cinputs_cube))
+        R = set()
+        while L != bdd.false():
+            l = L.get_one_minterm(self.latches)
+            R.add(l)
+            L &= ~l
+            self.Venv[l] = True
+        log.DBG_MSG("|R| = " + str(len(R)))
+        self.succ_cache[s] = R
+        return R
+
+    def is_env_state(self, s):
+        return s in self.Venv
+
+
 def synth(argv):
     # Explicit approach
     if argv.use_symb:
-        w = forward_explicit_synth()
-        if w is None:
-            return False
-    # Symbolic approach with some optimizations
+        assert argv.out_file is None
+        symgame = SymblicitGame()
+        w = forward_safety_synth(symgame)
+    # Symbolic approach with compositional opts
     elif not argv.no_decomp and aig.lit_is_negated(aig.error_fake_latch.next):
         log.DBG_MSG("Decomposition opt possible")
         (A, B) = aig.get_1l_land(aig.strip_lit(aig.error_fake_latch.next))
@@ -57,32 +159,33 @@ def synth(argv):
             log.DBG_MSG("Avoidable latch # = " +
                         str(len(latchset - aig.get_rec_latch_deps(a))))
             aig.push_error_function(aig.negate_lit(a))
-            w = backward_upre_synth(
-                restrict_like_crazy=argv.restrict_like_crazy,
-                use_trans=argv.use_trans, abs_tech=argv.abs_tech,
+            game = ConcGame(restrict_like_crazy=argv.restrict_like_crazy,
+                            use_trans=argv.use_trans)
+            w = backward_safety_synth(
+                game,
                 only_real=argv.out_file is None)
+            # short-circuit a negative response
             if w is None:
                 return False
             s &= aig2bdd.cpre_bdd(w, get_strat=True)
             aig.pop_error_function()
+            # sanity check before moving forward
             if (s == bdd.false() or
                     aig2bdd.init_state_bdd() & s == bdd.false()):
                 return False
         # we have to make sure the controller can stay in the win'n area
         if not aig2bdd.strat_is_inductive(s, use_trans=argv.use_trans):
             return False
-    # Symbolic approach (allows for abstraction techniques)
+    # Symbolic approach (avoiding compositional opts)
     else:
-        w = backward_upre_synth(
-            restrict_like_crazy=argv.restrict_like_crazy,
-            use_trans=argv.use_trans, abs_tech=argv.abs_tech,
+        game = ConcGame(restrict_like_crazy=argv.restrict_like_crazy,
+                        use_trans=argv.use_trans)
+        w = backward_safety_synth(
+            game,
             only_real=argv.out_file is None)
-        # check if realizable and write output file
-        if w is None:
-            return False
 
     # synthesis from the realizability analysis
-    if argv.out_file is not None:
+    if w is not None and argv.out_file is not None:
         log.DBG_MSG("Win region bdd node count = " +
                     str(w.dag_size()))
         c_input_info = []
@@ -98,8 +201,10 @@ def synth(argv):
             for (l, n) in c_input_info:
                 aig.add_output(l, n)
         aig.write_spec(argv.out_file)
-
-    return True
+    elif w is not None:
+        return True
+    else:
+        return False
 
 
 def parse_abs_tech(abs_arg):

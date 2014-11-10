@@ -117,7 +117,6 @@ def parse_into_spec(aiger_file_name, intro_error_latch=False):
     # dump some info about the spec
     if not log.debug:
         return
-    log.DBG_MSG("AIG spec file parsed")
     latches = [x.lit for x in iterate_latches()]
     log.DBG_MSG(str(len(latches)) + " Latches: " + str(latches))
     uinputs = [x.lit for x in iterate_uncontrollable_inputs()]
