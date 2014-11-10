@@ -1,36 +1,11 @@
 AbsSynthe - a tool to synthesize controllers from succinct safety
 specifications. 
 
-The tool consists of two basic algorithms to determine realizability of
-specifications provided in the extended AIGER format (see
-https://syntcompdb.iaik.tugraz.at/2014/rules/). The first is the classical fix
-point computation algorithm implemented using BDDs. The second is a CEGAR-based
-approach (run the tool with argument -a). The abstract algorithm relies on
-localization reduction to refine abstractions.
+This is the second version of AbsSynthe. I have now included scripts to profile the code and
+to run it (profile.sh and start.sh). The -nd option explicitely tells the tool to avoid
+using the compositional optimizations that have been included. Also, the -s option tells
+the tool to use a symblicit forward algorithm instead of our very successful backward
+fixpoint algorithm (a.k.a. Romain's algo).
 
-Some basic configurations to try:
-python synth.py = a basic fix point realizability check
-python synth.py -a -i 4 -l 2 = abstract algorithm starting with 1/4 of the
-	latches being visible and dropping all visible latches when 1/2 of them
-	are visible
-
-Any of the above configurations with a -o and a filename yields a synthesis
-algorithm. The -m option attempts to minimize the resulting circuit even
-further.
-
-A paper explaining the theory behind the algorithms was submitted to the SYNT'14
-workshop that will take place as a satellite event of CAV'14. The configurations
-used for realizability in said paper were:
-
-C = python aisy.py
-C-TL = python synth.py 
-A = python synth.py -a -i 4 -l 2 -t
-A-TL = python synth.py -a -i -4 -l 2
-
-Note that the first configuration uses tool aisy.py which is provided by the
-organizers of the competition. For circuit synthesis the following were used:
-
-C-TL = python synth.py
-C-TL-M = python synth.py -m
-A-TL = python synth.py -a -i 4 -l 2
-A-TL-M = python synth.py -a -i 4 -l 2 -m
+The idea of a "game" has been abstracted and subclasses of the Game class in the algos.py
+script should be used to be able to reuse the code in algos.py.
