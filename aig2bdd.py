@@ -34,7 +34,7 @@ from aig import (
     iterate_controllable_inputs,
     iterate_uncontrollable_inputs,
 )
-import bdd
+from cudd_bdd import BDD
 import log
 
 
@@ -52,12 +52,12 @@ def get_bdd_for_lit(lit):
     (intput, latch, and_gate) = get_lit_type(stripped_lit)
     # is it an input, latch, gate or constant
     if intput or latch:
-        result = bdd.BDD(stripped_lit)
+        result = BDD(stripped_lit)
     elif and_gate:
         result = (get_bdd_for_lit(and_gate.rhs0) &
                   get_bdd_for_lit(and_gate.rhs1))
     else:  # 0 literal, 1 literal and errors
-        result = bdd.false()
+        result = BDD.false()
     # cache result
     lit_to_bdd[stripped_lit] = result
     bdd_to_lit[result] = stripped_lit
@@ -69,34 +69,34 @@ def get_bdd_for_lit(lit):
     return result
 
 
-def prime_latches_in_bdd(bdd):
+def prime_latches_in_bdd(b):
     # unfortunately swap_variables needs a list
     latches = [x.lit for x in iterate_latches()]
     platches = map(get_primed_var, latches)
-    return bdd.swap_variables(latches, platches)
+    return b.swap_variables(latches, platches)
 
 
-def prime_all_inputs_in_bdd(bdd):
+def prime_all_inputs_in_bdd(b):
     # unfortunately swap_variables needs a list
     inputs = [x.lit for x in chain(iterate_uncontrollable_inputs(),
                                    iterate_controllable_inputs())]
     pinputs = map(get_primed_var, inputs)
-    return bdd.swap_variables(inputs, pinputs)
+    return b.swap_variables(inputs, pinputs)
 
 
-def unprime_all_inputs_in_bdd(bdd):
+def unprime_all_inputs_in_bdd(b):
     # unfortunately swap_variables needs a list
     inputs = [x.lit for x in chain(iterate_uncontrollable_inputs(),
                                    iterate_controllable_inputs())]
     pinputs = map(get_primed_var, inputs)
-    return bdd.swap_variables(pinputs, inputs)
+    return b.swap_variables(pinputs, inputs)
 
 
-def unprime_latches_in_bdd(bdd):
+def unprime_latches_in_bdd(b):
     # unfortunately swap_variables needs a list
     latches = [x.lit for x in iterate_latches()]
     platches = map(get_primed_var, latches)
-    return bdd.swap_variables(platches, latches)
+    return b.swap_variables(platches, latches)
 
 
 cached_transition = None
@@ -108,9 +108,9 @@ def trans_rel_bdd():
     # check cache
     if cached_transition:
         return cached_transition
-    b = bdd.true()
+    b = BDD.true()
     for x in iterate_latches():
-        b &= bdd.make_eq(bdd.BDD(get_primed_var(x.lit)),
+        b &= BDD.make_eq(BDD(get_primed_var(x.lit)),
                          get_bdd_for_lit(x.next))
     cached_transition = b
     log.BDD_DMP(b, "Composed and cached the concrete transition relation.")
@@ -118,9 +118,9 @@ def trans_rel_bdd():
 
 
 def init_state_bdd():
-    b = bdd.true()
+    b = BDD.true()
     for x in iterate_latches():
-        b &= ~bdd.BDD(x.lit)
+        b &= ~BDD(x.lit)
     return b
 
 
@@ -128,25 +128,25 @@ def over_post_bdd(src_states_bdd, sys_strat=None,
                   restrict_like_crazy=False):
     """ Over-approximated version of concrete post which can be done even
     without the transition relation """
-    strat = bdd.true()
+    strat = BDD.true()
     if sys_strat is not None:
         strat &= sys_strat
     # to do this, we use an over-simplified transition relation, EXu,Xc
-    b = bdd.true()
+    b = BDD.true()
     for x in iterate_latches():
-        temp = bdd.make_eq(bdd.BDD(get_primed_var(x.lit)),
+        temp = BDD.make_eq(BDD(get_primed_var(x.lit)),
                            get_bdd_for_lit(x.next))
         b &= temp.and_abstract(
             strat,
-            bdd.get_cube(imap(
-                funcomp(bdd.BDD, symbol_lit),
+            BDD.get_cube(imap(
+                funcomp(BDD, symbol_lit),
                 iterate_controllable_inputs()
             )))
         if restrict_like_crazy:
             b = b.restrict(src_states_bdd)
     b &= src_states_bdd
     b = b.exist_abstract(
-        bdd.get_cube(imap(funcomp(bdd.BDD, symbol_lit),
+        BDD.get_cube(imap(funcomp(BDD, symbol_lit),
                      chain(iterate_latches(),
                            iterate_uncontrollable_inputs()))))
     return unprime_latches_in_bdd(b)
@@ -169,7 +169,7 @@ def post_bdd(src_states_bdd, sys_strat=None, restrict_like_crazy=False,
 
     suc_bdd = trans.and_abstract(
         src_states_bdd,
-        bdd.get_cube(imap(funcomp(bdd.BDD, symbol_lit), chain(
+        BDD.get_cube(imap(funcomp(BDD, symbol_lit), chain(
             iterate_controllable_inputs(),
             iterate_uncontrollable_inputs(),
             iterate_latches())
@@ -184,8 +184,8 @@ def substitute_latches_next(b, use_trans=False, restrict_fun=None):
         if restrict_fun is not None:
             trans = trans.restrict(restrict_fun)
         primed_bdd = prime_latches_in_bdd(b)
-        primed_latches = bdd.get_cube(
-            imap(funcomp(bdd.BDD, get_primed_var, symbol_lit),
+        primed_latches = BDD.get_cube(
+            imap(funcomp(BDD, get_primed_var, symbol_lit),
                  iterate_latches()))
         return trans.and_abstract(primed_bdd,
                                   primed_latches)
@@ -213,10 +213,10 @@ def upre_bdd(dst_states_bdd, env_strat=None, get_strat=False,
         p_bdd &= env_strat
     # there is an uncontrollable action such that for all contro...
     temp_bdd = p_bdd.univ_abstract(
-        bdd.get_cube(imap(funcomp(bdd.BDD, symbol_lit),
+        BDD.get_cube(imap(funcomp(BDD, symbol_lit),
                           iterate_controllable_inputs())))
     p_bdd = temp_bdd.exist_abstract(
-        bdd.get_cube(imap(funcomp(bdd.BDD, symbol_lit),
+        BDD.get_cube(imap(funcomp(BDD, symbol_lit),
                           iterate_uncontrollable_inputs())))
     # prepare the output
     if get_strat:
@@ -235,18 +235,18 @@ def cpre_bdd(dst_states_bdd, get_strat=False, use_trans=False):
     # controllable actions in the bdd
     if not get_strat:
         p_bdd = p_bdd.exist_abstract(
-            bdd.get_cube(imap(funcomp(bdd.BDD, symbol_lit),
+            BDD.get_cube(imap(funcomp(BDD, symbol_lit),
                               iterate_controllable_inputs())))
         p_bdd = p_bdd.univ_abstract(
-            bdd.get_cube(imap(funcomp(bdd.BDD, symbol_lit),
+            BDD.get_cube(imap(funcomp(BDD, symbol_lit),
                               iterate_uncontrollable_inputs())))
     return p_bdd
 
 
 def strat_is_inductive(strat, use_trans=False):
     strat_dom = strat.exist_abstract(
-        bdd.get_cube(imap(funcomp(bdd.BDD, symbol_lit),
+        BDD.get_cube(imap(funcomp(BDD, symbol_lit),
                           chain(iterate_controllable_inputs(),
                                 iterate_uncontrollable_inputs()))))
     p_bdd = substitute_latches_next(strat_dom, use_trans=use_trans)
-    return bdd.make_impl(strat, p_bdd) == bdd.true()
+    return BDD.make_impl(strat, p_bdd) == BDD.true()

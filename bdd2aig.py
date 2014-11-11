@@ -22,8 +22,9 @@ Universite Libre de Bruxelles
 gperezme@ulb.ac.be
 """
 
+import log
 import aig
-import bdd
+from cudd_bdd import BDD
 
 
 def get_optimized_and_lit(a_lit, b_lit):
@@ -56,7 +57,7 @@ def bdd2aig(a_bdd):
         return bdd_gate_cache[a_bdd]
 
     if a_bdd.is_constant():
-        res = int(a_bdd == bdd.true())   # in aiger 0/1 = False/True
+        res = int(a_bdd == BDD.true())   # in aiger 0/1 = False/True
         return res
     # get an index of variable,
     # all variables used in bdds also introduced in aiger,
@@ -86,3 +87,43 @@ def bdd2aig(a_bdd):
     # cache result
     bdd_gate_cache[a_bdd] = res
     return res
+
+
+# Given a bdd representing the set of safe states-action pairs for the
+# controller (Eve) we compute a winning strategy for her (trying to get a
+# minimal one via a greedy algo on the way).
+def extract_output_funs(strategy, care_set=None):
+    """
+    Calculate BDDs for output functions given non-deterministic winning
+    strategy.
+    """
+    if care_set is None:
+        care_set = BDD.true()
+
+    output_models = dict()
+    all_outputs = [BDD(x.lit) for x in aig.iterate_controllable_inputs()]
+    for c_symb in aig.iterate_controllable_inputs():
+        c = BDD(c_symb.lit)
+        others = set(set(all_outputs) - set([c]))
+        if others:
+            others_cube = BDD.get_cube(others)
+            c_arena = strategy.exist_abstract(others_cube)
+        else:
+            c_arena = strategy
+        # pairs (x,u) in which c can be true
+        can_be_true = c_arena.cofactor(c)
+        # pairs (x,u) in which c can be false
+        can_be_false = c_arena.cofactor(~c)
+        must_be_true = (~can_be_false) & can_be_true
+        must_be_false = (~can_be_true) & can_be_false
+        local_care_set = care_set & (must_be_true | must_be_false)
+        # Restrict operation:
+        #   on care_set: must_be_true.restrict(care_set) <-> must_be_true
+        c_model = min([must_be_true.safe_restrict(local_care_set),
+                      (~must_be_false).safe_restrict(local_care_set)],
+                      key=lambda x: x.dag_size())
+        output_models[c_symb.lit] = c_model
+        log.DBG_MSG("Size of function for " + str(c.get_index()) + " = " +
+                    str(c_model.dag_size()))
+        strategy &= BDD.make_eq(c, c_model)
+    return output_models

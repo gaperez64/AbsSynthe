@@ -22,37 +22,39 @@ Universite Libre de Bruxelles
 gperezme@ulb.ac.be
 """
 
-
+from abc import ABCMeta, abstractmethod
 from itertools import imap
 from utils import fixpoint
 import log
-import bdd
-import aig
 
 
 # safety game template for the algorithms implemented here, they all
 # use only the functions provided here
 class Game:
+    __metaclass__ = ABCMeta
+
     def upre(self, dst):
-        pass
+        raise NotImplementedError()
 
     def upost(self, src):
-        pass
+        raise NotImplementedError()
 
     def cpre(self, dst):
-        pass
+        raise NotImplementedError()
 
     def cpost(self, src):
-        pass
+        raise NotImplementedError()
 
+    @abstractmethod
     def error(self):
         pass
 
+    @abstractmethod
     def init(self):
         pass
 
     def is_env_state(self, state):
-        pass
+        raise NotImplementedError()
 
 
 # Explicit OTFUR based on the transition relation and using smart simulation
@@ -84,9 +86,9 @@ def forward_safety_synth(game):
                     waiting.extend([(sp, x) for x in game.cpost(sp)])
         else:
             is_loser = lambda x: x in losing and losing[x]
-            local_lose = (game.is_env_state(s) and
-                          any(imap(is_loser, game.upost(s))) or
-                          all(imap(is_loser, game.cpost(s))))
+            local_lose = any(imap(is_loser, game.upost(s)))\
+                if game.is_env_state(s)\
+                else all(imap(is_loser, game.cpost(s)))
             if local_lose:
                 losing[s] = True
                 waiting.extend(depend[s])
@@ -98,7 +100,7 @@ def forward_safety_synth(game):
 
 
 # Classical backward fixpoint algo
-def backward_safety_synth(game, only_real=False):
+def backward_safety_synth(game):
     init_state = game.init()
     error_states = game.error()
     log.DBG_MSG("Computing fixpoint of UPRE.")
@@ -108,47 +110,7 @@ def backward_safety_synth(game, only_real=False):
         early_exit=lambda x: x & init_state
     )
 
-    if not win_region & init_state:
+    if not (win_region & init_state):
         return None
     else:
         return win_region
-
-
-# Given a bdd representing the set of safe states-action paris for the
-# controller (Eve) we compute a winning strategy for her (trying to get a
-# minimal one via a greedy algo on the way).
-def extract_output_funs(strategy, care_set=None):
-    """
-    Calculate BDDs for output functions given non-deterministic winning
-    strategy.
-    """
-    if care_set is None:
-        care_set = bdd.true()
-
-    output_models = dict()
-    all_outputs = [bdd.BDD(x.lit) for x in aig.iterate_controllable_inputs()]
-    for c_symb in aig.iterate_controllable_inputs():
-        c = bdd.BDD(c_symb.lit)
-        others = set(set(all_outputs) - set([c]))
-        if others:
-            others_cube = bdd.get_cube(others)
-            c_arena = strategy.exist_abstract(others_cube)
-        else:
-            c_arena = strategy
-        # pairs (x,u) in which c can be true
-        can_be_true = c_arena.cofactor(c)
-        # pairs (x,u) in which c can be false
-        can_be_false = c_arena.cofactor(~c)
-        must_be_true = (~can_be_false) & can_be_true
-        must_be_false = (~can_be_true) & can_be_false
-        local_care_set = care_set & (must_be_true | must_be_false)
-        # Restrict operation:
-        #   on care_set: must_be_true.restrict(care_set) <-> must_be_true
-        c_model = min([must_be_true.safe_restrict(local_care_set),
-                      (~must_be_false).safe_restrict(local_care_set)],
-                      key=bdd.dag_size)
-        output_models[c_symb.lit] = c_model
-        log.DBG_MSG("Size of function for " + str(c.get_index()) + " = " +
-                    str(c_model.dag_size()))
-        strategy &= bdd.make_eq(c, c_model)
-    return output_models
