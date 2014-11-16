@@ -250,18 +250,16 @@ class BDD(bdd.BDD_Base):
         return ~b | c
 
     @staticmethod
-    def get_clause(bs):
+    def make_clause(bs):
         assert bs
-        bs
         clause = BDD.false()
         for b in bs:
             clause |= b
         return clause
 
     @staticmethod
-    def get_cube(bs):
+    def make_cube(bs):
         assert bs
-
         cube = BDD.true()
         for b in bs:
             cube &= b

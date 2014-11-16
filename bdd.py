@@ -45,11 +45,11 @@ class BDD_Base:
         pass
 
     @abstractmethod
-    def get_clause(bs):
+    def make_clause(bs):
         pass
 
     @abstractmethod
-    def get_cube(bs):
+    def make_cube(bs):
         pass
 
     @abstractmethod

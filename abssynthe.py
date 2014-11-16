@@ -30,7 +30,6 @@ from cudd_bdd import BDD
 from aig import (
     symbol_lit,
     strip_lit,
-    negate_lit
 )
 from bdd_aig import BDDAIG
 from utils import funcomp
@@ -83,19 +82,19 @@ class SymblicitGame(ForwardGame):
         self.uinputs = [x.lit for x in
                         self.aig.iterate_uncontrollable_inputs()]
         self.latches = [x.lit for x in self.aig.iterate_latches()]
-        self.latch_cube = BDD.get_cube(imap(funcomp(BDD,
-                                                    symbol_lit),
-                                            self.ig.iterate_latches()))
-        self.platch_cube = BDD.get_cube(imap(funcomp(BDD,
-                                                     self.aig.get_primed_var,
+        self.latch_cube = BDD.make_cube(imap(funcomp(BDD,
                                                      symbol_lit),
-                                             self.aig.iterate_latches()))
-        self.cinputs_cube = BDD.get_cube(
+                                             self.ig.iterate_latches()))
+        self.platch_cube = BDD.make_cube(imap(funcomp(BDD,
+                                                      self.aig.get_primed_var,
+                                                      symbol_lit),
+                                              self.aig.iterate_latches()))
+        self.cinputs_cube = BDD.make_cube(
             imap(funcomp(BDD, symbol_lit),
                  self.aig.iterate_controllable_inputs()))
         self.pcinputs_cube = self.aig.prime_all_inputs_in_bdd(
             self.cinputs_cube)
-        self.uinputs_cube = BDD.get_cube(
+        self.uinputs_cube = BDD.make_cube(
             imap(funcomp(BDD, symbol_lit),
                  self.aig.iterate_uncontrollable_inputs()))
         self.init_state_bdd = self.init_state_bdd()
@@ -117,7 +116,7 @@ class SymblicitGame(ForwardGame):
         M = set()
         while A != BDD.false():
             a = A.get_one_minterm(self.uinputs)
-            trans = BDD.get_cube(
+            trans = BDD.make_cube(
                 imap(lambda x: BDD.make_eq(BDD(self.aig.get_primed_var(x.lit)),
                                            self.aig.get_bdd_for_lit(x.next)
                                            .and_abstract(q, self.latch_cube)),
@@ -146,7 +145,7 @@ class SymblicitGame(ForwardGame):
         if s in self.succ_cache:
             L = self.succ_cache[s]
         else:
-            L = BDD.get_cube(
+            L = BDD.make_cube(
                 imap(lambda x: BDD.make_eq(BDD(x.lit),
                                            self.aig.get_bdd_for_lit(x.next)
                                            .and_abstract(q & au,
@@ -177,32 +176,16 @@ def synth(argv):
     elif not argv.no_decomp and aig.lit_is_negated(aig.error_fake_latch.next):
         log.DBG_MSG("Decomposition opt possible (BIG OR case)")
         (A, B) = aig.get_1l_land(strip_lit(aig.error_fake_latch.next))
-        s = BDD.true()
-        for a in A:
-            log.DBG_MSG("Solving sub-safety game")
-            latchset = set([x.lit for x in aig.iterate_latches()])
-            log.DBG_MSG("Avoidable latch # = " +
-                        str(len(latchset - aig.get_rec_latch_deps(a))))
-            aig.push_error_function(aig.negate_lit(a))
-            game = ConcGame(restrict_like_crazy=argv.restrict_like_crazy,
-                            use_trans=argv.use_trans)
-            w = backward_safety_synth(game)
-            # short-circuit a negative response
-            if w is None:
-                return False
-            s &= aig.cpre_bdd(w, get_strat=True)
-            aig.pop_error_function()
-            # sanity check before moving forward
-            if (s == BDD.false() or
-                    aig.init_state_bdd() & s == BDD.false()):
-                return False
+        s = comp_safety_synth(imap(lambda a: BDDAIG(aig).set_lit2bdd(
+            aig.error_fake_latch.next, ~(aig.lit2bdd(a))), A))
         # we have to make sure the controller can stay in the win'n area
-        if not aig.strat_is_inductive(s, use_trans=argv.use_trans):
+        if s is None or\
+                not aig.strat_is_inductive(s, use_trans=argv.use_trans):
             return False
     # Symbolic approach with compositional opts geared towards GR(1) specs
-    # the idea is that if the negation of the error signal is of the form
-    # A v (C ^ D) then we can distribute the disjunction to get
-    # (A v C) ^ (A v D)
+    # the idea is that if the error signal is of the form
+    # A ^ (C v D) then we can distribute the disjunction to get
+    # (A ^ C) v (A ^ D)
     elif not argv.no_decomp:
         (A, B) = aig.get_1l_land(aig.error_fake_latch.next)
         if not B:
@@ -210,31 +193,16 @@ def synth(argv):
             argv.no_decomp = True
             return synth(argv)
         else:
-            log.DBG_MSG("Decomposition opt possible (A v [C ^ D] case)")
-        (C, D) = aig.get_1l_land(B.pop())
-        s = BDD.true()
-        for a in A:
-            log.DBG_MSG("Solving sub-safety game for var " + str(a))
-            latchset = set([x.lit for x in aig.iterate_latches()])
-            log.DBG_MSG("Avoidable latch # = " +
-                        str(len(latchset - aig.get_rec_latch_deps(a))))
-            aig.push_error_function(negate_lit(a))
-            game = ConcGame(restrict_like_crazy=argv.restrict_like_crazy,
-                            use_trans=argv.use_trans)
-            w = backward_safety_synth(game)
-            # short-circuit a negative response
-            if w is None:
-                return False
-            s &= aig.cpre_bdd(w, get_strat=True)
-            aig.pop_error_function()
-            # sanity check before moving forward
-            if (s == BDD.false() or
-                    aig.init_state_bdd() & s == BDD.false()):
-                return False
+            log.DBG_MSG("Decomposition opt possible (A ^ [C v D] case)")
+        b = B.pop()
+        cube = BDD.make_cube(filter(lambda x: x != strip_lit(b), A))
+        (C, D) = aig.get_1l_land(b)
+        s = comp_safety_synth(imap(lambda a: BDDAIG(aig).set_lit2bdd(
+            aig.error_fake_latch.lit, ~(aig.lit2bdd(a)) & cube), C))
         # we have to make sure the controller can stay in the win'n area
-        if not aig.strat_is_inductive(s, use_trans=argv.use_trans):
+        if s is None or\
+                not aig.strat_is_inductive(s, use_trans=argv.use_trans):
             return False
-
     # Symbolic approach (avoiding compositional opts)
     else:
         game = ConcGame(restrict_like_crazy=argv.restrict_like_crazy,

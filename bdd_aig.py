@@ -44,6 +44,14 @@ class BDDAIG(AIG):
         self._cached_transition = None
         self.bdd_gate_cache = dict()
 
+    def set_lit2bdd(self, lit, b):
+        self.lit_to_bdd[lit] = b
+        return self
+
+    def rem_lit2bdd(self, lit):
+        del self.lit_to_bdd[lit]
+        return self
+
     def lit2bdd(self, lit):
         """ Convert AIGER lit into BDD """
         # query cache
@@ -128,7 +136,7 @@ class BDDAIG(AIG):
                                self.lit2bdd(x.next))
             b &= temp.and_abstract(
                 strat,
-                BDD.get_cube(imap(
+                BDD.make_cube(imap(
                     funcomp(BDD, symbol_lit),
                     self.iterate_controllable_inputs()
                 )))
@@ -136,9 +144,9 @@ class BDDAIG(AIG):
                 b = b.restrict(src_states_bdd)
         b &= src_states_bdd
         b = b.exist_abstract(
-            BDD.get_cube(imap(funcomp(BDD, symbol_lit),
-                         chain(self.iterate_latches(),
-                               self.iterate_uncontrollable_inputs()))))
+            BDD.make_cube(imap(funcomp(BDD, symbol_lit),
+                          chain(self.iterate_latches(),
+                                self.iterate_uncontrollable_inputs()))))
         return self.unprime_latches_in_bdd(b)
 
     def post_bdd(self, src_states_bdd, sys_strat=None,
@@ -159,7 +167,7 @@ class BDDAIG(AIG):
 
         suc_bdd = trans.and_abstract(
             src_states_bdd,
-            BDD.get_cube(imap(funcomp(BDD, symbol_lit), chain(
+            BDD.make_cube(imap(funcomp(BDD, symbol_lit), chain(
                 self.iterate_controllable_inputs(),
                 self.iterate_uncontrollable_inputs(),
                 self.iterate_latches())
@@ -173,7 +181,7 @@ class BDDAIG(AIG):
             if restrict_fun is not None:
                 trans = trans.restrict(restrict_fun)
             primed_bdd = self.prime_latches_in_bdd(b)
-            primed_latches = BDD.get_cube(
+            primed_latches = BDD.make_cube(
                 imap(funcomp(BDD, get_primed_var, symbol_lit),
                      self.iterate_latches()))
             return trans.and_abstract(primed_bdd,
@@ -202,11 +210,11 @@ class BDDAIG(AIG):
             p_bdd &= env_strat
         # there is an uncontrollable action such that for all contro...
         temp_bdd = p_bdd.univ_abstract(
-            BDD.get_cube(imap(funcomp(BDD, symbol_lit),
-                              self.iterate_controllable_inputs())))
+            BDD.make_cube(imap(funcomp(BDD, symbol_lit),
+                               self.iterate_controllable_inputs())))
         p_bdd = temp_bdd.exist_abstract(
-            BDD.get_cube(imap(funcomp(BDD, symbol_lit),
-                              self.iterate_uncontrollable_inputs())))
+            BDD.make_cube(imap(funcomp(BDD, symbol_lit),
+                               self.iterate_uncontrollable_inputs())))
         # prepare the output
         if get_strat:
             return temp_bdd
@@ -223,17 +231,17 @@ class BDDAIG(AIG):
         # controllable actions in the bdd
         if not get_strat:
             p_bdd = p_bdd.exist_abstract(
-                BDD.get_cube(imap(funcomp(BDD, symbol_lit),
-                                  self.iterate_controllable_inputs())))
+                BDD.make_cube(imap(funcomp(BDD, symbol_lit),
+                                   self.iterate_controllable_inputs())))
             p_bdd = p_bdd.univ_abstract(
-                BDD.get_cube(imap(funcomp(BDD, symbol_lit),
-                                  self.iterate_uncontrollable_inputs())))
+                BDD.make_cube(imap(funcomp(BDD, symbol_lit),
+                                   self.iterate_uncontrollable_inputs())))
         return p_bdd
 
     def strat_is_inductive(self, strat, use_trans=False):
         strat_dom = strat.exist_abstract(
-            BDD.get_cube(imap(funcomp(BDD, symbol_lit),
-                              chain(self.iterate_controllable_inputs(),
+            BDD.make_cube(imap(funcomp(BDD, symbol_lit),
+                               chain(self.iterate_controllable_inputs(),
                                     self.iterate_uncontrollable_inputs()))))
         p_bdd = self.substitute_latches_next(strat_dom, use_trans=use_trans)
         return BDD.make_impl(strat, p_bdd) == BDD.true()
@@ -312,7 +320,7 @@ class BDDAIG(AIG):
             c = BDD(c_symb.lit)
             others = set(set(all_outputs) - set([c]))
             if others:
-                others_cube = BDD.get_cube(others)
+                others_cube = BDD.make_cube(others)
                 c_arena = strategy.exist_abstract(others_cube)
             else:
                 c_arena = strategy

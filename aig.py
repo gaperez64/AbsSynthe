@@ -45,7 +45,7 @@ class AIG:
         return self.spec.num_latches
 
     def max_var(self):
-        return int self.spec.maxvar
+        return int(self.spec.maxvar)
 
     def next_lit(self):
         return (int(self.spec.maxvar) + 1) * 2
@@ -102,13 +102,12 @@ class AIG:
         if (self.error_fake_latch is not None and
                 stripped_lit == self.error_fake_latch.lit):
             return None, self.error_fake_latch, None
-
         input_ = aiger_is_input(self.spec, stripped_lit)
         latch_ = aiger_is_latch(self.spec, stripped_lit)
         and_ = aiger_is_and(self.spec, stripped_lit)
         return input_, latch_, and_
 
-    def lit_is_and(self.lit):
+    def lit_is_and(self, lit):
         (i, l, a) = self.get_lit_type(lit)
         return a
 
@@ -127,7 +126,7 @@ class AIG:
 
     def _iterate_inputs(self):
         for i in range(int(self.spec.num_inputs)):
-            yield input_aiger_symbol = get_aiger_symbol(self.spec.inputs, i)
+            yield get_aiger_symbol(self.spec.inputs, i)
 
     def iterate_uncontrollable_inputs(self):
         return ifilter(lambda name: not name.startswith("controllable"),
@@ -140,10 +139,10 @@ class AIG:
     # returns the set A = {a_0,a_1,...} from the expression AND(a_0,a_1,...)
     # and a subset B <= A of the latches that were not completely explored
     def get_1l_land(self, lit):
-        assert not lit_is_negated(a)
+        assert not lit_is_negated(lit)
         if lit in self._1l_land_cache:
-            return self._1l_land_cache[a]
-        a = self.lit_is_and(a)
+            return self._1l_land_cache[lit]
+        a = self.lit_is_and(lit)
         # init variables
         A = set()
         B = set()
