@@ -28,22 +28,10 @@ from utils import fixpoint
 import log
 
 
-# safety game template for the algorithms implemented here, they all
+# game templates for the algorithms implemented here, they all
 # use only the functions provided here
 class Game:
     __metaclass__ = ABCMeta
-
-    def upre(self, dst):
-        raise NotImplementedError()
-
-    def upost(self, src):
-        raise NotImplementedError()
-
-    def cpre(self, dst):
-        raise NotImplementedError()
-
-    def cpost(self, src):
-        raise NotImplementedError()
 
     @abstractmethod
     def error(self):
@@ -53,54 +41,104 @@ class Game:
     def init(self):
         pass
 
+
+class VisitTracker:
+    def __init__(self):
+        self.attr = dict()
+
+    def is_visited(self, v):
+        return v in self.attr
+
+    def is_in_attr(self, v):
+        return v in self.attr and self.attr[v]
+
+    def visit(self, v):
+        self.attr[v] = False
+        return self
+
+    def mark_in_attr(self, v, b):
+        self.attr[v] = b
+        return self
+
+
+class ForwardGame(Game):
+    __metaclass__ = ABCMeta
+
+    @abstractmethod
+    def upost(self, src):
+        pass
+
+    @abstractmethod
+    def cpost(self, src):
+        pass
+
+    @abstractmethod
     def is_env_state(self, state):
-        raise NotImplementedError()
+        pass
+
+    def visit_tracker(self):
+        return VisitTracker()
 
 
-# Explicit OTFUR based on the transition relation and using smart simulation
-# relation abstraction
+class BackwardGame(Game):
+    __megaclass__ = ABCMeta
+
+    @abstractmethod
+    def upre(self, dst):
+        pass
+
+    @abstractmethod
+    def cpre(self, dst, get_strat):
+        pass
+
+
+# OTFUR algo
 def forward_safety_synth(game):
+    assert isinstance(game, ForwardGame)
     init_state = game.init()
     error_states = game.error()
-    passed = set([init_state])
+    tracker = game.visit_tracker()
     depend = dict()
     depend[init_state] = set()
-    losing = dict()
-    losing[init_state] = False
-    waiting = [(init_state, x) for x in game.upost(init_state)]
-    while waiting and not losing[init_state]:
-        (s, sp) = waiting.pop()
-        if sp not in passed:
-            passed.add(sp)
-            losing[sp] = game.is_env_state(sp) and (sp & error_states)
+    waiting = [(init_state, game.upost(init_state))]
+    while waiting and not tracker.is_in_attr(init_state):
+        (s, sp_iter) = waiting.pop()
+        sp = next(sp_iter)
+        if sp_iter:  # there are still elements in the iter
+            waiting.append((s, sp_iter))
+        if not tracker.is_visited(sp):
+            tracker.visit(sp)
+            tracker.mark_in_attr(
+                sp, game.is_env_state(sp) and (sp & error_states))
             if sp in depend:
-                depend[sp].add((s, sp))
+                depend[sp].add((s, iter([sp])))
             else:
-                depend[sp] = set([(s, sp)])
-            if losing[sp]:
-                waiting.append((s, sp))
+                depend[sp] = set([(s, iter([sp]))])
+            if tracker.is_in_attr(sp):
+                waiting.append((s, iter([sp])))
             else:
                 if game.is_env_state(sp):
-                    waiting.extend([(sp, x) for x in game.upost(sp)])
+                    waiting.append((sp, game.upost(sp)))
                 else:
-                    waiting.extend([(sp, x) for x in game.cpost(sp)])
+                    waiting.append((sp, game.cpost(sp)))
         else:
-            is_loser = lambda x: x in losing and losing[x]
-            local_lose = any(imap(is_loser, game.upost(s)))\
+            local_lose = any(imap(tracker.is_in_attr, game.upost(s)))\
                 if game.is_env_state(s)\
-                else all(imap(is_loser, game.cpost(s)))
+                else all(imap(tracker.is_in_attr, game.cpost(s)))
             if local_lose:
-                losing[s] = True
+                tracker.mark_in_attr(s, True)
                 waiting.extend(depend[s])
-            if sp not in losing or not losing[sp]:
-                depend[sp] = depend[sp] | set([(s, sp)])
+            if not tracker.is_in_attr(sp):
+                depend[sp].add((s, sp))
     log.DBG_MSG("OTFUR, losing[init_state] = " +
-                str(losing[init_state]))
-    return None if losing[init_state] else True
+                str(tracker.is_in_attr(init_state)))
+    return None if tracker.is_in_attr(init_state) else True
 
 
 # Classical backward fixpoint algo
 def backward_safety_synth(game):
+    assert isinstance(game, BackwardGame)
+
     init_state = game.init()
     error_states = game.error()
     log.DBG_MSG("Computing fixpoint of UPRE.")
@@ -114,3 +152,22 @@ def backward_safety_synth(game):
         return None
     else:
         return win_region
+
+
+# Compositional approach, receives an iterable of BackwardGames
+def comp_safety_synth(games):
+    s = None
+    for game in games:
+        assert isinstance(game, BackwardGame)
+        w = backward_safety_synth(game)
+        # short-circuit a negative response
+        if w is None:
+            return None
+        if s is None:
+            s = game.cpre(w, get_strat=True)
+        else:
+            s &= game.cpre(w, get_strat=True)
+        # sanity check before moving forward
+        if (not s or not game.init_state() & s):
+            return None
+    return s

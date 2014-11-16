@@ -1,9 +1,6 @@
-%module aiger_wrap
+%module buddy_wrap
 %{
-#include "aiger.h"
+#include "bdd.h"
 %}
 
-%include "aiger.h"
-%inline %{
-aiger_symbol* get_aiger_symbol(aiger_symbol* s, int i) { return &s[i]; }
-%}
+%include "bdd.h"
