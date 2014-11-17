@@ -37,12 +37,23 @@ import log
 
 
 class BDDAIG(AIG):
-    def __init__(self, aig):
-        assert isinstance(aig, AIG)
+    def __init__(self, aig=None, aiger_file_name=None,
+                 intro_error_latch=False):
+        assert aig is not None or aiger_file_name is not None
+        if aig is None:
+            aig = AIG(aiger_file_name, intro_error_latch=intro_error_latch)
+        self._copy_from_aig(aig)
+        # initialize local attributes
         self.lit_to_bdd = dict()
         self.bdd_to_lit = dict()
         self._cached_transition = None
         self.bdd_gate_cache = dict()
+        self.latch_restr = None
+
+    def _copy_from_aig(self, aig):
+        assert isinstance(aig, AIG)
+        # shallow copy of all attributes of aig
+        self.__dict__ = aig.__dict__.copy()
 
     def set_lit2bdd(self, lit, b):
         self.lit_to_bdd[lit] = b
@@ -51,6 +62,29 @@ class BDDAIG(AIG):
     def rem_lit2bdd(self, lit):
         del self.lit_to_bdd[lit]
         return self
+
+    # short-circuit the error bdd and restrict the whole thing to
+    # the relevant latches
+    def short_error(self, b, lits):
+        nu_bddaig = BDDAIG(aig=self)
+        nu_bddaig.set_lit2bdd(self.error_fake_latch.next, b)
+        latch_deps = set()
+        for l in lits:
+            latch_deps |= self.get_rec_latch_deps(strip_lit(l))
+        nu_bddaig.latch_restr = latch_deps
+        not_deps = [l.lit for l in self.iterate_latches()
+                    if l.lit not in latch_deps]
+        log.DBG_MSG("Latches not needed: " + str(not_deps))
+        log.DBG_MSG("Short-circ'd BDDAIG computed.")
+        return nu_bddaig
+
+    def iterate_latches(self):
+        for l in AIG.iterate_latches(self):
+            if self.latch_restr is not None and\
+                    l != self.error_fake_latch and\
+                    l.lit not in self.latch_restr:
+                continue
+            yield l
 
     def lit2bdd(self, lit):
         """ Convert AIGER lit into BDD """
@@ -221,7 +255,8 @@ class BDDAIG(AIG):
         else:
             return p_bdd
 
-    def cpre_bdd(self, dst_states_bdd, get_strat=False, use_trans=False):
+    def cpre_bdd(self, dst_states_bdd, get_strat=False, use_trans=False,
+                 restrict_like_crazy=False):
         """ CPRE = AXu.EXc.EL' : T(L,Xu,Xc,L') ^ dst(L') """
         # take a transition step backwards
         p_bdd = self.substitute_latches_next(dst_states_bdd,
@@ -242,7 +277,7 @@ class BDDAIG(AIG):
         strat_dom = strat.exist_abstract(
             BDD.make_cube(imap(funcomp(BDD, symbol_lit),
                                chain(self.iterate_controllable_inputs(),
-                                    self.iterate_uncontrollable_inputs()))))
+                                     self.iterate_uncontrollable_inputs()))))
         p_bdd = self.substitute_latches_next(strat_dom, use_trans=use_trans)
         return BDD.make_impl(strat, p_bdd) == BDD.true()
 
@@ -279,10 +314,10 @@ class BDDAIG(AIG):
         # but fake error latch will not be used in output functions (at least
         # we don't need this..)
         a_lit = a_bdd.get_index()
-        assert ((a_lit != self.error_fake_latch.lit),
-                ("using error latch in the " +
-                 "definition of output " +
-                 "function is not allowed"))
+        assert (a_lit != self.error_fake_latch.lit),\
+               ("using error latch in the " +
+                "definition of output " +
+                "function is not allowed")
         t_bdd = a_bdd.then_child()
         e_bdd = a_bdd.else_child()
         t_lit = self.bdd2aig(t_bdd)

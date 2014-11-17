@@ -64,6 +64,7 @@ class AIG:
         self.error_fake_latch.lit = self.next_lit()
         self.error_fake_latch.name = "fake_error_latch"
         self.error_fake_latch.next = error_symbol.lit
+        log.DBG_MSG("Error fake latch = " + str(self.error_fake_latch.lit))
 
     def replace_error_function(self, e):
         self.ntroduce_error_latch()
@@ -129,11 +130,11 @@ class AIG:
             yield get_aiger_symbol(self.spec.inputs, i)
 
     def iterate_uncontrollable_inputs(self):
-        return ifilter(lambda name: not name.startswith("controllable"),
+        return ifilter(lambda sym: not sym.name.startswith("controllable"),
                        self._iterate_inputs())
 
     def iterate_controllable_inputs(self):
-        return ifilter(lambda name: name.startswith("controllable"),
+        return ifilter(lambda sym: sym.name.startswith("controllable"),
                        self._iterate_inputs())
 
     # returns the set A = {a_0,a_1,...} from the expression AND(a_0,a_1,...)
@@ -191,11 +192,13 @@ class AIG:
         return result
 
     def get_rec_latch_deps(self, lit):
+        # TODO: rephrase this method as a fixpoint function
         latchset = set([x.lit for x in self.iterate_latches()])
         latch_deps = self.get_lit_deps(lit) & latchset
         to_visit = set(latch_deps)
         while to_visit:
-            (i, l, a) = self.get_lit_type(lit)
+            (i, l, a) = self.get_lit_type(to_visit.pop())
+            assert l and not i and not a
             nu_deps = self.get_lit_deps(l.next) & latchset
             to_visit |= nu_deps - latch_deps
             latch_deps |= nu_deps

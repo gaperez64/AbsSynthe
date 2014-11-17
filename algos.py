@@ -171,7 +171,7 @@ def comp_safety_synth(games):
         else:
             s &= game.cpre(w, get_strat=True)
         # sanity check before moving forward
-        if (not s or not game.init_state() & s):
+        if (not s or not game.init() & s):
             return None
     log.DBG_MSG("Solved " + str(cnt) + " sub games.")
     return s
