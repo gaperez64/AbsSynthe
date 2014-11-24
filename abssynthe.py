@@ -178,7 +178,7 @@ def _synth_from_spec(aig, argv):
     # Explicit approach
     if argv.use_symb:
         assert argv.out_file is None
-        symgame = SymblicitGame()
+        symgame = SymblicitGame(aig)
         w = forward_safety_synth(symgame)
     # Symbolic approach with compositional opts
     elif not argv.no_decomp and lit_is_negated(aig.error_fake_latch.next):
