@@ -59,11 +59,14 @@ class ConcGame(BackwardGame):
         self.restrict_like_crazy = restrict_like_crazy
         self.use_trans = use_trans
         self.aig = aig
+        self.short_error = None
 
     def init(self):
         return self.aig.init_state_bdd()
 
     def error(self):
+        if self.short_error is not None:
+            return self.short_error
         return self.aig.lit2bdd(self.aig.error_fake_latch.lit)
 
     def upre(self, dst):
@@ -181,16 +184,19 @@ def _synth_from_spec(aig, argv):
     elif not argv.no_decomp and lit_is_negated(aig.error_fake_latch.next):
         log.DBG_MSG("Decomposition opt possible (BIG OR case)")
         (A, B) = aig.get_1l_land(strip_lit(aig.error_fake_latch.next))
-        w = comp_safety_synth(
+        (w, strat) = comp_safety_synth(
             imap(lambda a: ConcGame(
-                BDDAIG(aig).short_error(
-                    ~(aig.lit2bdd(a)),
-                    set([strip_lit(a)])),
+                BDDAIG(aig).short_error(~(aig.lit2bdd(a))),
                 restrict_like_crazy=argv.restrict_like_crazy,
                 use_trans=argv.use_trans), A))
         # we have to make sure the controller can stay in the win'n area
-        if w is None or\
-                not aig.strat_is_inductive(w, use_trans=argv.use_trans):
+        if w is None:
+            return False
+        game = ConcGame(aig, restrict_like_crazy=argv.restrict_like_crazy,
+                        use_trans=argv.use_trans)
+        game.short_error = ~w
+        w = backward_safety_synth(game)
+        if w is None:
             return False
     # Symbolic approach with compositional opts geared towards GR(1) specs
     # the idea is that if the error signal is of the form
@@ -204,21 +210,38 @@ def _synth_from_spec(aig, argv):
             return _synth_from_spec(aig, argv)
         else:
             log.DBG_MSG("Decomposition opt possible (A ^ [C v D] case)")
+            log.DBG_MSG(str(len(A)) + " AND leaves: " + str(A))
+        # critical heuristic: which OR leaf do we distribute?
+        # here I propose to choose the one with the most children
         b = B.pop()
-        cube = BDD.make_cube(map(aig.lit2bdd,
-                             filter(lambda x: x != strip_lit(b), A)))
-        c_lits = set(map(strip_lit, A))
         (C, D) = aig.get_1l_land(b)
-        w = comp_safety_synth(
+        for bp in B:
+            (Cp, Dp) = aig.get_1l_land(bp)
+            if len(Cp) > len(C):
+                b = bp
+                C = Cp
+        rem_AND_leaves = filter(lambda x: strip_lit(x) != b, A)
+        rdeps = set()
+        for r in rem_AND_leaves:
+            rdeps |= aig.get_lit_latch_deps(strip_lit(r))
+        log.DBG_MSG("Rem. AND leaves' deps: " + str(rdeps))
+        cube = BDD.make_cube(map(aig.lit2bdd, rem_AND_leaves))
+        log.DBG_MSG(str(len(C)) + " OR leaves: " + str(C))
+        (w, strat) = comp_safety_synth(
             imap(lambda a: ConcGame(
-                BDDAIG(aig).short_error(
-                    ~(aig.lit2bdd(a)) & cube,
-                    c_lits | set([strip_lit(a)])),
+                BDDAIG(aig).short_error(~aig.lit2bdd(a) & cube),
                 restrict_like_crazy=argv.restrict_like_crazy,
                 use_trans=argv.use_trans), C))
         # we have to make sure the controller can stay in the win'n area
-        if w is None or\
-                not aig.strat_is_inductive(w, use_trans=argv.use_trans):
+        if w is None:
+            return False
+        short_aig = BDDAIG(aig).short_error(~strat)
+        game = ConcGame(short_aig,
+                        restrict_like_crazy=argv.restrict_like_crazy,
+                        use_trans=argv.use_trans)
+        #game.short_error = ~w
+        w = backward_safety_synth(game)
+        if w is None:
             return False
     # Symbolic approach (avoiding compositional opts)
     else:

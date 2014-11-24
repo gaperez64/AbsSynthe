@@ -65,24 +65,27 @@ class BDDAIG(AIG):
 
     # short-circuit the error bdd and restrict the whole thing to
     # the relevant latches
-    def short_error(self, b, lits):
+    def short_error(self, b):
         nu_bddaig = BDDAIG(aig=self)
         nu_bddaig.set_lit2bdd(self.error_fake_latch.next, b)
-        latch_deps = set()
-        for l in lits:
-            latch_deps |= self.get_rec_latch_deps(strip_lit(l))
-        nu_bddaig.latch_restr = latch_deps
-        not_deps = [l.lit for l in self.iterate_latches()
-                    if l.lit not in latch_deps]
-        log.DBG_MSG("Latches not needed: " + str(not_deps))
-        log.DBG_MSG("Short-circ'd BDDAIG computed.")
+        bdd_latch_deps = set(b.occ_sem(imap(symbol_lit,
+                                            self.iterate_latches())))
+        latch_deps = reduce(set.union,
+                            map(self.get_lit_latch_deps,
+                                bdd_latch_deps))
+        if log.debug:
+            not_deps = [l.lit for l in self.iterate_latches()
+                        if l.lit not in latch_deps]
+            log.DBG_MSG(str(len(not_deps)) + " Latches not needed: " +
+                        str(not_deps))
+        self.latch_restr = latch_deps
         return nu_bddaig
 
     def iterate_latches(self):
         for l in AIG.iterate_latches(self):
             if self.latch_restr is not None and\
-                    l != self.error_fake_latch and\
-                    l.lit not in self.latch_restr:
+                    l not in self.latch_restr and\
+                    l != self.error_fake_latch:
                 continue
             yield l
 

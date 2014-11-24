@@ -172,37 +172,39 @@ class AIG:
         self._1l_land_cache[lit] = (A, B)
         return (A, B)
 
-    def get_lit_deps(self, lit):
-        if lit in self._deps_cache:
-            return self._deps_cache[lit]
-        (i, l, a) = self.get_lit_type(lit)
-        # latches count towards one
-        if l:
-            result = set([l.lit])
-        # ands require union of siblings
-        elif a:
-            result = self.get_lit_deps(a.rhs0) | self.get_lit_deps(a.rhs1)
-        # inputs
-        elif i:
-            result = set([i.lit])
-        else:
-            result = set()
-        # cache the results
-        self._deps_cache[lit] = result
-        return result
+    def get_mult_lit_deps(self, lits):
+        visited = dict()
+        waiting = set(lits)
+        deps = set()
+        while waiting:
+            lit = waiting.pop()
+            if lit in visited:
+                continue
+            visited[lit] = True
+            (i, l, a) = self.get_lit_type(lit)
+            # latches count towards one
+            if l:
+                deps.add(l.lit)
+                waiting.add(l.next)
+            # ands require union of siblings
+            elif a:
+                waiting |= set([a.rhs0, a.rhs1])
+            # inputs
+            elif i:
+                deps.add(i.lit)
+            # 0/1 constants
+            else:
+                pass
+        return deps
 
-    def get_rec_latch_deps(self, lit):
-        # TODO: rephrase this method as a fixpoint function
+    def get_lit_deps(self, lit):
+        if lit not in self._deps_cache:
+            self._deps_cache[lit] = self.get_mult_lit_deps([lit])
+        return self._deps_cache[lit]
+
+    def get_lit_latch_deps(self, lit):
         latchset = set([x.lit for x in self.iterate_latches()])
-        latch_deps = self.get_lit_deps(lit) & latchset
-        to_visit = set(latch_deps)
-        while to_visit:
-            (i, l, a) = self.get_lit_type(to_visit.pop())
-            assert l and not i and not a
-            nu_deps = self.get_lit_deps(l.next) & latchset
-            to_visit |= nu_deps - latch_deps
-            latch_deps |= nu_deps
-        return latch_deps
+        return self.get_lit_deps(lit) & latchset
 
     def latch_dependency_map(self):
         m = dict()

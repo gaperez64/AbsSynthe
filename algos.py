@@ -157,6 +157,7 @@ def backward_safety_synth(game):
 # Compositional approach, receives an iterable of BackwardGames
 def comp_safety_synth(games):
     s = None
+    cum_w = None
     cnt = 0
     for game in games:
         assert isinstance(game, BackwardGame)
@@ -168,10 +169,12 @@ def comp_safety_synth(games):
             return None
         if s is None:
             s = game.cpre(w, get_strat=True)
+            cum_w = w
         else:
             s &= game.cpre(w, get_strat=True)
+            cum_w &= w
         # sanity check before moving forward
         if (not s or not game.init() & s):
             return None
     log.DBG_MSG("Solved " + str(cnt) + " sub games.")
-    return s
+    return (cum_w, s)

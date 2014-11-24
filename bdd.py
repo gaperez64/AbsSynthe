@@ -57,10 +57,6 @@ class BDD_Base:
         pass
 
     @abstractmethod
-    def next_var():
-        pass
-
-    @abstractmethod
     def __init__(self, var=None):
         pass
 
@@ -157,5 +153,5 @@ class BDD_Base:
         pass
 
     @abstractmethod
-    def bdd2cnf(self):
+    def occ_sem(self, varset):
         pass
