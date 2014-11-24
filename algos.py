@@ -103,9 +103,13 @@ def forward_safety_synth(game):
     waiting = [(init_state, game.upost(init_state))]
     while waiting and not tracker.is_in_attr(init_state):
         (s, sp_iter) = waiting.pop()
-        sp = next(sp_iter)
-        if sp_iter:  # there are still elements in the iter
-            waiting.append((s, sp_iter))
+        try:
+            sp = next(sp_iter)
+        except StopIteration:
+            continue  # nothing to do here
+        # push the rest of the iterator back into the stack
+        waiting.append((s, sp_iter))
+        # process s, sp_iter
         if not tracker.is_visited(sp):
             tracker.visit(sp)
             tracker.mark_in_attr(
