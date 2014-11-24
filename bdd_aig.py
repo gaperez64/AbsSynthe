@@ -71,7 +71,8 @@ class BDDAIG(AIG):
                                             self.iterate_latches())))
         latch_deps = reduce(set.union,
                             map(self.get_lit_latch_deps,
-                                bdd_latch_deps))
+                                bdd_latch_deps),
+                            set())
         if log.debug:
             not_deps = [l.lit for l in self.iterate_latches()
                         if l.lit not in latch_deps]
