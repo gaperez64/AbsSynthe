@@ -29,7 +29,6 @@ from aig import (
     strip_lit,
     lit_is_negated,
     symbol_lit,
-    get_primed_var,
     negate_lit
 )
 from cudd_bdd import BDD
@@ -118,27 +117,27 @@ class BDDAIG(AIG):
     def prime_latches_in_bdd(self, b):
         # unfortunately swap_variables needs a list
         latches = [x.lit for x in self.iterate_latches()]
-        platches = map(get_primed_var, latches)
+        platches = map(self.get_primed_var, latches)
         return b.swap_variables(latches, platches)
 
     def prime_all_inputs_in_bdd(self, b):
         # unfortunately swap_variables needs a list
         inputs = [x.lit for x in chain(self.iterate_uncontrollable_inputs(),
                                        self.iterate_controllable_inputs())]
-        pinputs = map(get_primed_var, inputs)
+        pinputs = map(self.get_primed_var, inputs)
         return b.swap_variables(inputs, pinputs)
 
     def unprime_all_inputs_in_bdd(self, b):
         # unfortunately swap_variables needs a list
         inputs = [x.lit for x in chain(self.iterate_uncontrollable_inputs(),
                                        self.iterate_controllable_inputs())]
-        pinputs = map(get_primed_var, inputs)
+        pinputs = map(self.get_primed_var, inputs)
         return b.swap_variables(pinputs, inputs)
 
     def unprime_latches_in_bdd(self, b):
         # unfortunately swap_variables needs a list
         latches = [x.lit for x in self.iterate_latches()]
-        platches = map(get_primed_var, latches)
+        platches = map(self.get_primed_var, latches)
         return b.swap_variables(platches, latches)
 
     def trans_rel_bdd(self):
@@ -147,7 +146,7 @@ class BDDAIG(AIG):
             return self._cached_transition
         b = BDD.true()
         for x in self.iterate_latches():
-            b &= BDD.make_eq(BDD(get_primed_var(x.lit)),
+            b &= BDD.make_eq(BDD(self.get_primed_var(x.lit)),
                              self.lit2bdd(x.next))
         self._cached_transition = b
         log.BDD_DMP(b, "Composed and cached the concrete transition relation.")
@@ -169,7 +168,7 @@ class BDDAIG(AIG):
         # to do this, we use an over-simplified transition relation, EXu,Xc
         b = BDD.true()
         for x in self.iterate_latches():
-            temp = BDD.make_eq(BDD(get_primed_var(x.lit)),
+            temp = BDD.make_eq(BDD(self.get_primed_var(x.lit)),
                                self.lit2bdd(x.next))
             b &= temp.and_abstract(
                 strat,
@@ -219,7 +218,7 @@ class BDDAIG(AIG):
                 trans = trans.restrict(restrict_fun)
             primed_bdd = self.prime_latches_in_bdd(b)
             primed_latches = BDD.make_cube(
-                imap(funcomp(BDD, get_primed_var, symbol_lit),
+                imap(funcomp(BDD, self.get_primed_var, symbol_lit),
                      self.iterate_latches()))
             return trans.and_abstract(primed_bdd,
                                       primed_latches)

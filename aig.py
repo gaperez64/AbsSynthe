@@ -215,11 +215,10 @@ class AIG:
             m[l.lit] = self.get_lit_deps(l.next) & latchset
         return m
 
-
-# very important for BDD and CNF translations, we need this to be uniform and
-# consistent
-def get_primed_var(lit):
-    return strip_lit(lit) + 1
+    # very important for BDD and CNF translations, we need this to be uniform
+    # and consistent
+    def get_primed_var(self, lit):
+        return strip_lit(lit) + 1
 
 
 def new_aiger_symbol():

@@ -88,7 +88,7 @@ class SymblicitGame(ForwardGame):
         self.latches = [x.lit for x in self.aig.iterate_latches()]
         self.latch_cube = BDD.make_cube(imap(funcomp(BDD,
                                                      symbol_lit),
-                                             self.ig.iterate_latches()))
+                                             self.aig.iterate_latches()))
         self.platch_cube = BDD.make_cube(imap(funcomp(BDD,
                                                       self.aig.get_primed_var,
                                                       symbol_lit),
@@ -101,8 +101,8 @@ class SymblicitGame(ForwardGame):
         self.uinputs_cube = BDD.make_cube(
             imap(funcomp(BDD, symbol_lit),
                  self.aig.iterate_uncontrollable_inputs()))
-        self.init_state_bdd = self.init_state_bdd()
-        self.error_bdd = self.lit2bdd(self.aig.error_fake_latch.lit)
+        self.init_state_bdd = self.aig.init_state_bdd()
+        self.error_bdd = self.aig.lit2bdd(self.aig.error_fake_latch.lit)
         self.Venv = dict()
         self.Venv[self.init_state_bdd] = True
         self.succ_cache = dict()
