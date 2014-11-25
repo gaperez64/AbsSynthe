@@ -170,7 +170,7 @@ def comp_safety_synth(games):
         # short-circuit a negative response
         if w is None:
             log.DBG_MSG("Short-circuit exit after sub-game #" + str(cnt))
-            return None
+            return (None, None)
         if s is None:
             s = game.cpre(w, get_strat=True)
             cum_w = w
@@ -179,6 +179,6 @@ def comp_safety_synth(games):
             cum_w &= w
         # sanity check before moving forward
         if (not s or not game.init() & s):
-            return None
+            return (None, None)
     log.DBG_MSG("Solved " + str(cnt) + " sub games.")
     return (cum_w, s)
