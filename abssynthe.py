@@ -114,8 +114,9 @@ class SymblicitGame(ForwardGame):
         return self.error_bdd
 
     def upost(self, q):
+        assert isinstance(q, BDD)
         if q in self.succ_cache:
-            return self.succ_cache[q]
+            return iter(self.succ_cache[q])
         A = BDD.true()
         M = set()
         while A != BDD.false():
@@ -139,11 +140,12 @@ class SymblicitGame(ForwardGame):
                     Mp.add(m)
             M = Mp
             M.add(a)
-        log.DBG_MSG("|M| = " + str(len(M)))
-        self.succ_cache[q] = M
-        return imap(lambda x: (q, x), M)
+        log.DBG_MSG("Upost |M| = " + str(len(M)))
+        self.succ_cache[q] = map(lambda x: (q, x), M)
+        return iter(self.succ_cache[q])
 
     def cpost(self, s):
+        assert isinstance(s, tuple)
         q = s[0]
         au = s[1]
         if s in self.succ_cache:
@@ -158,11 +160,14 @@ class SymblicitGame(ForwardGame):
                      self.aig.iterate_latches()))\
                 .exist_abstract(self.cinputs_cube)
             self.succ_cache[s] = L
+        M = set()
         while L != BDD.false():
             l = L.get_one_minterm(self.latches)
             L &= ~l
             self.Venv[l] = True
-            yield l
+            M.add(l)
+        log.DBG_MSG("Cpost |M| = " + str(len(M)))
+        return iter(M)
 
     def is_env_state(self, s):
         return s in self.Venv
@@ -199,10 +204,10 @@ def merge_some_signals(cube, C, aig):
 def synth(argv):
     # parse the input spec
     aig = BDDAIG(aiger_file_name=argv.spec, intro_error_latch=True)
-    return _synth_from_spec(aig, argv)
+    return synth_from_spec(aig, argv)
 
 
-def _synth_from_spec(aig, argv):
+def synth_from_spec(aig, argv):
     # Explicit approach
     if argv.use_symb:
         assert argv.out_file is None
@@ -236,7 +241,7 @@ def _synth_from_spec(aig, argv):
         if not B:
             log.DBG_MSG("No decomposition opt possible")
             argv.no_decomp = True
-            return _synth_from_spec(aig, argv)
+            return synth_from_spec(aig, argv)
         else:
             log.DBG_MSG("Decomposition opt possible (A ^ [C v D] case)")
             log.DBG_MSG(str(len(A)) + " AND leaves: " + str(A))

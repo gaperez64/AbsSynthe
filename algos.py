@@ -113,7 +113,7 @@ def forward_safety_synth(game):
         if not tracker.is_visited(sp):
             tracker.visit(sp)
             tracker.mark_in_attr(
-                sp, game.is_env_state(sp) and (sp & error_states))
+                sp, game.is_env_state(sp) and bool(sp & error_states))
             if sp in depend:
                 depend[sp].add((s, iter([sp])))
             else:
