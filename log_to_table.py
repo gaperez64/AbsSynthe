@@ -6,13 +6,9 @@ import re
 # can take lines several times -> several identical columns
 # use illegal lines (e.g. 1000) to produce blank columns
 read_rel_lines = []
-read_line_wtxt = ["Raw AIGER input","Raw AIGER input","Raw AIGER input",
-                  "Raw AIGER input","Raw AIGER input","Raw AIGER output",
-                  "Raw AIGER output","Raw AIGER output","Raw AIGER output",
-                  "Raw AIGER output","Raw AIGER opt","Raw AIGER opt",
-                  "Raw AIGER opt","Raw AIGER opt","Raw AIGER opt"]
+read_line_wtxt = ["original", "after"]
 # which number to take from a line (0 for first number in line ...)
-take_nr_nr = [0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4]
+take_nr_nr = [0, 0]
 SPACES_FILL = 20
 DELIMITER = ";"
 

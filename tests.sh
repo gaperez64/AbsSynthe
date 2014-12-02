@@ -11,7 +11,7 @@
 DIR=`dirname $0`/
 
 # Time limit in seconds:
-TIME_LIMIT=100
+TIME_LIMIT=10
 # Memory limit in kB:
 MEMORY_LIMIT=2000000
 

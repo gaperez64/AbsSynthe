@@ -136,7 +136,7 @@ class SymblicitGame(ForwardGame):
             A &= ~simd
             Mp = set()
             for m in M:
-                if not BDD.make_impl(m, simd):
+                if not (BDD.make_impl(m, simd) == BDD.true()):
                     Mp.add(m)
             M = Mp
             M.add(a)
@@ -173,8 +173,9 @@ class SymblicitGame(ForwardGame):
         return s in self.Venv
 
 
-def merge_some_signals(cube, C, aig):
+def merge_some_signals(cube, C, aig, argv):
     # TODO: there must be a more pythonic way of doing all of this
+    log.LOG_MSG(str(len(C)) + " sub-games originally")
     cube_latch_deps = set(cube.occ_sem(imap(symbol_lit,
                                             aig.iterate_latches())))
     latch_deps = reduce(set.union,
@@ -197,14 +198,74 @@ def merge_some_signals(cube, C, aig):
                 break
         if not found:
             dep_map[deps] = aig.lit2bdd(c)
+    log.LOG_MSG(str(len(dep_map.keys())) + " sub-games after incl. red.")
     for key in dep_map:
         yield ~dep_map[key] & cube
+
+
+def game_mapper(games):
+    s = None
+    cnt = 0
+    pair_list = []
+    for game in games:
+        assert isinstance(game, BackwardGame)
+        w = backward_safety_synth(game)
+        cnt += 1
+        # short-circuit a negative response
+        if w is None:
+            log.DBG_MSG("Short-circuit exit after sub-game #" + str(cnt))
+            return (None, None)
+        if s is None:
+            s = game.cpre(w, get_strat=True)
+        else:
+            s &= game.cpre(w, get_strat=True)
+        # sanity check before moving forward
+        if (not s or not game.init() & s):
+            return None
+        pair_list((game, s))
+    log.DBG_MSG("Solved " + str(cnt) + " sub games.")
+    return pair_list
+
+
+def game_reducer(games, aig, argv):
+    assert games
+    a = 2
+    b = -1
+    triple_list = []
+    while len(games) >= 2:
+        # we first compute an fij function for all pairs
+        for i in range(0, len(games)):
+            for j in range(0, len(games)):
+                gamei = games[i][0]
+                gamej = games[j][0]
+                li = set(gamei.aig.iterate_latches())
+                lj = set(gamej.aig.iterate_latches())
+                cij = len(li & lj)
+                nij = len(li | lj)
+                triple_list.append((i, j, a * cij + b * nij))
+        # now we get the best pair according to the fij function
+        (i, j, val) = max(triple_list, key=lambda x: x[2])
+        # we must reduce games i and j now
+        game = ConcGame(BDDAIG(aig).short_error(~(games[i][1] & games[j][0])),
+                        restrict_like_crazy=argv.restrict_like_crazy,
+                        use_trans=argv.use_trans)
+        w = backward_safety_synth(game)
+        if w is None:
+            return None
+        else:
+            s = game.cpre(w, get_strat=True)
+        games[i] = (game, s)
+        games.pop(j)
+    return games[0]
 
 
 def synth(argv):
     # parse the input spec
     aig = BDDAIG(aiger_file_name=argv.spec, intro_error_latch=True)
-    return synth_from_spec(aig, argv)
+    ret = synth_from_spec(aig, argv)
+    argv.no_decomp = True
+    assert ret == synth_from_spec(aig, argv)
+    return ret
 
 
 def synth_from_spec(aig, argv):
@@ -214,67 +275,62 @@ def synth_from_spec(aig, argv):
         symgame = SymblicitGame(aig)
         w = forward_safety_synth(symgame)
     # Symbolic approach with compositional opts
-    elif not argv.no_decomp and lit_is_negated(aig.error_fake_latch.next):
-        log.DBG_MSG("Decomposition opt possible (BIG OR case)")
-        (A, B) = aig.get_1l_land(strip_lit(aig.error_fake_latch.next))
-        (w, strat) = comp_safety_synth(
-            imap(lambda a: ConcGame(
+    elif not argv.no_decomp:
+        if lit_is_negated(aig.error_fake_latch.next):
+            log.DBG_MSG("Decomposition opt possible (BIG OR case)")
+            (A, B) = aig.get_1l_land(strip_lit(aig.error_fake_latch.next))
+            game_it = imap(lambda a: ConcGame(
                 BDDAIG(aig).short_error(a),
                 restrict_like_crazy=argv.restrict_like_crazy,
                 use_trans=argv.use_trans),
-                merge_some_signals(BDD.true(), A, aig)))
-        # we have to make sure the controller can stay in the win'n area
-        if w is None:
-            return False
-        game = ConcGame(aig, restrict_like_crazy=argv.restrict_like_crazy,
-                        use_trans=argv.use_trans)
-        game.short_error = ~w
-        w = backward_safety_synth(game)
-        if w is None:
-            return False
-    # Symbolic approach with compositional opts geared towards GR(1) specs
-    # the idea is that if the error signal is of the form
-    # A ^ (C v D) then we can distribute the disjunction to get
-    # (A ^ C) v (A ^ D)
-    elif not argv.no_decomp:
-        (A, B) = aig.get_1l_land(aig.error_fake_latch.next)
-        if not B:
-            log.DBG_MSG("No decomposition opt possible")
-            argv.no_decomp = True
-            return synth_from_spec(aig, argv)
+                merge_some_signals(BDD.true(), A, aig, argv))
         else:
-            log.DBG_MSG("Decomposition opt possible (A ^ [C v D] case)")
-            log.DBG_MSG(str(len(A)) + " AND leaves: " + str(A))
-        # critical heuristic: which OR leaf do we distribute?
-        # here I propose to choose the one with the most children
-        b = B.pop()
-        (C, D) = aig.get_1l_land(b)
-        for bp in B:
-            (Cp, Dp) = aig.get_1l_land(bp)
-            if len(Cp) > len(C):
-                b = bp
-                C = Cp
-        rem_AND_leaves = filter(lambda x: strip_lit(x) != b, A)
-        rdeps = set()
-        for r in rem_AND_leaves:
-            rdeps |= aig.get_lit_latch_deps(strip_lit(r))
-        log.DBG_MSG("Rem. AND leaves' deps: " + str(rdeps))
-        cube = BDD.make_cube(map(aig.lit2bdd, rem_AND_leaves))
-        log.DBG_MSG(str(len(C)) + " OR leaves: " + str(C))
-        (w, strat) = comp_safety_synth(
-            imap(lambda a: ConcGame(
+            (A, B) = aig.get_1l_land(aig.error_fake_latch.next)
+            if not B:
+                log.DBG_MSG("No decomposition opt possible")
+                argv.no_decomp = True
+                return synth_from_spec(aig, argv)
+            else:
+                log.DBG_MSG("Decomposition opt possible (A ^ [C v D] case)")
+                log.DBG_MSG(str(len(A)) + " AND leaves: " + str(A))
+            # critical heuristic: which OR leaf do we distribute?
+            # here I propose to choose the one with the most children
+            b = B.pop()
+            (C, D) = aig.get_1l_land(b)
+            for bp in B:
+                (Cp, Dp) = aig.get_1l_land(bp)
+                if len(Cp) > len(C):
+                    b = bp
+                    C = Cp
+            rem_AND_leaves = filter(lambda x: strip_lit(x) != b, A)
+            rdeps = set()
+            for r in rem_AND_leaves:
+                rdeps |= aig.get_lit_latch_deps(strip_lit(r))
+            log.DBG_MSG("Rem. AND leaves' deps: " + str(rdeps))
+            cube = BDD.make_cube(map(aig.lit2bdd, rem_AND_leaves))
+            log.DBG_MSG(str(len(C)) + " OR leaves: " + str(C))
+            game_it = imap(lambda a: ConcGame(
                 BDDAIG(aig).short_error(a),
                 restrict_like_crazy=argv.restrict_like_crazy,
-                use_trans=argv.use_trans), merge_some_signals(cube, C, aig)))
-        # we have to make sure the controller can stay in the win'n area
-        if w is None:
-            return False
-        short_aig = BDDAIG(aig).short_error(~strat)
-        game = ConcGame(short_aig,
-                        restrict_like_crazy=argv.restrict_like_crazy,
-                        use_trans=argv.use_trans)
-        #game.short_error = ~w
-        w = backward_safety_synth(game)
+                use_trans=argv.use_trans), merge_some_signals(cube, C, aig,
+                                                              argv))
+        if not argv.map_reduce:
+            # solve and aggregate sub-games
+            (w, strat) = comp_safety_synth(game_it)
+            # back to the general game
+            if w is None:
+                return False
+            game = ConcGame(aig, restrict_like_crazy=argv.restrict_like_crazy,
+                            use_trans=argv.use_trans)
+            game.short_error = ~w
+            w = backward_safety_synth(game)
+        else:
+            games_mapped = game_mapper(game_it)
+            # local aggregation yields None if short-circ'd
+            if games_mapped is None:
+                return False
+            w = game_reducer(games_mapped, aig, argv)
+        # final check
         if w is None:
             return False
     # Symbolic approach (avoiding compositional opts)
@@ -335,6 +391,9 @@ def main():
     parser.add_argument("-nd", "--no_decomp", action="store_true",
                         dest="no_decomp", default=False,
                         help="Inhibits the decomposition optimization")
+    parser.add_argument("-mr", "--map_reduce", action="store_true",
+                        dest="map_reduce", default=False,
+                        help="Uses a reducer to synth. results of sub-games")
     parser.add_argument("-rc", "--restrict_like_crazy", action="store_true",
                         dest="restrict_like_crazy", default=False,
                         help=("Use restrict to minimize BDDs " +
