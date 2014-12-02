@@ -79,6 +79,10 @@ class BDDAIG(AIG):
             log.DBG_MSG(str(len(not_deps)) + " Latches not needed: " +
                         str(not_deps))
         self.latch_restr = latch_deps
+        for l in self.iterate_latches():
+            if l != self.error_fake_latch:
+                self.set_lit2bdd(l.next,
+                                 self.lit2bdd(l.next).safe_restrict(~b))
         return nu_bddaig
 
     def iterate_latches(self):

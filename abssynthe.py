@@ -222,7 +222,7 @@ def game_mapper(games):
         # sanity check before moving forward
         if (not s or not game.init() & s):
             return None
-        pair_list((game, s))
+        pair_list.append((game, s))
     log.DBG_MSG("Solved " + str(cnt) + " sub games.")
     return pair_list
 
@@ -246,7 +246,7 @@ def game_reducer(games, aig, argv):
         # now we get the best pair according to the fij function
         (i, j, val) = max(triple_list, key=lambda x: x[2])
         # we must reduce games i and j now
-        game = ConcGame(BDDAIG(aig).short_error(~(games[i][1] & games[j][0])),
+        game = ConcGame(BDDAIG(aig).short_error(~(games[i][1] & games[j][1])),
                         restrict_like_crazy=argv.restrict_like_crazy,
                         use_trans=argv.use_trans)
         w = backward_safety_synth(game)
@@ -262,10 +262,7 @@ def game_reducer(games, aig, argv):
 def synth(argv):
     # parse the input spec
     aig = BDDAIG(aiger_file_name=argv.spec, intro_error_latch=True)
-    ret = synth_from_spec(aig, argv)
-    argv.no_decomp = True
-    assert ret == synth_from_spec(aig, argv)
-    return ret
+    return synth_from_spec(aig, argv)
 
 
 def synth_from_spec(aig, argv):
