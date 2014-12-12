@@ -156,29 +156,3 @@ def backward_safety_synth(game):
         return None
     else:
         return win_region
-
-
-# Compositional approach, receives an iterable of BackwardGames
-def comp_safety_synth(games):
-    s = None
-    cum_w = None
-    cnt = 0
-    for game in games:
-        assert isinstance(game, BackwardGame)
-        w = backward_safety_synth(game)
-        cnt += 1
-        # short-circuit a negative response
-        if w is None:
-            log.DBG_MSG("Short-circuit exit after sub-game #" + str(cnt))
-            return (None, None)
-        if s is None:
-            s = game.cpre(w, get_strat=True)
-            cum_w = w
-        else:
-            s &= game.cpre(w, get_strat=True)
-            cum_w &= w
-        # sanity check before moving forward
-        if (not s or not game.init() & s):
-            return (None, None)
-    log.DBG_MSG("Solved " + str(cnt) + " sub games.")
-    return (cum_w, s)

@@ -33,13 +33,18 @@ from aig import (
     lit_is_negated
 )
 from bdd_aig import BDDAIG
-from utils import funcomp
 from algos import (
-    BackwardGame,
-    ForwardGame,
     backward_safety_synth,
     forward_safety_synth,
-    comp_safety_synth,
+)
+from bdd_games import (
+    ConcGame,
+    SymblicitGame,
+)
+from comp_algos import (
+    comp_synth,
+    subgame_mapper,
+    subgame_reducer
 )
 
 
@@ -51,126 +56,6 @@ class ABS_TECH:
     LOC_RED = 1,
     PRED_ABS = 2,
     NONE = 3
-
-
-class ConcGame(BackwardGame):
-    def __init__(self, aig, restrict_like_crazy=False,
-                 use_trans=False):
-        self.restrict_like_crazy = restrict_like_crazy
-        self.use_trans = use_trans
-        self.aig = aig
-        self.short_error = None
-
-    def init(self):
-        return self.aig.init_state_bdd()
-
-    def error(self):
-        if self.short_error is not None:
-            return self.short_error
-        return self.aig.lit2bdd(self.aig.error_fake_latch.lit)
-
-    def upre(self, dst):
-        return self.aig.upre_bdd(
-            dst, restrict_like_crazy=self.restrict_like_crazy,
-            use_trans=self.use_trans)
-
-    def cpre(self, dst, get_strat=False):
-        return self.aig.cpre_bdd(
-            dst, restrict_like_crazy=self.restrict_like_crazy,
-            use_trans=self.use_trans, get_strat=get_strat)
-
-
-class SymblicitGame(ForwardGame):
-    def __init__(self, aig):
-        self.aig = aig
-        self.uinputs = [x.lit for x in
-                        self.aig.iterate_uncontrollable_inputs()]
-        self.latches = [x.lit for x in self.aig.iterate_latches()]
-        self.latch_cube = BDD.make_cube(imap(funcomp(BDD,
-                                                     symbol_lit),
-                                             self.aig.iterate_latches()))
-        self.platch_cube = BDD.make_cube(imap(funcomp(BDD,
-                                                      self.aig.get_primed_var,
-                                                      symbol_lit),
-                                              self.aig.iterate_latches()))
-        self.cinputs_cube = BDD.make_cube(
-            imap(funcomp(BDD, symbol_lit),
-                 self.aig.iterate_controllable_inputs()))
-        self.pcinputs_cube = self.aig.prime_all_inputs_in_bdd(
-            self.cinputs_cube)
-        self.uinputs_cube = BDD.make_cube(
-            imap(funcomp(BDD, symbol_lit),
-                 self.aig.iterate_uncontrollable_inputs()))
-        self.init_state_bdd = self.aig.init_state_bdd()
-        self.error_bdd = self.aig.lit2bdd(self.aig.error_fake_latch.lit)
-        self.Venv = dict()
-        self.Venv[self.init_state_bdd] = True
-        self.succ_cache = dict()
-
-    def init(self):
-        return self.init_state_bdd
-
-    def error(self):
-        return self.error_bdd
-
-    def upost(self, q):
-        assert isinstance(q, BDD)
-        if q in self.succ_cache:
-            return iter(self.succ_cache[q])
-        A = BDD.true()
-        M = set()
-        while A != BDD.false():
-            a = A.get_one_minterm(self.uinputs)
-            trans = BDD.make_cube(
-                imap(lambda x: BDD.make_eq(BDD(self.aig.get_primed_var(x.lit)),
-                                           self.aig.lit2bdd(x.next)
-                                           .and_abstract(q, self.latch_cube)),
-                     self.aig.iterate_latches()))
-            lhs = trans & a
-            rhs = self.aig.prime_all_inputs_in_bdd(trans)
-            simd = BDD.make_impl(lhs, rhs).univ_abstract(self.platch_cube)\
-                .exist_abstract(self.pcinputs_cube)\
-                .univ_abstract(self.cinputs_cube)
-            simd = self.aig.unprime_all_inputs_in_bdd(simd)
-
-            A &= ~simd
-            Mp = set()
-            for m in M:
-                if not (BDD.make_impl(m, simd) == BDD.true()):
-                    Mp.add(m)
-            M = Mp
-            M.add(a)
-        log.DBG_MSG("Upost |M| = " + str(len(M)))
-        self.succ_cache[q] = map(lambda x: (q, x), M)
-        return iter(self.succ_cache[q])
-
-    def cpost(self, s):
-        assert isinstance(s, tuple)
-        q = s[0]
-        au = s[1]
-        if s in self.succ_cache:
-            L = self.succ_cache[s]
-        else:
-            L = BDD.make_cube(
-                imap(lambda x: BDD.make_eq(BDD(x.lit),
-                                           self.aig.lit2bdd(x.next)
-                                           .and_abstract(q & au,
-                                                         self.latch_cube &
-                                                         self.uinputs_cube)),
-                     self.aig.iterate_latches()))\
-                .exist_abstract(self.cinputs_cube)
-            self.succ_cache[s] = L
-        M = set()
-        while L != BDD.false():
-            l = L.get_one_minterm(self.latches)
-            L &= ~l
-            self.Venv[l] = True
-            M.add(l)
-        log.DBG_MSG("Cpost |M| = " + str(len(M)))
-        return iter(M)
-
-    def is_env_state(self, s):
-        return s in self.Venv
 
 
 def merge_some_signals(cube, C, aig, argv):
@@ -203,80 +88,18 @@ def merge_some_signals(cube, C, aig, argv):
         yield ~dep_map[key] & cube
 
 
-def game_mapper(games):
-    s = None
-    cnt = 0
-    pair_list = []
-    for game in games:
-        assert isinstance(game, BackwardGame)
-        w = backward_safety_synth(game)
-        cnt += 1
-        # short-circuit a negative response
-        if w is None:
-            log.DBG_MSG("Short-circuit exit after sub-game #" + str(cnt))
-            return (None, None)
-        if s is None:
-            s = game.cpre(w, get_strat=True)
-        else:
-            s &= game.cpre(w, get_strat=True)
-        # sanity check before moving forward
-        if (not s or not game.init() & s):
-            return None
-        pair_list.append((game, s))
-    log.DBG_MSG("Solved " + str(cnt) + " sub games.")
-    return pair_list
-
-
-def game_reducer(games, aig, argv):
-    assert games
-    a = 2
-    b = -1
-    triple_list = []
-    while len(games) >= 2:
-        # we first compute an fij function for all pairs
-        for i in range(0, len(games)):
-            for j in range(0, len(games)):
-                gamei = games[i][0]
-                gamej = games[j][0]
-                li = set(gamei.aig.iterate_latches())
-                lj = set(gamej.aig.iterate_latches())
-                cij = len(li & lj)
-                nij = len(li | lj)
-                triple_list.append((i, j, a * cij + b * nij))
-        # now we get the best pair according to the fij function
-        (i, j, val) = max(triple_list, key=lambda x: x[2])
-        # we must reduce games i and j now
-        game = ConcGame(BDDAIG(aig).short_error(~(games[i][1] & games[j][1])),
-                        restrict_like_crazy=argv.restrict_like_crazy,
-                        use_trans=argv.use_trans)
-        w = backward_safety_synth(game)
-        if w is None:
-            return None
-        else:
-            s = game.cpre(w, get_strat=True)
-        games[i] = (game, s)
-        games.pop(j)
-    return games[0]
-
-
 def synth(argv):
     # parse the input spec
     aig = BDDAIG(aiger_file_name=argv.spec, intro_error_latch=True)
     return synth_from_spec(aig, argv)
 
 
-def synth_from_spec(aig, argv):
-    # Explicit approach
-    if argv.use_symb:
-        assert argv.out_file is None
-        symgame = SymblicitGame(aig)
-        w = forward_safety_synth(symgame)
-    # Symbolic approach with compositional opts
-    elif not argv.no_decomp:
+def decompose(aig, argv):
+    if argv.decomp == 1:
         if lit_is_negated(aig.error_fake_latch.next):
             log.DBG_MSG("Decomposition opt possible (BIG OR case)")
             (A, B) = aig.get_1l_land(strip_lit(aig.error_fake_latch.next))
-            game_it = imap(lambda a: ConcGame(
+            return imap(lambda a: ConcGame(
                 BDDAIG(aig).short_error(a),
                 restrict_like_crazy=argv.restrict_like_crazy,
                 use_trans=argv.use_trans),
@@ -285,8 +108,7 @@ def synth_from_spec(aig, argv):
             (A, B) = aig.get_1l_land(aig.error_fake_latch.next)
             if not B:
                 log.DBG_MSG("No decomposition opt possible")
-                argv.no_decomp = True
-                return synth_from_spec(aig, argv)
+                return None
             else:
                 log.DBG_MSG("Decomposition opt possible (A ^ [C v D] case)")
                 log.DBG_MSG(str(len(A)) + " AND leaves: " + str(A))
@@ -306,14 +128,34 @@ def synth_from_spec(aig, argv):
             log.DBG_MSG("Rem. AND leaves' deps: " + str(rdeps))
             cube = BDD.make_cube(map(aig.lit2bdd, rem_AND_leaves))
             log.DBG_MSG(str(len(C)) + " OR leaves: " + str(C))
-            game_it = imap(lambda a: ConcGame(
+            return imap(lambda a: ConcGame(
                 BDDAIG(aig).short_error(a),
                 restrict_like_crazy=argv.restrict_like_crazy,
                 use_trans=argv.use_trans), merge_some_signals(cube, C, aig,
                                                               argv))
-        if not argv.map_reduce:
+    elif argv.decomp == 2:
+        raise NotImplementedError
+
+
+def synth_from_spec(aig, argv):
+    # Explicit approach
+    if argv.use_symb:
+        assert argv.out_file is None
+        symgame = SymblicitGame(aig)
+        w = forward_safety_synth(symgame)
+    # Symbolic approach with compositional opts
+    elif argv.decomp is not None:
+        game_it = decompose(aig, argv)
+        # if there was no decomposition possible then call simple
+        # solver
+        if game_it is None:
+            argv.decomp = None
+            return synth_from_spec(aig, argv)
+        if argv.comp_algo == 1:
             # solve and aggregate sub-games
-            (w, strat) = comp_safety_synth(game_it)
+            (w, strat) = comp_synth(game_it)
+            log.DBG_MSG("Interm. win region bdd node count = " +
+                        str(w.dag_size()))
             # back to the general game
             if w is None:
                 return False
@@ -321,12 +163,14 @@ def synth_from_spec(aig, argv):
                             use_trans=argv.use_trans)
             game.short_error = ~w
             w = backward_safety_synth(game)
-        else:
-            games_mapped = game_mapper(game_it)
+        elif argv.comp_algo == 2:
+            games_mapped = subgame_mapper(game_it)
             # local aggregation yields None if short-circ'd
             if games_mapped is None:
                 return False
-            w = game_reducer(games_mapped, aig, argv)
+            w = subgame_reducer(games_mapped, aig, argv)
+        elif argv.comp_algo == 3:
+            raise NotImplementedError
         # final check
         if w is None:
             return False
@@ -335,7 +179,12 @@ def synth_from_spec(aig, argv):
         game = ConcGame(aig, restrict_like_crazy=argv.restrict_like_crazy,
                         use_trans=argv.use_trans)
         w = backward_safety_synth(game)
+        # final check
+        if w is None:
+            return False
 
+    log.DBG_MSG("Win region bdd node count = " +
+                str(w.dag_size()))
     # synthesis from the realizability analysis
     if w is not None and argv.out_file is not None:
         log.DBG_MSG("Win region bdd node count = " +
@@ -385,12 +234,11 @@ def main():
     parser.add_argument("-s", "--use_symb", action="store_true",
                         dest="use_symb", default=False,
                         help="Use the symblicit forward approach")
-    parser.add_argument("-nd", "--no_decomp", action="store_true",
-                        dest="no_decomp", default=False,
-                        help="Inhibits the decomposition optimization")
-    parser.add_argument("-mr", "--map_reduce", action="store_true",
-                        dest="map_reduce", default=False,
-                        help="Uses a reducer to synth. results of sub-games")
+    parser.add_argument("-d", "--decomp", dest="decomp", default=None,
+                        type=str, help="Decomposition type", choices="12")
+    parser.add_argument("-ca", "--comp_algo", dest="comp_algo", type=str,
+                        default="1", choices="123",
+                        help="Choice of compositional algorithm")
     parser.add_argument("-rc", "--restrict_like_crazy", action="store_true",
                         dest="restrict_like_crazy", default=False,
                         help=("Use restrict to minimize BDDs " +
@@ -411,6 +259,8 @@ def main():
                         help=("Output only the synth'd transducer (i.e. " +
                               "remove the error monitor logic)."))
     args = parser.parse_args()
+    args.decomp = int(args.decomp) if args.decomp is not None else None
+    args.comp_algo = int(args.comp_algo)
     # initialize the log verbose level
     log.parse_verbose_level(args.verbose_level)
     # parse the abstraction tech
