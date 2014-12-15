@@ -68,7 +68,7 @@ def subgame_mapper(games):
         # short-circuit a negative response
         if w is None:
             log.DBG_MSG("Short-circuit exit after sub-game #" + str(cnt))
-            return (None, None)
+            return None
         if s is None:
             s = game.cpre(w, get_strat=True)
         else:
@@ -87,15 +87,13 @@ def subgame_reducer(games, aig, argv, a=None, b=None):
         a = 2
     if b is None:
         b = -1
-    triple_list = []
     while len(games) >= 2:
+        triple_list = []
         # we first compute an fij function for all pairs
         for i in range(0, len(games) - 1):
             for j in range(i + 1, len(games)):
-                gamei = games[i][0]
-                gamej = games[j][0]
-                li = set(gamei.aig.iterate_latches())
-                lj = set(gamej.aig.iterate_latches())
+                li = set(aig.get_bdd_latch_deps(games[i][1]))
+                lj = set(aig.get_bdd_latch_deps(games[j][1]))
                 cij = len(li & lj)
                 nij = len(li | lj)
                 triple_list.append((i, j, a * cij + b * nij))

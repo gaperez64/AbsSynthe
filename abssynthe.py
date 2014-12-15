@@ -154,11 +154,11 @@ def synth_from_spec(aig, argv):
         if argv.comp_algo == 1:
             # solve and aggregate sub-games
             (w, strat) = comp_synth(game_it)
-            log.DBG_MSG("Interm. win region bdd node count = " +
-                        str(w.dag_size()))
             # back to the general game
             if w is None:
                 return False
+            log.DBG_MSG("Interm. win region bdd node count = " +
+                        str(w.dag_size()))
             game = ConcGame(aig, restrict_like_crazy=argv.restrict_like_crazy,
                             use_trans=argv.use_trans)
             game.short_error = ~w
@@ -171,18 +171,14 @@ def synth_from_spec(aig, argv):
             w = subgame_reducer(games_mapped, aig, argv)
         elif argv.comp_algo == 3:
             raise NotImplementedError
-        # final check
-        if w is None:
-            return False
     # Symbolic approach (avoiding compositional opts)
     else:
         game = ConcGame(aig, restrict_like_crazy=argv.restrict_like_crazy,
                         use_trans=argv.use_trans)
         w = backward_safety_synth(game)
-        # final check
-        if w is None:
-            return False
-
+    # final check
+    if w is None:
+        return False
     log.DBG_MSG("Win region bdd node count = " +
                 str(w.dag_size()))
     # synthesis from the realizability analysis

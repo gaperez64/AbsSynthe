@@ -140,34 +140,34 @@ class AIG:
     # returns the set A = {a_0,a_1,...} from the expression AND(a_0,a_1,...)
     # and a subset B <= A of the latches that were not completely explored
     def get_1l_land(self, lit):
-        assert not lit_is_negated(lit)
+        assert not lit_is_negated(lit) and self.lit_is_and(lit)
         if lit in self._1l_land_cache:
             return self._1l_land_cache[lit]
-        a = self.lit_is_and(lit)
         # init variables
         A = set()
         B = set()
-        # base cases: children are leaves
-        if not self.lit_is_and(a.rhs0):
+        # put first lit in the wait queue
+        waiting = [lit]
+        while waiting:
+            lit = waiting.pop()
+            a = self.lit_is_and(lit)
+            # base cases: children are leaves
+            if not self.lit_is_and(a.rhs0):
                 A.add(a.rhs0)
-        elif lit_is_negated(a.rhs0):  # AND with negation
-            A.add(a.rhs0)
-            B.add(strip_lit(a.rhs0))
-        else:  # recursive case: AND gate without negation
-            (rA, rB) = self.get_1l_land(strip_lit(a.rhs0))
-            A |= rA
-            B |= rB
-        # symmetric handling for a.rhs1
-        # base cases: children are leaves
-        if not self.lit_is_and(a.rhs1):
+            elif lit_is_negated(a.rhs0):  # AND with negation
+                A.add(a.rhs0)
+                B.add(strip_lit(a.rhs0))
+            else:  # recursive case: AND gate without negation
+                waiting.append(a.rhs0)
+            # symmetric handling for a.rhs1
+            # base cases: children are leaves
+            if not self.lit_is_and(a.rhs1):
                 A.add(a.rhs1)
-        elif lit_is_negated(a.rhs1):  # AND with negation
-            A.add(a.rhs1)
-            B.add(strip_lit(a.rhs1))
-        else:  # recursive case: AND gate without negation
-            (rA, rB) = self.get_1l_land(strip_lit(a.rhs1))
-            A |= rA
-            B |= rB
+            elif lit_is_negated(a.rhs1):  # AND with negation
+                A.add(a.rhs1)
+                B.add(strip_lit(a.rhs1))
+            else:  # recursive case: AND gate without negation
+                waiting.append(a.rhs1)
         # cache handling
         self._1l_land_cache[lit] = (A, B)
         return (A, B)

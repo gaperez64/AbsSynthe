@@ -6,9 +6,9 @@ import re
 # can take lines several times -> several identical columns
 # use illegal lines (e.g. 1000) to produce blank columns
 read_rel_lines = []
-read_line_wtxt = ["original", "after"]
+read_line_wtxt = ["CPU time", "CPU time"]
 # which number to take from a line (0 for first number in line ...)
-take_nr_nr = [0, 0]
+take_nr_nr = [0, 1]
 SPACES_FILL = 20
 DELIMITER = ";"
 
@@ -19,7 +19,7 @@ if len(sys.argv) != 3:
 
 in_filename = sys.argv[1]
 out_filename = sys.argv[2]
-in_file = open(in_filename,'r')
+in_file = open(in_filename, 'r')
 rel_line_count = 0
 table = []
 
@@ -39,14 +39,14 @@ for line in in_file.readlines():
         for pos in read_rel_lines + read_line_wtxt:
             table[-1].append("")
 
-    
     if read_rel_lines and rel_line_count in read_rel_lines:
         occ = re.compile('[0-9.]+').findall(line)
         if not occ:
             print "Warning: line %d contains no number" % rel_line_count
         else:
             for col_count in range(0, len(read_rel_lines)):
-                if read_rel_lines[col_count] == rel_line_count and len(occ)>take_nr_nr[col_count]:
+                if read_rel_lines[col_count] == rel_line_count and\
+                        len(occ) > take_nr_nr[col_count]:
                     table[-1][col_count + 1] = occ[take_nr_nr[col_count]]
 
     if read_line_wtxt and any(word in line for word in read_line_wtxt):
@@ -55,19 +55,20 @@ for line in in_file.readlines():
             print "Warning: line %d contains no number" % rel_line_count
         else:
             for col_count in range(0, len(read_line_wtxt)):
-                if read_line_wtxt[col_count] in line and len(occ) > take_nr_nr[col_count]:
+                if read_line_wtxt[col_count] in line and\
+                        len(occ) > take_nr_nr[col_count]:
                     table[-1][col_count + 1] = occ[take_nr_nr[col_count]]
 in_file.close()
 
 out_string = ""
 for row in table:
     row_string = row[0]
-    for elem_nr in range(1,len(row)):
+    for elem_nr in range(1, len(row)):
         row_string += " " * ((elem_nr * SPACES_FILL) - len(row_string))
         row_string += DELIMITER + row[elem_nr]
     out_string += row_string + "\n"
 
 
-out_file = open(out_filename,'a')
+out_file = open(out_filename, 'a')
 out_file.write(out_string)
 out_file.close()

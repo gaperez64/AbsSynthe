@@ -62,17 +62,21 @@ class BDDAIG(AIG):
         del self.lit_to_bdd[lit]
         return self
 
-    # short-circuit the error bdd and restrict the whole thing to
-    # the relevant latches
-    def short_error(self, b):
-        nu_bddaig = BDDAIG(aig=self)
-        nu_bddaig.set_lit2bdd(self.error_fake_latch.next, b)
+    def get_bdd_latch_deps(self, b):
         bdd_latch_deps = set(b.occ_sem(imap(symbol_lit,
                                             self.iterate_latches())))
         latch_deps = reduce(set.union,
                             map(self.get_lit_latch_deps,
                                 bdd_latch_deps),
                             set())
+        return latch_deps
+
+    # short-circuit the error bdd and restrict the whole thing to
+    # the relevant latches
+    def short_error(self, b):
+        nu_bddaig = BDDAIG(aig=self)
+        nu_bddaig.set_lit2bdd(self.error_fake_latch.next, b)
+        latch_deps = self.get_bdd_latch_deps(b)
         if log.debug:
             not_deps = [l.lit for l in self.iterate_latches()
                         if l.lit not in latch_deps]
