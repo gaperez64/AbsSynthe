@@ -58,7 +58,7 @@ def comp_synth(games):
     return (cum_w, s)
 
 
-def comp_synth3(games, aig):
+def comp_synth3(games, gen_game):
     s = None
     cum_s = None
     cum_w = None
@@ -86,43 +86,42 @@ def comp_synth3(games, aig):
         triple_list.append((game, s, w))
     log.DBG_MSG("Solved " + str(cnt) + " sub games.")
     # lets simplify transition functions
-    aig.restrict_latch_next_funs(cum_s)
+    #aig.restrict_latch_next_funs(cum_s)
     # what comes next is a fixpoint computation using a UPRE
     # step at a time in the global game and using it to get more
     # information from the local sub-games
     lose = BDD.true()
-    lose_next = ~cum_w
+    lose_next = ~cum_w | gen_game.error()
     while lose_next != lose:
         lose = lose_next
-        lose_next = lose | game.upre(lose)
-        for i in range(len(triple_list)):
-            wt = triple_list[i][2]
-            gamet = triple_list[i][0]
-            local_deps = set(gamet.aig.iterate_latches())
-            pt = lose_next.exist_abstract(
-                BDD.make_cube(map(BDD, filter(
-                    lambda x: x not in local_deps,
-                    aig.get_bdd_latch_deps(lose_next)))))
-            assert BDD.make_impl(~wt, pt) == BDD.true()
-            if BDD.make_impl(pt, ~wt) != BDD.true():
-                gamet.short_error = pt
-                wt = backward_safety_synth(gamet)
-                if (not wt or not game.init() & wt):
-                    log.DBG_MSG("Short-circuit exit 3")
-                    return None
-                st = gamet.cpre(wt, get_strat=True)
-                aig.restrict_latch_next_funs(st)
-                triple_list[i][2] = wt
-                triple_list[i][0] = gamet
-                triple_list[i][1] = st
-                if (not st or not game.init() & st):
-                    log.DBG_MSG("Short-circuit exit 4")
-                    return None
+        lose_next = lose | gen_game.upre(lose)
+        #for i in range(len(triple_list)):
+        #    wt = triple_list[i][2]
+        #    gamet = triple_list[i][0]
+        #    local_deps = set([x.lit for x in gamet.aig.iterate_latches()])
+        #    rem_lats = aig.get_bdd_latch_deps(lose_next) - local_deps
+        #    pt = lose_next
+        #    if rem_lats:
+        #        pt = lose_next.univ_abstract(
+        #            BDD.make_cube(map(BDD, rem_lats)))
+        #    #log.BDD_DMP(lose_next, "global losing area iterate")
+        #    #log.BDD_DMP(pt, "new losing area")
+        #    assert BDD.make_impl(~wt, pt) == BDD.true()
+        #    if BDD.make_impl(pt, ~wt) != BDD.true():
+        #        gamet.short_error = pt
+        #        wt = backward_safety_synth(gamet)
+        #        if (wt is None or not gamet.init() & wt):
+        #            log.DBG_MSG("Short-circuit exit 3")
+        #            return None
+        #        st = gamet.cpre(wt, get_strat=True)
+        #        #aig.restrict_latch_next_funs(st)
+        #        triple_list[i] = (gamet, st, wt)
+        #for t in triple_list:
+        #    lose_next |= ~t[2]
     # after the fixpoint has been reached we can compute the error
-    win = BDD.false()
-    for t in triple_list:
-        win |= t[2]
-    if (not win or not game.init() & win):
+    log.BDD_DMP(lose, "lose region")
+    win = ~lose
+    if (not win or not gen_game.init() & win):
         return None
     else:
         return win

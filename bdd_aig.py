@@ -89,15 +89,16 @@ class BDDAIG(AIG):
                         if l.lit not in latch_deps]
             log.DBG_MSG(str(len(not_deps)) + " Latches not needed: " +
                         str(not_deps))
-        self.latch_restr = latch_deps
-        self.restrict_latch_next_funs(~b)
+        nu_bddaig.latch_restr = latch_deps
+        nu_bddaig.restrict_latch_next_funs(~b)
         return nu_bddaig
 
     def iterate_latches(self):
         for l in AIG.iterate_latches(self):
             if self.latch_restr is not None and\
-                    l not in self.latch_restr and\
+                    l.lit not in self.latch_restr and\
                     l != self.error_fake_latch:
+                #log.DBG_MSG("ignoring latch " + str(l.lit))
                 continue
             yield l
 

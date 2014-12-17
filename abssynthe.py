@@ -170,7 +170,8 @@ def synth_from_spec(aig, argv):
             w = subgame_reducer(games_mapped, aig, argv)
         elif argv.comp_algo == 3:
             # solve games by up-down algo
-            w = comp_synth3(game_it, aig)
+            gen_game = ConcGame(aig, use_trans=argv.use_trans)
+            w = comp_synth3(game_it, gen_game)
     # Symbolic approach (avoiding compositional opts)
     else:
         game = ConcGame(aig,
