@@ -37,9 +37,7 @@ from algos import (
 
 
 class ConcGame(BackwardGame):
-    def __init__(self, aig, restrict_like_crazy=False,
-                 use_trans=False):
-        self.restrict_like_crazy = restrict_like_crazy
+    def __init__(self, aig, use_trans=False):
         self.use_trans = use_trans
         self.aig = aig
         self.short_error = None
@@ -54,12 +52,12 @@ class ConcGame(BackwardGame):
 
     def upre(self, dst):
         return self.aig.upre_bdd(
-            dst, restrict_like_crazy=self.restrict_like_crazy,
+            dst,
             use_trans=self.use_trans)
 
     def cpre(self, dst, get_strat=False):
         return self.aig.cpre_bdd(
-            dst, restrict_like_crazy=self.restrict_like_crazy,
+            dst,
             use_trans=self.use_trans, get_strat=get_strat)
 
 

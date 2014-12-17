@@ -71,6 +71,13 @@ class BDDAIG(AIG):
                             set())
         return latch_deps
 
+    # note that this will NOT restrict the error function
+    def restrict_latch_next_funs(self, b):
+        for l in self.iterate_latches():
+            if l != self.error_fake_latch:
+                self.set_lit2bdd(l.next,
+                                 self.lit2bdd(l.next).safe_restrict(~b))
+
     # short-circuit the error bdd and restrict the whole thing to
     # the relevant latches
     def short_error(self, b):
@@ -83,10 +90,7 @@ class BDDAIG(AIG):
             log.DBG_MSG(str(len(not_deps)) + " Latches not needed: " +
                         str(not_deps))
         self.latch_restr = latch_deps
-        for l in self.iterate_latches():
-            if l != self.error_fake_latch:
-                self.set_lit2bdd(l.next,
-                                 self.lit2bdd(l.next).safe_restrict(~b))
+        self.restrict_latch_next_funs(~b)
         return nu_bddaig
 
     def iterate_latches(self):
@@ -167,8 +171,7 @@ class BDDAIG(AIG):
             b &= ~BDD(x.lit)
         return b
 
-    def over_post_bdd(self, src_states_bdd, sys_strat=None,
-                      restrict_like_crazy=False):
+    def over_post_bdd(self, src_states_bdd, sys_strat=None):
         """ Over-approximated version of concrete post which can be done even
         without the transition relation """
         strat = BDD.true()
@@ -185,8 +188,7 @@ class BDDAIG(AIG):
                     funcomp(BDD, symbol_lit),
                     self.iterate_controllable_inputs()
                 )))
-            if restrict_like_crazy:
-                b = b.restrict(src_states_bdd)
+            b = b.restrict(src_states_bdd)
         b &= src_states_bdd
         b = b.exist_abstract(
             BDD.make_cube(imap(funcomp(BDD, symbol_lit),
@@ -195,7 +197,6 @@ class BDDAIG(AIG):
         return self.unprime_latches_in_bdd(b)
 
     def post_bdd(self, src_states_bdd, sys_strat=None,
-                 restrict_like_crazy=False,
                  use_trans=False, over_approx=False):
         """
         POST = EL.EXu.EXc : src(L) ^ T(L,Xu,Xc,L') [^St(L,Xu,Xc)]
@@ -207,8 +208,7 @@ class BDDAIG(AIG):
         trans = transition_bdd
         if sys_strat is not None:
             trans &= sys_strat
-        if restrict_like_crazy:
-            trans = trans.restrict(src_states_bdd)
+        trans = trans.restrict(src_states_bdd)
 
         suc_bdd = trans.and_abstract(
             src_states_bdd,
@@ -241,7 +241,7 @@ class BDDAIG(AIG):
             return b.compose(latches, latch_funs)
 
     def upre_bdd(self, dst_states_bdd, env_strat=None, get_strat=False,
-                 restrict_like_crazy=False, use_trans=False):
+                 use_trans=False):
         """
         UPRE = EXu.AXc.EL' : T(L,Xu,Xc,L') ^ dst(L') [^St(L,Xu)]
         """
@@ -266,8 +266,7 @@ class BDDAIG(AIG):
         else:
             return p_bdd
 
-    def cpre_bdd(self, dst_states_bdd, get_strat=False, use_trans=False,
-                 restrict_like_crazy=False):
+    def cpre_bdd(self, dst_states_bdd, get_strat=False, use_trans=False):
         """ CPRE = AXu.EXc.EL' : T(L,Xu,Xc,L') ^ dst(L') """
         # take a transition step backwards
         p_bdd = self.substitute_latches_next(dst_states_bdd,

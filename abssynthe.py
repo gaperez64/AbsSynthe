@@ -43,6 +43,7 @@ from bdd_games import (
 )
 from comp_algos import (
     comp_synth,
+    comp_synth3,
     subgame_mapper,
     subgame_reducer
 )
@@ -101,7 +102,6 @@ def decompose(aig, argv):
             (A, B) = aig.get_1l_land(strip_lit(aig.error_fake_latch.next))
             return imap(lambda a: ConcGame(
                 BDDAIG(aig).short_error(a),
-                restrict_like_crazy=argv.restrict_like_crazy,
                 use_trans=argv.use_trans),
                 merge_some_signals(BDD.true(), A, aig, argv))
         else:
@@ -130,7 +130,6 @@ def decompose(aig, argv):
             log.DBG_MSG(str(len(C)) + " OR leaves: " + str(C))
             return imap(lambda a: ConcGame(
                 BDDAIG(aig).short_error(a),
-                restrict_like_crazy=argv.restrict_like_crazy,
                 use_trans=argv.use_trans), merge_some_signals(cube, C, aig,
                                                               argv))
     elif argv.decomp == 2:
@@ -159,21 +158,22 @@ def synth_from_spec(aig, argv):
                 return False
             log.DBG_MSG("Interm. win region bdd node count = " +
                         str(w.dag_size()))
-            game = ConcGame(aig, restrict_like_crazy=argv.restrict_like_crazy,
+            game = ConcGame(aig,
                             use_trans=argv.use_trans)
             game.short_error = ~w
             w = backward_safety_synth(game)
         elif argv.comp_algo == 2:
-            games_mapped = subgame_mapper(game_it)
+            games_mapped = subgame_mapper(game_it, aig)
             # local aggregation yields None if short-circ'd
             if games_mapped is None:
                 return False
             w = subgame_reducer(games_mapped, aig, argv)
         elif argv.comp_algo == 3:
-            raise NotImplementedError
+            # solve games by up-down algo
+            w = comp_synth3(game_it, aig)
     # Symbolic approach (avoiding compositional opts)
     else:
-        game = ConcGame(aig, restrict_like_crazy=argv.restrict_like_crazy,
+        game = ConcGame(aig,
                         use_trans=argv.use_trans)
         w = backward_safety_synth(game)
     # final check
@@ -235,10 +235,6 @@ def main():
     parser.add_argument("-ca", "--comp_algo", dest="comp_algo", type=str,
                         default="1", choices="123",
                         help="Choice of compositional algorithm")
-    parser.add_argument("-rc", "--restrict_like_crazy", action="store_true",
-                        dest="restrict_like_crazy", default=False,
-                        help=("Use restrict to minimize BDDs " +
-                              "everywhere possible"))
     parser.add_argument("-v", "--verbose_level", dest="verbose_level",
                         default="", required=False,
                         help="Verbose level = (D)ebug, (W)arnings, " +
