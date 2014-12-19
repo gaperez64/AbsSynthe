@@ -76,7 +76,7 @@ class BDDAIG(AIG):
         for l in self.iterate_latches():
             if l != self.error_fake_latch:
                 self.set_lit2bdd(l.next,
-                                 self.lit2bdd(l.next).safe_restrict(~b))
+                                 self.lit2bdd(l.next).safe_restrict(b))
 
     # short-circuit the error bdd and restrict the whole thing to
     # the relevant latches

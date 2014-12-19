@@ -21,15 +21,85 @@ Guillermo A. Perez
 Universite Libre de Bruxelles
 gperezme@ulb.ac.be
 """
-
+from itertools import imap
 from algos import (
     BackwardGame,
     backward_safety_synth
+)
+from aig import (
+    strip_lit,
+    lit_is_negated
 )
 from cudd_bdd import BDD
 from bdd_aig import BDDAIG
 from bdd_games import ConcGame
 import log
+
+
+def merge_some_signals(cube, C, aig, argv):
+    # TODO: there must be a more pythonic way of doing all of this
+    log.LOG_MSG(str(len(C)) + " sub-games originally")
+    latch_deps = aig.get_bdd_latch_deps(cube)
+    dep_map = dict()
+    for c in C:
+        deps = frozenset(latch_deps | aig.get_lit_latch_deps(c))
+        found = False
+        for key in dep_map:
+            if key >= deps:
+                dep_map[key] &= aig.lit2bdd(c)
+                found = True
+                break
+            elif key <= deps:
+                dep_map[deps] = dep_map[key] & aig.lit2bdd(c)
+                del dep_map[key]
+                found = True
+                break
+        if not found:
+            dep_map[deps] = aig.lit2bdd(c)
+    log.LOG_MSG(str(len(dep_map.keys())) + " sub-games after incl. red.")
+    for key in dep_map:
+        yield ~dep_map[key] & cube
+
+
+def decompose(aig, argv):
+    if argv.decomp == 1:
+        if lit_is_negated(aig.error_fake_latch.next):
+            log.DBG_MSG("Decomposition opt possible (BIG OR case)")
+            (A, B) = aig.get_1l_land(strip_lit(aig.error_fake_latch.next))
+            return imap(lambda a: ConcGame(
+                BDDAIG(aig).short_error(a),
+                use_trans=argv.use_trans),
+                merge_some_signals(BDD.true(), A, aig, argv))
+        else:
+            (A, B) = aig.get_1l_land(aig.error_fake_latch.next)
+            if not B:
+                log.DBG_MSG("No decomposition opt possible")
+                return None
+            else:
+                log.DBG_MSG("Decomposition opt possible (A ^ [C v D] case)")
+                log.DBG_MSG(str(len(A)) + " AND leaves: " + str(A))
+            # critical heuristic: which OR leaf do we distribute?
+            # here I propose to choose the one with the most children
+            b = B.pop()
+            (C, D) = aig.get_1l_land(b)
+            for bp in B:
+                (Cp, Dp) = aig.get_1l_land(bp)
+                if len(Cp) > len(C):
+                    b = bp
+                    C = Cp
+            rem_AND_leaves = filter(lambda x: strip_lit(x) != b, A)
+            rdeps = set()
+            for r in rem_AND_leaves:
+                rdeps |= aig.get_lit_latch_deps(strip_lit(r))
+            log.DBG_MSG("Rem. AND leaves' deps: " + str(rdeps))
+            cube = BDD.make_cube(map(aig.lit2bdd, rem_AND_leaves))
+            log.DBG_MSG(str(len(C)) + " OR leaves: " + str(C))
+            return imap(lambda a: ConcGame(
+                BDDAIG(aig).short_error(a),
+                use_trans=argv.use_trans), merge_some_signals(cube, C, aig,
+                                                              argv))
+    elif argv.decomp == 2:
+        raise NotImplementedError
 
 
 # Compositional approach, receives an iterable of BackwardGames
@@ -86,7 +156,7 @@ def comp_synth3(games, gen_game):
         triple_list.append((game, s, w))
     log.DBG_MSG("Solved " + str(cnt) + " sub games.")
     # lets simplify transition functions
-    #aig.restrict_latch_next_funs(cum_s)
+    gen_game.aig.restrict_latch_next_funs(cum_s)
     # what comes next is a fixpoint computation using a UPRE
     # step at a time in the global game and using it to get more
     # information from the local sub-games
@@ -95,31 +165,30 @@ def comp_synth3(games, gen_game):
     while lose_next != lose:
         lose = lose_next
         lose_next = lose | gen_game.upre(lose)
-        #for i in range(len(triple_list)):
-        #    wt = triple_list[i][2]
-        #    gamet = triple_list[i][0]
-        #    local_deps = set([x.lit for x in gamet.aig.iterate_latches()])
-        #    rem_lats = aig.get_bdd_latch_deps(lose_next) - local_deps
-        #    pt = lose_next
-        #    if rem_lats:
-        #        pt = lose_next.univ_abstract(
-        #            BDD.make_cube(map(BDD, rem_lats)))
-        #    #log.BDD_DMP(lose_next, "global losing area iterate")
-        #    #log.BDD_DMP(pt, "new losing area")
-        #    assert BDD.make_impl(~wt, pt) == BDD.true()
-        #    if BDD.make_impl(pt, ~wt) != BDD.true():
-        #        gamet.short_error = pt
-        #        wt = backward_safety_synth(gamet)
-        #        if (wt is None or not gamet.init() & wt):
-        #            log.DBG_MSG("Short-circuit exit 3")
-        #            return None
-        #        st = gamet.cpre(wt, get_strat=True)
-        #        #aig.restrict_latch_next_funs(st)
-        #        triple_list[i] = (gamet, st, wt)
-        #for t in triple_list:
-        #    lose_next |= ~t[2]
+        for i in range(len(triple_list)):
+            wt = triple_list[i][2]
+            gamet = triple_list[i][0]
+            local_deps = set([x.lit for x in gamet.aig.iterate_latches()])
+            rem_lats = gen_game.aig.get_bdd_latch_deps(lose_next) - local_deps
+            pt = lose_next
+            if rem_lats:
+                pt = lose_next.univ_abstract(
+                    BDD.make_cube(map(BDD, rem_lats)))
+            #log.BDD_DMP(lose_next, "global losing area iterate")
+            #log.BDD_DMP(pt, "new losing area")
+            assert BDD.make_impl(~wt, pt) == BDD.true()
+            if BDD.make_impl(pt, ~wt) != BDD.true():
+                gamet.short_error = pt
+                wt = backward_safety_synth(gamet)
+                if (wt is None or not gamet.init() & wt):
+                    log.DBG_MSG("Short-circuit exit 3")
+                    return None
+                st = gamet.cpre(wt, get_strat=True)
+                gen_game.aig.restrict_latch_next_funs(st)
+                triple_list[i] = (gamet, st, wt)
+        for t in triple_list:
+            lose_next |= ~t[2]
     # after the fixpoint has been reached we can compute the error
-    log.BDD_DMP(lose, "lose region")
     win = ~lose
     if (not win or not gen_game.init() & win):
         return None
