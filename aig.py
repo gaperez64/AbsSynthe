@@ -108,6 +108,16 @@ class AIG:
         and_ = aiger_is_and(self.spec, stripped_lit)
         return input_, latch_, and_
 
+    def get_lit_name(self, lit):
+        (i, l, a) = self.get_lit_type(lit)
+        if i:
+            return i.name
+        if l:
+            return l.name
+        if a:
+            return str(lit)
+        assert False
+
     def lit_is_and(self, lit):
         (i, l, a) = self.get_lit_type(lit)
         return a

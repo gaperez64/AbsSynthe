@@ -87,13 +87,15 @@ def decompose(aig, argv):
                 if len(Cp) > len(C):
                     b = bp
                     C = Cp
+            log.DBG_MSG("Chosen OR: " + str(b))
             rem_AND_leaves = filter(lambda x: strip_lit(x) != b, A)
             rdeps = set()
             for r in rem_AND_leaves:
                 rdeps |= aig.get_lit_latch_deps(strip_lit(r))
             log.DBG_MSG("Rem. AND leaves' deps: " + str(rdeps))
             cube = BDD.make_cube(map(aig.lit2bdd, rem_AND_leaves))
-            log.DBG_MSG(str(len(C)) + " OR leaves: " + str(C))
+            log.DBG_MSG(str(len(C)) + " OR leaves: " +
+                        str(map(aig.get_lit_name, C)))
             return imap(lambda a: ConcGame(
                 BDDAIG(aig).short_error(a),
                 use_trans=argv.use_trans), merge_some_signals(cube, C, aig,
