@@ -87,8 +87,9 @@ class BDDAIG(AIG):
         if log.debug:
             not_deps = [l.lit for l in self.iterate_latches()
                         if l.lit not in latch_deps]
-            log.DBG_MSG(str(len(not_deps)) + " Latches not needed: " +
-                        str(not_deps))
+            log.DBG_MSG(str(len(not_deps)) + " Latches not needed")
+                        #: " +
+                        #str(not_deps))
         nu_bddaig.latch_restr = latch_deps
         nu_bddaig.restrict_latch_next_funs(~b)
         return nu_bddaig

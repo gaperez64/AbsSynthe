@@ -92,7 +92,7 @@ class AIG:
         log.DBG_MSG(str(len(cinputs)) + " C. Inputs: " + str(cinputs))
 
     def input2and(self, c_lit, func_as_aiger_lit):
-        aiger_redefine_input_as_and(self.pec, c_lit,
+        aiger_redefine_input_as_and(self.spec, c_lit,
                                     func_as_aiger_lit, func_as_aiger_lit)
 
     def write_spec(self, out_file):

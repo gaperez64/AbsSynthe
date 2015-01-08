@@ -98,23 +98,23 @@ def synth_from_spec(aig, argv):
     log.DBG_MSG("Win region bdd node count = " +
                 str(w.dag_size()))
     # synthesis from the realizability analysis
-    if w is not None and argv.out_file is not None:
-        log.DBG_MSG("Win region bdd node count = " +
-                    str(w.dag_size()))
-        c_input_info = []
-        n_strategy = aig.cpre_bdd(w, get_strat=True)
-        func_per_output = aig.extract_output_funs(n_strategy, care_set=w)
-        if argv.only_transducer:
-            for c in aig.iterate_controllable_inputs():
-                c_input_info.append((c.lit, c.name))
-        for (c, func_bdd) in func_per_output.items():
-            aig.input2and(c, aig.bdd2aig(func_bdd))
-        if argv.only_transducer:
-            aig.remove_outputs()
-            for (l, n) in c_input_info:
-                aig.add_output(l, n)
-        aig.write_spec(argv.out_file)
-    elif w is not None:
+    if w is not None:
+        if argv.out_file is not None:
+            log.DBG_MSG("Win region bdd node count = " +
+                        str(w.dag_size()))
+            c_input_info = []
+            n_strategy = aig.cpre_bdd(w, get_strat=True)
+            func_per_output = aig.extract_output_funs(n_strategy, care_set=w)
+            if argv.only_transducer:
+                for c in aig.iterate_controllable_inputs():
+                    c_input_info.append((c.lit, c.name))
+            for (c, func_bdd) in func_per_output.items():
+                aig.input2and(c, aig.bdd2aig(func_bdd))
+            if argv.only_transducer:
+                aig.remove_outputs()
+                for (l, n) in c_input_info:
+                    aig.add_output(l, n)
+            aig.write_spec(argv.out_file)
         return True
     else:
         return False
