@@ -606,7 +606,7 @@ gb_s2_r2_comp5_REAL   $REAL
 gb_s2_r2_comp6_REAL   $REAL
 gb_s2_r2_comp7_REAL   $REAL
 gb_s2_r3_comp1_UNREAL   $UNREAL
-gb_s2_r3_comp2_UNREAL   $UNREAL
+gb_s2_r3_comp2_REAL   $REAL
 gb_s2_r3_comp3_REAL   $REAL
 gb_s2_r3_comp4_REAL   $REAL
 gb_s2_r3_comp5_REAL   $REAL
