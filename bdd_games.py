@@ -40,12 +40,16 @@ class ConcGame(BackwardGame):
     def __init__(self, aig, use_trans=False):
         self.use_trans = use_trans
         self.aig = aig
+        self.short_error = None
 
     def init(self):
         return self.aig.init_state_bdd()
 
     def error(self):
-        return self.aig.lit2bdd(self.aig.error_fake_latch.lit)
+        if self.short_error is not None:
+            return self.short_error
+        else:
+            return self.aig.lit2bdd(self.aig.error_fake_latch.lit)
 
     def upre(self, dst):
         return self.aig.upre_bdd(

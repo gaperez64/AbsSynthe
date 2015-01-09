@@ -73,6 +73,7 @@ class BDDAIG(AIG):
 
     # note that this will NOT restrict the error function
     def restrict_latch_next_funs(self, b):
+        log.DBG_MSG("Restricting next funs")
         for l in self.iterate_latches():
             if l != self.error_fake_latch:
                 self.set_lit2bdd(l.next,

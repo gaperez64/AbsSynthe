@@ -158,7 +158,7 @@ def comp_synth3(games, gen_game):
         triple_list.append((game, s, w))
     log.DBG_MSG("Solved " + str(cnt) + " sub games.")
     # lets simplify transition functions
-    gen_game.aig.restrict_latch_next_funs(cum_s)
+    gen_game.aig.restrict_latch_next_funs(cum_w)
     # what comes next is a fixpoint computation using a UPRE
     # step at a time in the global game and using it to get more
     # information from the local sub-games
@@ -166,6 +166,7 @@ def comp_synth3(games, gen_game):
     lose_next = ~cum_w | gen_game.error()
     while lose_next != lose:
         lose = lose_next
+        log.DBG_MSG("Doing global UPRE")
         lose_next = lose | gen_game.upre(lose)
         for i in range(len(triple_list)):
             wt = triple_list[i][2]
@@ -186,7 +187,7 @@ def comp_synth3(games, gen_game):
                     log.DBG_MSG("Short-circuit exit 3")
                     return None
                 st = gamet.cpre(wt, get_strat=True)
-                gen_game.aig.restrict_latch_next_funs(st)
+                gen_game.aig.restrict_latch_next_funs(wt)
                 triple_list[i] = (gamet, st, wt)
         for t in triple_list:
             lose_next |= ~t[2]

@@ -599,7 +599,7 @@ FILES=(
 #stay8n    $REAL
 #stay8y    $REAL
 gb_s2_r2_comp1_UNREAL   $UNREAL
-gb_s2_r2_comp2_REAL   $REAL
+gb_s2_r2_comp2_UNREAL   $UNREAL
 gb_s2_r2_comp3_REAL   $REAL
 gb_s2_r2_comp4_REAL   $REAL
 gb_s2_r2_comp5_REAL   $REAL
@@ -620,14 +620,14 @@ gb_s2_r4_comp5_REAL   $REAL
 gb_s2_r4_comp6_REAL   $REAL
 gb_s2_r4_comp7_REAL   $REAL
 gb_s2_r5_comp1_UNREAL   $UNREAL
-gb_s2_r5_comp2_REAL   $REAL
+gb_s2_r5_comp2_UNREAL   $UNREAL
 gb_s2_r5_comp3_REAL   $REAL
 gb_s2_r5_comp4_REAL   $REAL
 gb_s2_r5_comp5_REAL   $REAL
 gb_s2_r5_comp6_REAL   $REAL
 gb_s2_r5_comp7_REAL   $REAL
 gb_s2_r6_comp1_UNREAL   $UNREAL
-gb_s2_r6_comp2_REAL   $REAL
+gb_s2_r6_comp2_UNREAL   $UNREAL
 gb_s2_r6_comp3_REAL   $REAL
 gb_s2_r6_comp4_REAL   $REAL
 gb_s2_r6_comp5_REAL   $REAL
@@ -647,7 +647,7 @@ load_full_2_comp4_REAL   $REAL
 load_full_2_comp5_REAL   $REAL
 load_full_2_comp6_REAL   $REAL
 load_full_2_comp7_REAL   $REAL
-load_full_3_comp1_REAL   $REAL
+load_full_3_comp1_UNREAL   $UNREAL
 load_full_3_comp2_REAL   $REAL
 load_full_3_comp3_REAL   $REAL
 load_full_3_comp4_REAL   $REAL
@@ -668,7 +668,7 @@ load_full_5_comp4_REAL   $REAL
 load_full_5_comp5_REAL   $REAL
 load_full_5_comp6_REAL   $REAL
 load_full_5_comp7_REAL   $REAL
-load_full_6_comp1_REAL   $REAL
+load_full_6_comp1_UNREAL   $UNREAL
 load_full_6_comp2_REAL   $REAL
 load_full_6_comp3_REAL   $REAL
 load_full_6_comp4_REAL   $REAL
