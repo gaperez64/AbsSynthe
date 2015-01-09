@@ -248,6 +248,8 @@ class BDDAIG(AIG):
         UPRE = EXu.AXc.EL' : T(L,Xu,Xc,L') ^ dst(L') [^St(L,Xu)]
         """
         # take a transition step backwards
+        # TECH NOTE: the restrict_fun=~dst... works ONLY because I will use the
+        # result and take the union with dst_states afterwards...
         p_bdd = self.substitute_latches_next(
             dst_states_bdd,
             restrict_fun=~dst_states_bdd,
