@@ -221,7 +221,7 @@ def subgame_mapper(games, aig):
         if (not cum_s or not game.init() & cum_s):
             log.DBG_MSG("Short-circuit exit 2 after sub-game #" + str(cnt))
             return None
-        pair_list.append((game, s))
+        pair_list.append((game, s, w))
     log.DBG_MSG("Solved " + str(cnt) + " sub games.")
     # lets simplify transition functions
     aig.restrict_latch_next_funs(cum_s)
@@ -258,8 +258,8 @@ def subgame_reducer(games, aig, argv, a=None, b=None, c=None):
             return None
         else:
             s = game.cpre(w, get_strat=True)
-        games[i] = (game, s)
+        games[i] = (game, s, w)
         games.pop(j)
         # lets simplify the transition relations
         aig.restrict_latch_next_funs(s)
-    return games[0][1]
+    return games[0][2]

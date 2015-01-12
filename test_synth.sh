@@ -675,6 +675,34 @@ load_full_6_comp4_REAL   $REAL
 load_full_6_comp5_REAL   $REAL
 load_full_6_comp6_REAL   $REAL
 load_full_6_comp7_REAL   $REAL
+load_2c_comp_comp1_REAL   $REAL
+load_2c_comp_comp2_REAL   $REAL
+load_2c_comp_comp3_REAL   $REAL
+load_2c_comp_comp4_REAL   $REAL
+load_2c_comp_comp5_REAL   $REAL
+load_2c_comp_comp6_REAL   $REAL
+load_2c_comp_comp7_REAL   $REAL
+load_3c_comp_comp1_REAL   $REAL
+load_3c_comp_comp2_REAL   $REAL
+load_3c_comp_comp3_REAL   $REAL
+load_3c_comp_comp4_REAL   $REAL
+load_3c_comp_comp5_REAL   $REAL
+load_3c_comp_comp6_REAL   $REAL
+load_3c_comp_comp7_REAL   $REAL
+load_4c_comp_comp1_UNREAL   $UNREAL
+load_4c_comp_comp2_REAL   $REAL
+load_4c_comp_comp3_REAL   $REAL
+load_4c_comp_comp4_REAL   $REAL
+load_4c_comp_comp5_REAL   $REAL
+load_4c_comp_comp6_REAL   $REAL
+load_4c_comp_comp7_REAL   $REAL
+load_5c_comp_comp1_UNREAL   $UNREAL
+load_5c_comp_comp2_UNREAL   $UNREAL
+load_5c_comp_comp3_UNREAL   $UNREAL
+load_5c_comp_comp4_REAL   $REAL
+load_5c_comp_comp5_REAL   $REAL
+load_5c_comp_comp6_REAL   $REAL
+load_5c_comp_comp7_REAL   $REAL
 )
 
 CALL_SYNTH_TOOL="./start abssynthe.py -v L $@ "
