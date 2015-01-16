@@ -37,6 +37,7 @@ from comp_algos import (
     decompose,
     comp_synth,
     comp_synth3,
+    comp_synth4,
     subgame_mapper,
     subgame_reducer
 )
@@ -87,6 +88,12 @@ def synth_from_spec(aig, argv):
             # solve games by up-down algo
             gen_game = ConcGame(aig, use_trans=argv.use_trans)
             w = comp_synth3(game_it, gen_game)
+        elif argv.comp_algo == 4:
+            # solve games by up-down algo
+            gen_game = ConcGame(aig, use_trans=argv.use_trans)
+            w = comp_synth4(game_it, gen_game)
+        else:
+            raise NotImplementedError()
     # Symbolic approach (avoiding compositional opts)
     else:
         game = ConcGame(aig,
@@ -133,7 +140,7 @@ def main():
     parser.add_argument("-d", "--decomp", dest="decomp", default=None,
                         type=str, help="Decomposition type", choices="12")
     parser.add_argument("-ca", "--comp_algo", dest="comp_algo", type=str,
-                        default="1", choices="123",
+                        default="1", choices="1234",
                         help="Choice of compositional algorithm")
     parser.add_argument("-v", "--verbose_level", dest="verbose_level",
                         default="", required=False,

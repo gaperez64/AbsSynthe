@@ -158,7 +158,77 @@ def comp_synth3(games, gen_game):
         triple_list.append((game, s, w))
     log.DBG_MSG("Solved " + str(cnt) + " sub games.")
     # lets simplify transition functions
-    gen_game.aig.restrict_latch_next_funs(cum_w)
+    gen_game.short_aig_error(~cum_s)
+    # what comes next is a fixpoint computation using a UPRE
+    # step at a time in the global game and using it to get more
+    # information from the local sub-games
+    lose = BDD.true()
+    lose_next = ~cum_w | gen_game.error()
+    while lose_next != lose:
+        lose = lose_next
+        log.DBG_MSG("Doing global UPRE")
+        lose_next = lose | gen_game.upre(lose)
+        for i in range(len(triple_list)):
+            wt = triple_list[i][2]
+            gamet = triple_list[i][0]
+            local_deps = set([x.lit for x in gamet.aig.iterate_latches()])
+            rem_lats = gen_game.aig.get_bdd_latch_deps(lose_next) - local_deps
+            pt = lose_next
+            if rem_lats:
+                pt = lose_next.univ_abstract(
+                    BDD.make_cube(map(BDD, rem_lats)))
+            #log.BDD_DMP(lose_next, "global losing area iterate")
+            #log.BDD_DMP(pt, "new losing area")
+            assert BDD.make_impl(~wt, pt) == BDD.true()
+            if BDD.make_impl(pt, ~wt) != BDD.true():
+                gamet.short_error = pt
+                wt = backward_safety_synth(gamet)
+                if (wt is None or not gamet.init() & wt):
+                    log.DBG_MSG("Short-circuit exit 3")
+                    return None
+                st = gamet.cpre(wt, get_strat=True)
+                cum_s &= st
+                gen_game.short_aig_error(~cum_s)
+                triple_list[i] = (gamet, st, wt)
+        for t in triple_list:
+            lose_next |= ~t[2]
+    # after the fixpoint has been reached we can compute the error
+    win = ~lose
+    if (not win or not gen_game.init() & win):
+        return None
+    else:
+        return win
+
+
+def comp_synth4(games, gen_game):
+    s = None
+    cum_s = None
+    cum_w = None
+    cnt = 0
+    triple_list = []
+    for game in games:
+        assert isinstance(game, BackwardGame)
+        w = backward_safety_synth(game)
+        cnt += 1
+        # short-circuit a negative response
+        if w is None:
+            log.DBG_MSG("Short-circuit exit 1 after sub-game #" + str(cnt))
+            return None
+        s = game.cpre(w, get_strat=True)
+        if cum_s is None:
+            cum_s = s
+            cum_w = w
+        else:
+            cum_s &= s
+            cum_w &= w
+        # another short-circuit exit
+        if (not cum_s or not game.init() & cum_s):
+            log.DBG_MSG("Short-circuit exit 2 after sub-game #" + str(cnt))
+            return None
+        triple_list.append((game, s, w))
+    log.DBG_MSG("Solved " + str(cnt) + " sub games.")
+    # lets simplify transition functions
+    gen_game.aig.restrict_latch_next_funs(cum_s)
     # what comes next is a fixpoint computation using a UPRE
     # step at a time in the global game and using it to get more
     # information from the local sub-games

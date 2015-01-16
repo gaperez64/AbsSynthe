@@ -51,6 +51,9 @@ class ConcGame(BackwardGame):
         else:
             return self.aig.lit2bdd(self.aig.error_fake_latch.lit)
 
+    def short_aig_error(self, error):
+        self.aig = self.aig.short_error(error)
+
     def upre(self, dst):
         return self.aig.upre_bdd(
             dst,
