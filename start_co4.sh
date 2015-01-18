@@ -10,7 +10,7 @@ TIME_LIMIT=5000
 ulimit -t ${TIME_LIMIT}
 export PYTHONPATH=$HOME"/AbsSynthe/pycudd2.0.2/pycudd":$PYTHONPATH
 export LD_LIBRARY_PATH=$HOME"/AbsSynthe/pycudd2.0.2/cudd-2.4.2/lib":$LD_LIBRARY_PATH
-${GNU_TIME} -a -f "Synthesis time: %e sec (Real time) / %U sec (User CPU time)" python $prog $1 -v L -d 1 -ca 2
+${GNU_TIME} -a -f "Synthesis time: %e sec (Real time) / %U sec (User CPU time)" python $prog $1 -v L -d 1 -ca 4
 exit_code=$?
 correct_real=$2
 
