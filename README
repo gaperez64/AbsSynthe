@@ -1,12 +1,11 @@
 AbsSynthe - a tool to synthesize controllers from succinct safety
-specifications.
+specifications. 
 
-This is the second version of AbsSynthe. I have now included scripts to profile
-the code and to run it (profile.sh and start.sh). The -nd option explicitely
-tells the tool to avoid using the compositional optimizations that have been
-included. Also, the -s option tells the tool to use a symblicit forward
-algorithm instead of our very successful backward fixpoint algorithm (a.k.a.
-Romain's algo).
+This is the second version of AbsSynthe. I have now included scripts to profile the code and
+to run it (profile.sh and start.sh). The -nd option explicitely tells the tool to avoid
+using the compositional optimizations that have been included. Also, the -s option tells
+the tool to use a symblicit forward algorithm instead of our very successful backward
+fixpoint algorithm (a.k.a. Romain's algo).
 
-The idea of a "game" has been abstracted and subclasses of the Game class in the
-algos.py script should be used to be able to reuse the code in algos.py.
+The idea of a "game" has been abstracted and subclasses of the Game class in the algos.py
+script should be used to be able to reuse the code in algos.py.
