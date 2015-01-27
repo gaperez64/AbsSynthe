@@ -1,6 +1,7 @@
 AbsSynthe installation:
 1. enter the aiger_swig folder and make (the Makefile can be run
    on a Mac by replacing Makefile by Makefile.llvm)
+   NOTE: this step requires you have installed swig
 2. untar pycudd, enter the cudd subfolder and
    2.1 make
    2.2 make libso
