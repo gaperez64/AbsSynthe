@@ -1,4 +1,4 @@
-AbsSynthe - a tool to synthesize controllers from succinct safety
-specifications. 
+Swiss AbsSynthe - is the native version of the AbsSynthe tool, used to
+synthesize controllers from succinct safety specifications. 
 
-Version = 2.0
+Version = 0.1
