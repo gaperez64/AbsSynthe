@@ -22,6 +22,9 @@
  * gperezme@ulb.ac.be
  *************************************************************************/
 
+#ifndef ABSSYNTHE_H
+#define ABSSYNTHE_H
+
 struct settings_struct {
     char* verbosity;
     bool use_trans;
@@ -29,3 +32,5 @@ struct settings_struct {
     char* out_file;
 };
 extern struct settings_struct settings;
+
+#endif

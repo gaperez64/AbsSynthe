@@ -22,6 +22,9 @@
  * gperezme@ulb.ac.be
  *************************************************************************/
 
+#ifndef ABSSYNTHE_LOGGING_H
+#define ABSSYNTHE_LOGGING_H
+
 #include <string>
 
 void parseLogLevelString(const char*);
@@ -33,3 +36,5 @@ void dbgMsg(std::string);
 void wrnMsg(std::string);
 void logMsg(std::string);
 void errMsg(std::string);
+
+#endif
