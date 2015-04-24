@@ -68,8 +68,18 @@ class BDDAIG(AIG):
         latch_deps = reduce(set.union,
                             map(self.get_lit_latch_deps,
                                 bdd_latch_deps),
-                            set())
+                            bdd_latch_deps)
         return latch_deps
+
+    def get_bdd_deps(self, b):
+        bdd_deps = set(b.occ_sem())
+        bdd_latch_deps = bdd_deps - set([symbol_lit(x) for x
+                                         in self.iterate_latches()])
+        deps = reduce(set.union,
+                      map(self.get_lit_deps,
+                          bdd_latch_deps),
+                      bdd_deps)
+        return deps
 
     # note that this will NOT restrict the error function
     def restrict_latch_next_funs(self, b):
@@ -89,8 +99,6 @@ class BDDAIG(AIG):
             not_deps = [l.lit for l in self.iterate_latches()
                         if l.lit not in latch_deps]
             log.DBG_MSG(str(len(not_deps)) + " Latches not needed")
-                        #: " +
-                        #str(not_deps))
         nu_bddaig.latch_restr = latch_deps
         nu_bddaig.restrict_latch_next_funs(~b)
         return nu_bddaig
@@ -100,7 +108,7 @@ class BDDAIG(AIG):
             if self.latch_restr is not None and\
                     l.lit not in self.latch_restr and\
                     l != self.error_fake_latch:
-                #log.DBG_MSG("ignoring latch " + str(l.lit))
+                # log.DBG_MSG("ignoring latch " + str(l.lit))
                 continue
             yield l
 

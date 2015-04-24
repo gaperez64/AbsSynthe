@@ -30,6 +30,7 @@ import bdd
 cudd = None
 # next free variable
 next_free_var = 0
+temp_vars = []
 
 
 class BDD(bdd.BDD_Base):
@@ -283,6 +284,16 @@ class BDD(bdd.BDD_Base):
 
         next_free_var += 1
         return next_free_var - 1
+
+    @staticmethod
+    def get_temp_vars(n_more):
+        global next_free_var
+
+        delta = n_more - len(temp_vars)
+        if delta > 0:
+            temp_vars.extend(range(next_free_var, next_free_var + delta))
+            next_free_var += delta
+        return temp_vars[0:n_more]
 
     @staticmethod
     def conciliate(F, G, var_list=None):

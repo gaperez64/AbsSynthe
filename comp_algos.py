@@ -39,10 +39,10 @@ import log
 def merge_some_signals(cube, C, aig, argv):
     # TODO: there must be a more pythonic way of doing all of this
     log.LOG_MSG(str(len(C)) + " sub-games originally")
-    latch_deps = aig.get_bdd_latch_deps(cube)
+    cube_deps = aig.get_bdd_deps(cube)
     dep_map = dict()
     for c in C:
-        deps = frozenset(latch_deps | aig.get_lit_latch_deps(c))
+        deps = frozenset(cube_deps | aig.get_lit_deps(c))
         found = False
         for key in dep_map:
             if key >= deps:
@@ -106,8 +106,10 @@ def decompose(aig, argv):
 
 # Compositional approach, receives an iterable of BackwardGames
 def comp_synth(games):
-    s = None
-    cum_w = None
+    s = BDD.true()
+    cum_w = BDD.true()
+    s_to_compose = []
+    cum_w_to_compose = []
     cnt = 0
     for game in games:
         assert isinstance(game, BackwardGame)
@@ -117,15 +119,20 @@ def comp_synth(games):
         if w is None:
             log.DBG_MSG("Short-circuit exit after sub-game #" + str(cnt))
             return (None, None)
-        if s is None:
-            s = game.cpre(w, get_strat=True)
-            cum_w = w
-        else:
-            s &= game.cpre(w, get_strat=True)
-            cum_w &= w
+        temps = BDD.get_temp_vars(2 * cnt)
+        s &= BDD(temps[(2 * (cnt - 1)) - 1])
+        cur_s = game.cpre(w, get_strat=True)
+        s_to_compose.append(cur_s)
+        cum_w &= BDD(temps[2 * (cnt - 1)])
+        cum_w_to_compose.append(w)
         # sanity check before moving forward
-        if (not s or not game.init() & s):
+        if (not cur_s or not game.init() & cur_s):
             return (None, None)
+    # we must aggregate everything now
+    log.DBG_MSG("Aggregating the solutions of the sub-games")
+    s = s.compose(map(lambda x: temps[x], range(1, 2 * cnt, 2)), s_to_compose)
+    cum_w = cum_w.compose(map(lambda x: temps[x], range(0, 2 * cnt, 2)),
+                          cum_w_to_compose)
     log.DBG_MSG("Solved " + str(cnt) + " sub games.")
     return (cum_w, s)
 
@@ -177,8 +184,8 @@ def comp_synth3(games, gen_game):
             if rem_lats:
                 pt = lose_next.univ_abstract(
                     BDD.make_cube(map(BDD, rem_lats)))
-            #log.BDD_DMP(lose_next, "global losing area iterate")
-            #log.BDD_DMP(pt, "new losing area")
+            # log.BDD_DMP(lose_next, "global losing area iterate")
+            # log.BDD_DMP(pt, "new losing area")
             assert BDD.make_impl(~wt, pt) == BDD.true()
             if BDD.make_impl(pt, ~wt) != BDD.true():
                 gamet.short_error = pt
@@ -247,8 +254,8 @@ def comp_synth4(games, gen_game):
             if rem_lats:
                 pt = lose_next.univ_abstract(
                     BDD.make_cube(map(BDD, rem_lats)))
-            #log.BDD_DMP(lose_next, "global losing area iterate")
-            #log.BDD_DMP(pt, "new losing area")
+            # log.BDD_DMP(lose_next, "global losing area iterate")
+            # log.BDD_DMP(pt, "new losing area")
             assert BDD.make_impl(~wt, pt) == BDD.true()
             if BDD.make_impl(pt, ~wt) != BDD.true():
                 gamet.short_error = pt
