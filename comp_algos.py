@@ -165,7 +165,7 @@ def comp_synth3(games, gen_game):
         triple_list.append((game, s, w))
     log.DBG_MSG("Solved " + str(cnt) + " sub games.")
     # lets simplify transition functions
-    gen_game.short_aig_error(~cum_s)
+    # gen_game.short_aig_error(~cum_s)
     # what comes next is a fixpoint computation using a UPRE
     # step at a time in the global game and using it to get more
     # information from the local sub-games
@@ -195,7 +195,7 @@ def comp_synth3(games, gen_game):
                     return None
                 st = gamet.cpre(wt, get_strat=True)
                 cum_s &= st
-                gen_game.short_aig_error(~cum_s)
+                # gen_game.short_aig_error(~cum_s)
                 triple_list[i] = (gamet, st, wt)
         for t in triple_list:
             lose_next |= ~t[2]
@@ -301,7 +301,7 @@ def subgame_mapper(games, aig):
         pair_list.append((game, s, w))
     log.DBG_MSG("Solved " + str(cnt) + " sub games.")
     # lets simplify transition functions
-    aig.restrict_latch_next_funs(cum_s)
+    # aig.restrict_latch_next_funs(cum_s)
     return pair_list
 
 
@@ -338,5 +338,5 @@ def subgame_reducer(games, aig, argv, a=None, b=None, c=None):
         games[i] = (game, s, w)
         games.pop(j)
         # lets simplify the transition relations
-        aig.restrict_latch_next_funs(s)
+        # aig.restrict_latch_next_funs(s)
     return games[0][2]
