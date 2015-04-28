@@ -108,8 +108,6 @@ def decompose(aig, argv):
 def comp_synth(games):
     s = BDD.true()
     cum_w = BDD.true()
-    s_to_compose = []
-    cum_w_to_compose = []
     cnt = 0
     for game in games:
         assert isinstance(game, BackwardGame)
@@ -119,20 +117,16 @@ def comp_synth(games):
         if w is None:
             log.DBG_MSG("Short-circuit exit after sub-game #" + str(cnt))
             return (None, None)
-        temps = BDD.get_temp_vars(2 * cnt)
-        s &= BDD(temps[(2 * (cnt - 1)) - 1])
-        cur_s = game.cpre(w, get_strat=True)
-        s_to_compose.append(cur_s)
-        cum_w &= BDD(temps[2 * (cnt - 1)])
-        cum_w_to_compose.append(w)
+        if s is None:
+            s = game.cpre(w, get_strat=True)
+            cum_w = w
+        else:
+            s &= game.cpre(w, get_strat=True)
+            cum_w &= w
         # sanity check before moving forward
-        if (not cur_s or not game.init() & cur_s):
+        if (not s or not game.init() & s):
             return (None, None)
     # we must aggregate everything now
-    log.DBG_MSG("Aggregating the solutions of the sub-games")
-    s = s.compose(map(lambda x: temps[x], range(1, 2 * cnt, 2)), s_to_compose)
-    cum_w = cum_w.compose(map(lambda x: temps[x], range(0, 2 * cnt, 2)),
-                          cum_w_to_compose)
     log.DBG_MSG("Solved " + str(cnt) + " sub games.")
     return (cum_w, s)
 
