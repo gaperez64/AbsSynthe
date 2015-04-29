@@ -43,18 +43,26 @@ def merge_some_signals(cube, C, aig, argv):
     dep_map = dict()
     for c in C:
         deps = frozenset(cube_deps | aig.get_lit_deps(c))
+        log.DBG_MSG("Current deps: " + str(deps))
         found = False
         for key in dep_map:
             if key >= deps:
+                log.DBG_MSG("Some key subsumes deps")
                 dep_map[key] &= aig.lit2bdd(c)
                 found = True
                 break
             elif key <= deps:
-                dep_map[deps] = dep_map[key] & aig.lit2bdd(c)
+                log.DBG_MSG("New deps subsumes some key")
+                if deps in dep_map:
+                    log.DBG_MSG("AND... the deps existed already")
+                    dep_map[deps] &= dep_map[key] & aig.lit2bdd(c)
+                else:
+                    dep_map[deps] = dep_map[key] & aig.lit2bdd(c)
                 del dep_map[key]
                 found = True
                 break
         if not found:
+            log.DBG_MSG("Adding a new dict element")
             dep_map[deps] = aig.lit2bdd(c)
     log.LOG_MSG(str(len(dep_map.keys())) + " sub-games after incl. red.")
     for key in dep_map:
@@ -91,7 +99,7 @@ def decompose(aig, argv):
             rem_AND_leaves = filter(lambda x: strip_lit(x) != b, A)
             rdeps = set()
             for r in rem_AND_leaves:
-                rdeps |= aig.get_lit_latch_deps(strip_lit(r))
+                rdeps |= aig.get_lit_deps(strip_lit(r))
             log.DBG_MSG("Rem. AND leaves' deps: " + str(rdeps))
             cube = BDD.make_cube(map(aig.lit2bdd, rem_AND_leaves))
             log.DBG_MSG(str(len(C)) + " OR leaves: " +
