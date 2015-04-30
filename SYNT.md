@@ -22,3 +22,7 @@ To generate the graphs included in the paper:
    comp1.csv, comp2.csv and comp3.csv respectively
 2. run the gen4csv.sh script
 3. run gnuplot script plot.p
+
+Additional benchmarks:
+1. fetch all the new benchmarks from https://github.com/gaperez64/bench-ulb-syntcomp15
+   and adapt the above scripts accordingly
