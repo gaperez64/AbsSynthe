@@ -6,5 +6,5 @@ do
   echo "$line &> ./tests/job${i}.log &"
   eval "$line &> ./tests/job${i}.log &"
   i=$(( $i + 1 ))
-  [[ $(( $i%12 )) -eq 0 ]] && wait
+  [[ $(( $i%10 )) -eq 0 ]] && wait
 done
