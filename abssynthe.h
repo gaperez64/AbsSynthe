@@ -26,7 +26,6 @@
 #define ABSSYNTHE_H
 
 struct settings_struct {
-    char* verbosity;
     bool use_trans;
     int comp_algo;
     char* out_file;

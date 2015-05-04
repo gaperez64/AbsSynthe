@@ -77,6 +77,12 @@ void usage() {
 }
 
 void parse_arguments(int argc, char** argv) {
+    // default values
+    settings.comp_algo = 0;
+    settings.use_trans = false;
+    settings.out_file = NULL;
+
+    // read values from argv
     int opt_key;
     int opt_index;
     while (true) {
@@ -125,5 +131,15 @@ void parse_arguments(int argc, char** argv) {
 
 int main (int argc, char** argv) {
     parse_arguments(argc, argv);
+
+    if (settings.comp_algo != 0) {
+        // not implemented for the moment
+        // TODO: remove this error here
+        exit(1);
+    } else {
+        // traditional fixpoint computation
+        // call solve
+    }
+
     exit(0);
 }
