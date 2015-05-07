@@ -29,6 +29,7 @@
 
 #include "abssynthe.h"
 #include "logging.h"
+#include "aig.h"
 
 const char* ABSSYNTHE_VERSION = "Swiss-Abssynthe 1.0";
 const int EXIT_STATUS_REALIZABLE = 10;
@@ -81,6 +82,7 @@ void parse_arguments(int argc, char** argv) {
     settings.comp_algo = 0;
     settings.use_trans = false;
     settings.out_file = NULL;
+    settings.spec_file = NULL;
 
     // read values from argv
     int opt_key;
@@ -127,10 +129,13 @@ void parse_arguments(int argc, char** argv) {
         errMsg("Too few arguments");
         usage();
     }
+    settings.spec_file = argv[0];
 }
 
 int main (int argc, char** argv) {
     parse_arguments(argc, argv);
+    AIG aig = new AIG(settings.spec_file);
+    // try to open the spec now
 
     if (settings.comp_algo != 0) {
         // not implemented for the moment

@@ -26,27 +26,37 @@
 #define ABSSYNTHE_AIG_H
 
 #include <string>
+#include <vector>
 
 #include "aiger.h"
 
 class AIG {
     private:
+    aiger* spec;
+    std::vector<aiger_symbol*> latches;
+    std::vector<aiger_symbol*> c_inputs;
+    std::vector<aiger_symbol*> u_inputs;
+    aiger_symbol* error_fake_latch;
+
+    unsigned nextLit();
+    void introduceErrorLatch();
+        /*
     aiger_symbol* error_fake_latch;
     void introduceErrorLatch();
     void replaceErrorFunction();
 
-    statc:
+    static:
     long negateLit(long lit) { return lit ^ 1; }
     bool litIsNegated(long lit) { return (lit & 1) == 1; }
     long stripLit(long lit) { return long & ~1; }
-    long symbolLit(aiger_symbol* const symbol) { return symbol.lit; }
+    long symbolLit(aiger_symbol* const symbol) { return symbol.lit; }*/
 
     public:
-    AIG(aigerFileName, introErrorLatch=false);
-    long numLatches();
+    AIG(const char*, bool intro_error_latch=false);
+    /*long numLatches();
     long maxVar();
-    long nextLit();
-    std::vector<aiger_symbol* const>* latches();
+    long nextLit();*/
+    /*
     void input2and(aiger_symbol*, aiger_symbol*);
     void writeSpec();
     void getLitType(long lit);
@@ -55,10 +65,8 @@ class AIG {
     aiger_symbol* const getErrSymbol();
     aiger_symbol* const addGate(long, aiger_symbol*, aiger_symbol*);
     aiger_symbol* const addOutput(long, char*);
-    void removeOutputs();
-    std::vector<aiger_symbol* const>* inputs();
-    std::vector<aiger_symbol* const>* controllableInputs();
-    std::vector<aiger_symbol* const>* unControllableInputs();
+    void removeOutputs();*/
+    /*
     void aigSearchUntilNegs(aiger_symbol*, std::vector<long>, std::vector<long>);
     std::vector<long>* getMultLitDeps(std::vector<long>*);
     std::vector<long>* getLitDeps(long);
@@ -67,7 +75,7 @@ class AIG {
     std::vector<long>* getLitUInputDeps(long);
     long** latchDepMap(long* const, int);
     aiger_symbol* newSymbol();
-
+*/
 };
 
 #endif

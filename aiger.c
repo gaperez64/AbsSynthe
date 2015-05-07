@@ -4,13 +4,13 @@ Copyright (c) 2006-2011, Armin Biere, Johannes Kepler University.
 Copyright (c) 2014, Guillermo A. Perez, Universite Libre de Bruxelles.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to
+of this software_and associated documentation files (the "Software"), to
 deal in the Software without restriction, including without limitation the
-rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
-sell copies of the Software, and to permit persons to whom the Software is
+rights to use, copy, modify, merge, publish, distribute, sublicense,_and/or
+sell copies of the Software,_and to permit persons to whom the Software is
 furnished to do so, subject to the following conditions:
 
-The above copyright notice and this permission notice shall be included in
+The above copyright notice_and this permission notice shall be included in
 all copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
@@ -32,7 +32,7 @@ IN THE SOFTWARE.
 
 /*------------------------------------------------------------------------*/
 
-// TODO move this to seperate file and sync it with git hash
+// TODO move this to seperate file_and sync it with git hash
 
 const char *
 aiger_id (void)
@@ -53,69 +53,69 @@ aiger_version (void)
 #define GZIP "gzip -c > %s 2>/dev/null"
 #define GUNZIP "gunzip -c %s 2>/dev/null"
 
-#define NEWN(p,n) \
+#define NEWN(p,t,n) \
   do { \
     size_t bytes = (n) * sizeof (*(p)); \
-    (p) = private->malloc_callback (private->memory_mgr, bytes); \
+    (p) = (t*) _private->malloc_callback (_private->memory_mgr, bytes); \
     memset ((p), 0, bytes); \
   } while (0)
 
-#define REALLOCN(p,m,n) \
+#define REALLOCN(p,t,m,n) \
   do { \
     size_t mbytes = (m) * sizeof (*(p)); \
     size_t nbytes = (n) * sizeof (*(p)); \
     size_t minbytes = (mbytes < nbytes) ? mbytes : nbytes; \
-    void * res = private->malloc_callback (private->memory_mgr, nbytes); \
+    void * res = _private->malloc_callback (_private->memory_mgr, nbytes); \
     memcpy (res, (p), minbytes); \
     if (nbytes > mbytes) \
       memset (((char*)res) + mbytes, 0, nbytes - mbytes); \
-    private->free_callback (private->memory_mgr, (p), mbytes); \
-    (p) = res; \
+    _private->free_callback (_private->memory_mgr, (p), mbytes); \
+    (p) = (t*) res; \
   } while (0)
 
-#define FIT(p,m,n) \
+#define FIT(p,t,m,n) \
   do { \
     size_t old_size = (m); \
     size_t new_size = (n); \
     if (old_size < new_size) \
       { \
-	REALLOCN (p,old_size,new_size); \
+	REALLOCN (p,t,old_size,new_size); \
 	(m) = new_size; \
       } \
   } while (0)
 
-#define ENLARGE(p,s) \
+#define ENLARGE(p,t,s) \
   do { \
     size_t old_size = (s); \
     size_t new_size = old_size ? 2 * old_size : 1; \
-    REALLOCN (p,old_size,new_size); \
+    REALLOCN (p,t,old_size,new_size); \
     (s) = new_size; \
   } while (0)
 
-#define PUSH(p,t,s,l) \
+#define PUSH(p,ty,t,s,l) \
   do { \
     if ((t) == (s)) \
-      ENLARGE (p, s); \
+      ENLARGE (p, ty, s); \
     (p)[(t)++] = (l); \
   } while (0)
 
 #define DELETEN(p,n) \
   do { \
     size_t bytes = (n) * sizeof (*(p)); \
-    private->free_callback (private->memory_mgr, (p), bytes); \
+    _private->free_callback (_private->memory_mgr, (p), bytes); \
     (p) = 0; \
   } while (0)
 
 #define CLR(p) do { memset (&(p), 0, sizeof (p)); } while (0)
 
-#define NEW(p) NEWN (p,1)
+#define NEW(p,t) NEWN (p,t,1)
 #define DELETE(p) DELETEN (p,1)
 
 #define IMPORT_private_FROM(p) \
-  aiger_private * private = (aiger_private*) (p)
+  aiger_private * _private = (aiger_private*) (p)
 
 #define EXPORT_public_FROM(p) \
-  aiger * public = &(p)->public
+  aiger * _public = &(p)->_public
 
 typedef struct aiger_private aiger_private;
 typedef struct aiger_buffer aiger_buffer;
@@ -126,19 +126,19 @@ struct aiger_type
 {
   unsigned input:1;
   unsigned latch:1;
-  unsigned and:1;
+  unsigned _and:1;
 
   unsigned mark:1;
   unsigned onstack:1;
 
-  /* Index int to 'public->{inputs,latches,ands}'.
+  /* Index int to '_public->{inputs,latches,ands}'.
    */
   unsigned idx;
 };
 
 struct aiger_private
 {
-  aiger public;
+  aiger _public;
 
   aiger_type *types;		/* [0..maxvar] */
   unsigned size_types;
@@ -207,20 +207,20 @@ aiger *
 aiger_init_mem (void *memory_mgr,
 		aiger_malloc external_malloc, aiger_free external_free)
 {
-  aiger_private *private;
-  aiger *public;
+  aiger_private *_private;
+  aiger *_public;
 
   assert (external_malloc);
   assert (external_free);
-  private = external_malloc (memory_mgr, sizeof (*private));
-  CLR (*private);
-  private->memory_mgr = memory_mgr;
-  private->malloc_callback = external_malloc;
-  private->free_callback = external_free;
-  public = &private->public;
-  PUSH (public->comments, private->num_comments, private->size_comments, 0);
+  _private = (aiger_private*) external_malloc (memory_mgr, sizeof (*_private));
+  CLR (*_private);
+  _private->memory_mgr = memory_mgr;
+  _private->malloc_callback = external_malloc;
+  _private->free_callback = external_free;
+  _public = &_private->_public;
+  PUSH (_public->comments, char*, _private->num_comments, _private->size_comments, 0);
 
-  return public;
+  return _public;
 }
 
 static void *
@@ -242,28 +242,28 @@ aiger_init (void)
 }
 
 static void
-aiger_delete_str (aiger_private * private, char *str)
+aiger_delete_str (aiger_private * _private, char *str)
 {
   if (str)
     DELETEN (str, strlen (str) + 1);
 }
 
 static char *
-aiger_copy_str (aiger_private * private, const char *str)
+aiger_copy_str (aiger_private * _private, const char *str)
 {
   char *res;
 
   if (!str || !str[0])
     return 0;
 
-  NEWN (res, strlen (str) + 1);
+  NEWN (res, char, strlen (str) + 1);
   strcpy (res, str);
 
   return res;
 }
 
 static unsigned
-aiger_delete_symbols_aux (aiger_private * private,
+aiger_delete_symbols_aux (aiger_private * _private,
 			  aiger_symbol * symbols, unsigned size)
 {
   unsigned i, res;
@@ -275,7 +275,7 @@ aiger_delete_symbols_aux (aiger_private * private,
       if (!s->name)
 	continue;
 
-      aiger_delete_str (private, s->name);
+      aiger_delete_str (_private, s->name);
       s->name = 0;
       res++;
     }
@@ -284,566 +284,570 @@ aiger_delete_symbols_aux (aiger_private * private,
 }
 
 static void
-aiger_delete_symbols (aiger_private * private,
+aiger_delete_symbols (aiger_private * _private,
 		      aiger_symbol * symbols, unsigned size)
 {
-  aiger_delete_symbols_aux (private, symbols, size);
+  aiger_delete_symbols_aux (_private, symbols, size);
   DELETEN (symbols, size);
 }
 
 static unsigned
-aiger_delete_comments (aiger * public)
+aiger_delete_comments (aiger * _public)
 {
-  char **start = (char **) public->comments, ** end, ** p;
-  IMPORT_private_FROM (public);
+  char **start = (char **) _public->comments, ** end, ** p;
+  IMPORT_private_FROM (_public);
 
-  end = start + private->num_comments;
+  end = start + _private->num_comments;
   for (p = start; p < end; p++)
-    aiger_delete_str (private, *p);
+    aiger_delete_str (_private, *p);
 
-  private->num_comments = 0;
-  public->comments[0] = 0;
+  _private->num_comments = 0;
+  _public->comments[0] = 0;
 
-  return private->num_comments;
+  return _private->num_comments;
 }
 
 void
-aiger_reset (aiger * public)
+aiger_reset (aiger * _public)
 {
   unsigned i;
 
-  IMPORT_private_FROM (public);
+  IMPORT_private_FROM (_public);
 
-  aiger_delete_symbols (private, public->inputs, private->size_inputs);
-  aiger_delete_symbols (private, public->latches, private->size_latches);
-  aiger_delete_symbols (private, public->outputs, private->size_outputs);
-  aiger_delete_symbols (private, public->bad, private->size_bad);
-  aiger_delete_symbols (private, public->constraints,
-                        private->size_constraints);
-  for (i = 0; i < public->num_justice; i++)
-    DELETEN (public->justice[i].lits, public->justice[i].size);
-  aiger_delete_symbols (private, public->justice, private->size_justice);
-  aiger_delete_symbols (private, public->fairness, private->size_fairness);
-  DELETEN (public->ands, private->size_ands);
+  aiger_delete_symbols (_private, _public->inputs, _private->size_inputs);
+  aiger_delete_symbols (_private, _public->latches, _private->size_latches);
+  aiger_delete_symbols (_private, _public->outputs, _private->size_outputs);
+  aiger_delete_symbols (_private, _public->bad, _private->size_bad);
+  aiger_delete_symbols (_private, _public->constraints,
+                        _private->size_constraints);
+  for (i = 0; i < _public->num_justice; i++)
+    DELETEN (_public->justice[i].lits, _public->justice[i].size);
+  aiger_delete_symbols (_private, _public->justice, _private->size_justice);
+  aiger_delete_symbols (_private, _public->fairness, _private->size_fairness);
+  DELETEN (_public->ands, _private->size_ands);
 
-  aiger_delete_comments (public);
-  DELETEN (public->comments, private->size_comments);
+  aiger_delete_comments (_public);
+  DELETEN (_public->comments, _private->size_comments);
 
-  DELETEN (private->coi, private->size_coi);
+  DELETEN (_private->coi, _private->size_coi);
 
-  DELETEN (private->types, private->size_types);
-  aiger_delete_str (private, private->error);
-  DELETE (private);
+  DELETEN (_private->types, _private->size_types);
+  aiger_delete_str (_private, _private->error);
+  DELETE (_private);
 }
 
 static aiger_type *
-aiger_import_literal (aiger_private * private, unsigned lit)
+aiger_import_literal (aiger_private * _private, unsigned lit)
 {
   unsigned var = aiger_lit2var (lit);
-  EXPORT_public_FROM (private);
+  EXPORT_public_FROM (_private);
 
-  if (var > public->maxvar)
-    public->maxvar = var;
+  if (var > _public->maxvar)
+    _public->maxvar = var;
 
-  while (var >= private->size_types)
-    ENLARGE (private->types, private->size_types);
+  while (var >= _private->size_types)
+    ENLARGE (_private->types, aiger_type, _private->size_types);
 
-  return private->types + var;
+  return _private->types + var;
 }
 
 void
-aiger_add_input (aiger * public, unsigned lit, const char *name)
+aiger_add_input (aiger * _public, unsigned lit, const char *name)
 {
-  IMPORT_private_FROM (public);
+  IMPORT_private_FROM (_public);
   aiger_symbol symbol;
   aiger_type *type;
 
-  assert (!aiger_error (public));
+  assert (!aiger_error (_public));
 
   assert (lit);
   assert (!aiger_sign (lit));
 
-  type = aiger_import_literal (private, lit);
+  type = aiger_import_literal (_private, lit);
 
   assert (!type->input);
   assert (!type->latch);
-  assert (!type->and);
+  assert (!type->_and);
 
   type->input = 1;
-  type->idx = public->num_inputs;
+  type->idx = _public->num_inputs;
 
   CLR (symbol);
   symbol.lit = lit;
-  symbol.name = aiger_copy_str (private, name);
+  symbol.name = aiger_copy_str (_private, name);
 
-  PUSH (public->inputs, public->num_inputs, private->size_inputs, symbol);
+  PUSH (_public->inputs, aiger_symbol, _public->num_inputs,
+        _private->size_inputs, symbol);
 }
 
 void
-aiger_add_latch (aiger * public,
+aiger_add_latch (aiger * _public,
 		 unsigned lit, unsigned next, const char *name)
 {
-  IMPORT_private_FROM (public);
+  IMPORT_private_FROM (_public);
   aiger_symbol symbol;
   aiger_type *type;
 
-  assert (!aiger_error (public));
+  assert (!aiger_error (_public));
 
   assert (lit);
   assert (!aiger_sign (lit));
 
-  type = aiger_import_literal (private, lit);
+  type = aiger_import_literal (_private, lit);
 
   assert (!type->input);
   assert (!type->latch);
-  assert (!type->and);
+  assert (!type->_and);
 
   /* Warning: importing 'next' makes 'type' invalid.
    */
   type->latch = 1;
-  type->idx = public->num_latches;
+  type->idx = _public->num_latches;
 
-  aiger_import_literal (private, next);
+  aiger_import_literal (_private, next);
 
   CLR (symbol);
   symbol.lit = lit;
   symbol.next = next;
-  symbol.name = aiger_copy_str (private, name);
+  symbol.name = aiger_copy_str (_private, name);
 
-  PUSH (public->latches, public->num_latches, private->size_latches, symbol);
+  PUSH (_public->latches, aiger_symbol, _public->num_latches,
+        _private->size_latches, symbol);
 }
 
 void
-aiger_add_reset (aiger * public, unsigned lit, unsigned reset) 
+aiger_add_reset (aiger * _public, unsigned lit, unsigned reset) 
 {
-  IMPORT_private_FROM (public);
+  IMPORT_private_FROM (_public);
   aiger_type * type;
   assert (reset <= 1 || reset == lit);
-  assert (!aiger_error (public));
+  assert (!aiger_error (_public));
   assert (lit);
   assert (!aiger_sign (lit));
-  type = aiger_import_literal (private, lit);
+  type = aiger_import_literal (_private, lit);
   assert (type->latch);
-  assert (type->idx < public->num_latches);
-  public->latches[type->idx].reset = reset;
+  assert (type->idx < _public->num_latches);
+  _public->latches[type->idx].reset = reset;
 }
 
 void
-aiger_add_output (aiger * public, unsigned lit, const char *name)
+aiger_add_output (aiger * _public, unsigned lit, const char *name)
 {
-  IMPORT_private_FROM (public);
+  IMPORT_private_FROM (_public);
   aiger_symbol symbol;
-  aiger_import_literal (private, lit);
+  aiger_import_literal (_private, lit);
   CLR (symbol);
   symbol.lit = lit;
-  symbol.name = aiger_copy_str (private, name);
-  PUSH (public->outputs, public->num_outputs, private->size_outputs, symbol);
+  symbol.name = aiger_copy_str (_private, name);
+  PUSH (_public->outputs, aiger_symbol, _public->num_outputs,
+        _private->size_outputs, symbol);
 }
 
 void
-aiger_add_bad (aiger * public, unsigned lit, const char *name)
+aiger_add_bad (aiger * _public, unsigned lit, const char *name)
 {
-  IMPORT_private_FROM (public);
+  IMPORT_private_FROM (_public);
   aiger_symbol symbol;
-  aiger_import_literal (private, lit);
+  aiger_import_literal (_private, lit);
   CLR (symbol);
   symbol.lit = lit;
-  symbol.name = aiger_copy_str (private, name);
-  PUSH (public->bad, public->num_bad, private->size_bad, symbol);
+  symbol.name = aiger_copy_str (_private, name);
+  PUSH (_public->bad, aiger_symbol, _public->num_bad, _private->size_bad, symbol);
 }
 
 void
-aiger_add_constraint (aiger * public, unsigned lit, const char *name)
+aiger_add_constraint (aiger * _public, unsigned lit, const char *name)
 {
-  IMPORT_private_FROM (public);
+  IMPORT_private_FROM (_public);
   aiger_symbol symbol;
-  aiger_import_literal (private, lit);
+  aiger_import_literal (_private, lit);
   CLR (symbol);
   symbol.lit = lit;
-  symbol.name = aiger_copy_str (private, name);
-  PUSH (public->constraints, 
-        public->num_constraints, private->size_constraints, symbol);
+  symbol.name = aiger_copy_str (_private, name);
+  PUSH (_public->constraints, aiger_symbol,
+        _public->num_constraints, _private->size_constraints, symbol);
 }
 
 void
-aiger_add_justice (aiger * public, 
+aiger_add_justice (aiger * _public, 
                    unsigned size, unsigned * lits,
 		   const char * name)
 {
-  IMPORT_private_FROM (public);
+  IMPORT_private_FROM (_public);
   aiger_symbol symbol;
   unsigned i, lit;
   CLR (symbol);
   symbol.size = size;
-  NEWN (symbol.lits, size);
+  NEWN (symbol.lits, unsigned, size);
   for (i = 0; i < size; i++)
     {
       lit = lits[i];
-      aiger_import_literal (private, lit);
+      aiger_import_literal (_private, lit);
       symbol.lits[i] = lit;
     }
-  symbol.name = aiger_copy_str (private, name);
-  PUSH (public->justice, 
-        public->num_justice, private->size_justice, symbol);
+  symbol.name = aiger_copy_str (_private, name);
+  PUSH (_public->justice, aiger_symbol,
+        _public->num_justice, _private->size_justice, symbol);
 }
 
 void
-aiger_add_fairness (aiger * public, unsigned lit, const char *name)
+aiger_add_fairness (aiger * _public, unsigned lit, const char *name)
 {
-  IMPORT_private_FROM (public);
+  IMPORT_private_FROM (_public);
   aiger_symbol symbol;
-  aiger_import_literal (private, lit);
+  aiger_import_literal (_private, lit);
   CLR (symbol);
   symbol.lit = lit;
-  symbol.name = aiger_copy_str (private, name);
-  PUSH (public->fairness, 
-        public->num_fairness, private->size_fairness, symbol);
+  symbol.name = aiger_copy_str (_private, name);
+  PUSH (_public->fairness, aiger_symbol,
+        _public->num_fairness, _private->size_fairness, symbol);
 }
 
 void
-aiger_add_and (aiger * public, unsigned lhs, unsigned rhs0, unsigned rhs1)
+aiger_add_and (aiger * _public, unsigned lhs, unsigned rhs0, unsigned rhs1)
 {
-  IMPORT_private_FROM (public);
+  IMPORT_private_FROM (_public);
   aiger_type *type;
-  aiger_and *and;
+  aiger_and *_and;
 
-  assert (!aiger_error (public));
+  assert (!aiger_error (_public));
 
   assert (lhs > 1);
   assert (!aiger_sign (lhs));
 
-  type = aiger_import_literal (private, lhs);
+  type = aiger_import_literal (_private, lhs);
 
   assert (!type->input);
   assert (!type->latch);
-  assert (!type->and);
+  assert (!type->_and);
 
-  type->and = 1;
-  type->idx = public->num_ands;
+  type->_and = 1;
+  type->idx = _public->num_ands;
 
-  aiger_import_literal (private, rhs0);
-  aiger_import_literal (private, rhs1);
+  aiger_import_literal (_private, rhs0);
+  aiger_import_literal (_private, rhs1);
 
-  if (public->num_ands == private->size_ands)
-    ENLARGE (public->ands, private->size_ands);
+  if (_public->num_ands == _private->size_ands)
+    ENLARGE (_public->ands, aiger_and, _private->size_ands);
 
-  and = public->ands + public->num_ands;
+  _and = _public->ands + _public->num_ands;
 
-  and->lhs = lhs;
-  and->rhs0 = rhs0;
-  and->rhs1 = rhs1;
+  _and->lhs = lhs;
+  _and->rhs0 = rhs0;
+  _and->rhs1 = rhs1;
 
-  public->num_ands++;
+  _public->num_ands++;
 }
 
 void
-aiger_add_comment (aiger * public, const char *comment)
+aiger_add_comment (aiger * _public, const char *comment)
 {
-  IMPORT_private_FROM (public);
+  IMPORT_private_FROM (_public);
   char **p;
 
-  assert (!aiger_error (public));
+  assert (!aiger_error (_public));
 
   assert (!strchr (comment, '\n'));
-  assert (private->num_comments);
-  p = public->comments + private->num_comments - 1;
+  assert (_private->num_comments);
+  p = _public->comments + _private->num_comments - 1;
   assert (!*p);
-  *p = aiger_copy_str (private, comment);
-  PUSH (public->comments, private->num_comments, private->size_comments, 0);
+  *p = aiger_copy_str (_private, comment);
+  PUSH (_public->comments, char*, _private->num_comments,
+        _private->size_comments, 0);
 }
 
 static const char *
-aiger_error_s (aiger_private * private, const char *s, const char *a)
+aiger_error_s (aiger_private * _private, const char *s, const char *a)
 {
   unsigned tmp_len, error_len;
   char *tmp;
-  assert (!private->error);
+  assert (!_private->error);
   tmp_len = strlen (s) + strlen (a) + 1;
-  NEWN (tmp, tmp_len);
+  NEWN (tmp, char, tmp_len);
   sprintf (tmp, s, a);
   error_len = strlen (tmp) + 1;
-  NEWN (private->error, error_len);
-  memcpy (private->error, tmp, error_len);
+  NEWN (_private->error, char,  error_len);
+  memcpy (_private->error, tmp, error_len);
   DELETEN (tmp, tmp_len);
-  return private->error;
+  return _private->error;
 }
 
 static const char *
-aiger_error_u (aiger_private * private, const char *s, unsigned u)
+aiger_error_u (aiger_private * _private, const char *s, unsigned u)
 {
   unsigned tmp_len, error_len;
   char *tmp;
-  assert (!private->error);
+  assert (!_private->error);
   tmp_len = strlen (s) + sizeof (u) * 4 + 1;
-  NEWN (tmp, tmp_len);
+  NEWN (tmp, char, tmp_len);
   sprintf (tmp, s, u);
   error_len = strlen (tmp) + 1;
-  NEWN (private->error, error_len);
-  memcpy (private->error, tmp, error_len);
+  NEWN (_private->error, char, error_len);
+  memcpy (_private->error, tmp, error_len);
   DELETEN (tmp, tmp_len);
-  return private->error;
+  return _private->error;
 }
 
 static const char *
-aiger_error_uu (aiger_private * private, const char *s, unsigned a,
+aiger_error_uu (aiger_private * _private, const char *s, unsigned a,
 		unsigned b)
 {
   unsigned tmp_len, error_len;
   char *tmp;
-  assert (!private->error);
+  assert (!_private->error);
   tmp_len = strlen (s) + sizeof (a) * 4 + sizeof (b) * 4 + 1;
-  NEWN (tmp, tmp_len);
+  NEWN (tmp, char, tmp_len);
   sprintf (tmp, s, a, b);
   error_len = strlen (tmp) + 1;
-  NEWN (private->error, error_len);
-  memcpy (private->error, tmp, error_len);
+  NEWN (_private->error, char, error_len);
+  memcpy (_private->error, tmp, error_len);
   DELETEN (tmp, tmp_len);
-  return private->error;
+  return _private->error;
 }
 
 static const char *
-aiger_error_usu (aiger_private * private,
+aiger_error_usu (aiger_private * _private,
 		 const char *s, unsigned a, const char *t, unsigned b)
 {
   unsigned tmp_len, error_len;
   char *tmp;
-  assert (!private->error);
+  assert (!_private->error);
   tmp_len = strlen (s) + strlen (t) + sizeof (a) * 4 + sizeof (b) * 4 + 1;
-  NEWN (tmp, tmp_len);
+  NEWN (tmp, char, tmp_len);
   sprintf (tmp, s, a, t, b);
   error_len = strlen (tmp) + 1;
-  NEWN (private->error, error_len);
-  memcpy (private->error, tmp, error_len);
+  NEWN (_private->error, char, error_len);
+  memcpy (_private->error, tmp, error_len);
   DELETEN (tmp, tmp_len);
-  return private->error;
+  return _private->error;
 }
 
 const char *
-aiger_error (aiger * public)
+aiger_error (aiger * _public)
 {
-  IMPORT_private_FROM (public);
-  return private->error;
+  IMPORT_private_FROM (_public);
+  return _private->error;
 }
 
 static int
-aiger_literal_defined (aiger_private * private, unsigned lit)
+aiger_literal_defined (aiger_private * _private, unsigned lit)
 {
   unsigned var = aiger_lit2var (lit);
 #ifndef NDEBUG
-  EXPORT_public_FROM (private);
+  EXPORT_public_FROM (_private);
 #endif
   aiger_type *type;
 
-  assert (var <= public->maxvar);
+  assert (var <= _public->maxvar);
   if (!var)
     return 1;
 
-  type = private->types + var;
+  type = _private->types + var;
 
-  return type->and || type->input || type->latch;
+  return type->_and || type->input || type->latch;
 }
 
 static void
-aiger_check_next_defined (aiger_private * private)
+aiger_check_next_defined (aiger_private * _private)
 {
-  EXPORT_public_FROM (private);
+  EXPORT_public_FROM (_private);
   unsigned i, next, latch;
   aiger_symbol *symbol;
 
-  if (private->error)
+  if (_private->error)
     return;
 
-  for (i = 0; !private->error && i < public->num_latches; i++)
+  for (i = 0; !_private->error && i < _public->num_latches; i++)
     {
-      symbol = public->latches + i;
+      symbol = _public->latches + i;
       latch = symbol->lit;
       next = symbol->next;
 
       assert (!aiger_sign (latch));
-      assert (private->types[aiger_lit2var (latch)].latch);
+      assert (_private->types[aiger_lit2var (latch)].latch);
 
-      if (!aiger_literal_defined (private, next))
-	aiger_error_uu (private,
+      if (!aiger_literal_defined (_private, next))
+	aiger_error_uu (_private,
 			"next state function %u of latch %u undefined",
 			next, latch);
     }
 }
 
 static void
-aiger_check_right_hand_side_defined (aiger_private * private, aiger_and * and,
+aiger_check_right_hand_side_defined (aiger_private * _private, aiger_and *_and,
 				     unsigned rhs)
 {
-  if (private->error)
+  if (_private->error)
     return;
 
-  assert (and);
-  if (!aiger_literal_defined (private, rhs))
-    aiger_error_uu (private, "literal %u in AND %u undefined", rhs, and->lhs);
+  assert (_and);
+  if (!aiger_literal_defined (_private, rhs))
+    aiger_error_uu (_private, "literal %u in AND %u undefined", rhs,_and->lhs);
 }
 
 static void
-aiger_check_right_hand_sides_defined (aiger_private * private)
+aiger_check_right_hand_sides_defined (aiger_private * _private)
 {
-  EXPORT_public_FROM (private);
-  aiger_and *and;
+  EXPORT_public_FROM (_private);
+  aiger_and *_and;
   unsigned i;
 
-  if (private->error)
+  if (_private->error)
     return;
 
-  for (i = 0; !private->error && i < public->num_ands; i++)
+  for (i = 0; !_private->error && i < _public->num_ands; i++)
     {
-      and = public->ands + i;
-      aiger_check_right_hand_side_defined (private, and, and->rhs0);
-      aiger_check_right_hand_side_defined (private, and, and->rhs1);
+     _and = _public->ands + i;
+      aiger_check_right_hand_side_defined (_private,_and,_and->rhs0);
+      aiger_check_right_hand_side_defined (_private,_and,_and->rhs1);
     }
 }
 
 static void
-aiger_check_outputs_defined (aiger_private * private)
+aiger_check_outputs_defined (aiger_private * _private)
 {
-  EXPORT_public_FROM (private);
+  EXPORT_public_FROM (_private);
   unsigned i, output;
 
-  if (private->error)
+  if (_private->error)
     return;
 
-  for (i = 0; !private->error && i < public->num_outputs; i++)
+  for (i = 0; !_private->error && i < _public->num_outputs; i++)
     {
-      output = public->outputs[i].lit;
+      output = _public->outputs[i].lit;
       output = aiger_strip (output);
       if (output <= 1)
 	continue;
 
-      if (!aiger_literal_defined (private, output))
-	aiger_error_u (private, "output %u undefined", output);
+      if (!aiger_literal_defined (_private, output))
+	aiger_error_u (_private, "output %u undefined", output);
     }
 }
 
 static void
-aiger_check_bad_defined (aiger_private * private)
+aiger_check_bad_defined (aiger_private * _private)
 {
-  EXPORT_public_FROM (private);
+  EXPORT_public_FROM (_private);
   unsigned i, bad;
 
-  if (private->error)
+  if (_private->error)
     return;
 
-  for (i = 0; !private->error && i < public->num_bad; i++)
+  for (i = 0; !_private->error && i < _public->num_bad; i++)
     {
-      bad = public->bad[i].lit;
+      bad = _public->bad[i].lit;
       bad = aiger_strip (bad);
       if (bad <= 1)
 	continue;
 
-      if (!aiger_literal_defined (private, bad))
-	aiger_error_u (private, "bad %u undefined", bad);
+      if (!aiger_literal_defined (_private, bad))
+	aiger_error_u (_private, "bad %u undefined", bad);
     }
 }
 
 static void
-aiger_check_constraints_defined (aiger_private * private)
+aiger_check_constraints_defined (aiger_private * _private)
 {
-  EXPORT_public_FROM (private);
+  EXPORT_public_FROM (_private);
   unsigned i, constraint;
 
-  if (private->error)
+  if (_private->error)
     return;
 
-  for (i = 0; !private->error && i < public->num_constraints; i++)
+  for (i = 0; !_private->error && i < _public->num_constraints; i++)
     {
-      constraint = public->constraints[i].lit;
+      constraint = _public->constraints[i].lit;
       constraint = aiger_strip (constraint);
       if (constraint <= 1)
 	continue;
 
-      if (!aiger_literal_defined (private, constraint))
-	aiger_error_u (private, "constraint %u undefined", constraint);
+      if (!aiger_literal_defined (_private, constraint))
+	aiger_error_u (_private, "constraint %u undefined", constraint);
     }
 }
 
 static void
-aiger_check_fairness_defined (aiger_private * private)
+aiger_check_fairness_defined (aiger_private * _private)
 {
-  EXPORT_public_FROM (private);
+  EXPORT_public_FROM (_private);
   unsigned i, fairness;
 
-  if (private->error)
+  if (_private->error)
     return;
 
-  for (i = 0; !private->error && i < public->num_fairness; i++)
+  for (i = 0; !_private->error && i < _public->num_fairness; i++)
     {
-      fairness = public->fairness[i].lit;
+      fairness = _public->fairness[i].lit;
       fairness = aiger_strip (fairness);
       if (fairness <= 1)
 	continue;
 
-      if (!aiger_literal_defined (private, fairness))
-	aiger_error_u (private, "fairness %u undefined", fairness);
+      if (!aiger_literal_defined (_private, fairness))
+	aiger_error_u (_private, "fairness %u undefined", fairness);
     }
 }
 
 static void
-aiger_check_justice_defined (aiger_private * private) 
+aiger_check_justice_defined (aiger_private * _private) 
 {
-  EXPORT_public_FROM (private);
+  EXPORT_public_FROM (_private);
   unsigned i, j, justice;
 
-  if (private->error)
+  if (_private->error)
     return;
 
-  for (i = 0; !private->error && i < public->num_justice; i++)
+  for (i = 0; !_private->error && i < _public->num_justice; i++)
     {
-      for (j = 0; !private->error && j < public->justice[i].size; j++)
+      for (j = 0; !_private->error && j < _public->justice[i].size; j++)
 	{
-	  justice = public->justice[i].lits[j];
+	  justice = _public->justice[i].lits[j];
 	  justice = aiger_strip (justice);
 	  if (justice <= 1)
 	    continue;
 
-	  if (!aiger_literal_defined (private, justice))
-	    aiger_error_u (private, "justice %u undefined", justice);
+	  if (!aiger_literal_defined (_private, justice))
+	    aiger_error_u (_private, "justice %u undefined", justice);
 	}
     }
 }
 
 static void
-aiger_check_for_cycles (aiger_private * private)
+aiger_check_for_cycles (aiger_private * _private)
 {
   unsigned i, j, *stack, size_stack, top_stack, tmp;
-  EXPORT_public_FROM (private);
+  EXPORT_public_FROM (_private);
   aiger_type *type;
-  aiger_and *and;
+  aiger_and *_and;
 
-  if (private->error)
+  if (_private->error)
     return;
 
   stack = 0;
   size_stack = top_stack = 0;
 
-  for (i = 1; !private->error && i <= public->maxvar; i++)
+  for (i = 1; !_private->error && i <= _public->maxvar; i++)
     {
-      type = private->types + i;
+      type = _private->types + i;
 
-      if (!type->and || type->mark)
+      if (!type->_and || type->mark)
 	continue;
 
-      PUSH (stack, top_stack, size_stack, i);
+      PUSH (stack, unsigned, top_stack, size_stack, i);
       while (top_stack)
 	{
 	  j = stack[top_stack - 1];
 
 	  if (j)
 	    {
-	      type = private->types + j;
+	      type = _private->types + j;
 	      if (type->mark && type->onstack)
 		{
-		  aiger_error_u (private,
-				 "cyclic definition for and gate %u", j);
+		  aiger_error_u (_private,
+				 "cyclic definition for_and gate %u", j);
 		  break;
 		}
 
-	      if (!type->and || type->mark)
+	      if (!type->_and || type->mark)
 		{
 		  top_stack--;
 		  continue;
@@ -853,18 +857,18 @@ aiger_check_for_cycles (aiger_private * private)
 	       */
 	      type->mark = 1;
 	      type->onstack = 1;
-	      PUSH (stack, top_stack, size_stack, 0);
+	      PUSH (stack, unsigned, top_stack, size_stack, 0);
 
-	      assert (type->idx < public->num_ands);
-	      and = public->ands + type->idx;
+	      assert (type->idx < _public->num_ands);
+	     _and = _public->ands + type->idx;
 
-	      tmp = aiger_lit2var (and->rhs0);
+	      tmp = aiger_lit2var (_and->rhs0);
 	      if (tmp)
-		PUSH (stack, top_stack, size_stack, tmp);
+		PUSH (stack, unsigned, top_stack, size_stack, tmp);
 
-	      tmp = aiger_lit2var (and->rhs1);
+	      tmp = aiger_lit2var (_and->rhs1);
 	      if (tmp)
-		PUSH (stack, top_stack, size_stack, tmp);
+		PUSH (stack, unsigned, top_stack, size_stack, tmp);
 	    }
 	  else
 	    {
@@ -874,7 +878,7 @@ aiger_check_for_cycles (aiger_private * private)
 	      top_stack -= 2;
 	      j = stack[top_stack];
 	      assert (j);
-	      type = private->types + j;
+	      type = _private->types + j;
 	      assert (type->mark);
 	      assert (type->onstack);
 	      type->onstack = 0;
@@ -886,22 +890,22 @@ aiger_check_for_cycles (aiger_private * private)
 }
 
 const char *
-aiger_check (aiger * public)
+aiger_check (aiger * _public)
 {
-  IMPORT_private_FROM (public);
+  IMPORT_private_FROM (_public);
 
-  assert (!aiger_error (public));
+  assert (!aiger_error (_public));
 
-  aiger_check_next_defined (private);
-  aiger_check_outputs_defined (private);
-  aiger_check_bad_defined (private);
-  aiger_check_constraints_defined (private);
-  aiger_check_justice_defined (private);
-  aiger_check_fairness_defined (private);
-  aiger_check_right_hand_sides_defined (private);
-  aiger_check_for_cycles (private);
+  aiger_check_next_defined (_private);
+  aiger_check_outputs_defined (_private);
+  aiger_check_bad_defined (_private);
+  aiger_check_constraints_defined (_private);
+  aiger_check_justice_defined (_private);
+  aiger_check_fairness_defined (_private);
+  aiger_check_right_hand_sides_defined (_private);
+  aiger_check_for_cycles (_private);
 
-  return private->error;
+  return _private->error;
 }
 
 static int
@@ -970,7 +974,7 @@ aiger_write_delta (void *state, aiger_put put, unsigned delta)
 }
 
 static int
-aiger_write_header (aiger * public,
+aiger_write_header (aiger * _public,
 		    const char *format_string,
 		    int compact_inputs_and_latches,
 		    void *state, aiger_put put)
@@ -979,128 +983,128 @@ aiger_write_header (aiger * public,
 
   if (aiger_put_s (state, put, format_string) == EOF) return 0;
   if (put (' ', state) == EOF) return 0;
-  if (aiger_put_u (state, put, public->maxvar) == EOF) return 0;
+  if (aiger_put_u (state, put, _public->maxvar) == EOF) return 0;
   if (put (' ', state) == EOF) return 0;
-  if (aiger_put_u (state, put, public->num_inputs) == EOF) return 0;
+  if (aiger_put_u (state, put, _public->num_inputs) == EOF) return 0;
   if (put (' ', state) == EOF) return 0;
-  if (aiger_put_u (state, put, public->num_latches) == EOF) return 0;
+  if (aiger_put_u (state, put, _public->num_latches) == EOF) return 0;
   if (put (' ', state) == EOF) return 0;
-  if (aiger_put_u (state, put, public->num_outputs) == EOF) return 0;
+  if (aiger_put_u (state, put, _public->num_outputs) == EOF) return 0;
   if (put (' ', state) == EOF) return 0;
-  if (aiger_put_u (state, put, public->num_ands) == EOF) return 0;
+  if (aiger_put_u (state, put, _public->num_ands) == EOF) return 0;
 
-  if (public->num_bad ||
-      public->num_constraints ||
-      public->num_justice ||
-      public->num_fairness)
+  if (_public->num_bad ||
+      _public->num_constraints ||
+      _public->num_justice ||
+      _public->num_fairness)
     {
       if (put (' ', state) == EOF) return 0;
-      if (aiger_put_u (state, put, public->num_bad) == EOF) return 0;
+      if (aiger_put_u (state, put, _public->num_bad) == EOF) return 0;
     }
 
-  if (public->num_constraints ||
-      public->num_justice ||
-      public->num_fairness)
+  if (_public->num_constraints ||
+      _public->num_justice ||
+      _public->num_fairness)
     {
       if (put (' ', state) == EOF) return 0;
-      if (aiger_put_u (state, put, public->num_constraints) == EOF) return 0;
+      if (aiger_put_u (state, put, _public->num_constraints) == EOF) return 0;
     }
 
-  if (public->num_justice ||
-      public->num_fairness)
+  if (_public->num_justice ||
+      _public->num_fairness)
     {
       if (put (' ', state) == EOF) return 0;
-      if (aiger_put_u (state, put, public->num_justice) == EOF) return 0;
+      if (aiger_put_u (state, put, _public->num_justice) == EOF) return 0;
     }
 
-  if (public->num_fairness)
+  if (_public->num_fairness)
     {
       if (put (' ', state) == EOF) return 0;
-      if (aiger_put_u (state, put, public->num_fairness) == EOF) return 0;
+      if (aiger_put_u (state, put, _public->num_fairness) == EOF) return 0;
     }
 
   if (put ('\n', state) == EOF) return 0;
 
-  if (!compact_inputs_and_latches && public->num_inputs)
+  if (!compact_inputs_and_latches && _public->num_inputs)
     {
-      for (i = 0; i < public->num_inputs; i++)
-	if (aiger_put_u (state, put, public->inputs[i].lit) == EOF ||
+      for (i = 0; i < _public->num_inputs; i++)
+	if (aiger_put_u (state, put, _public->inputs[i].lit) == EOF ||
 	    put ('\n', state) == EOF)
 	  return 0;
     }
 
-  if (public->num_latches)
+  if (_public->num_latches)
     {
-      for (i = 0; i < public->num_latches; i++)
+      for (i = 0; i < _public->num_latches; i++)
 	{
 	  if (!compact_inputs_and_latches)
 	    {
-	      if (aiger_put_u (state, put, public->latches[i].lit) == EOF)
+	      if (aiger_put_u (state, put, _public->latches[i].lit) == EOF)
 	        return 0;
 	      if (put (' ', state) == EOF) return 0;
 	    }
 
-	  if (aiger_put_u (state, put, public->latches[i].next) == EOF)
+	  if (aiger_put_u (state, put, _public->latches[i].next) == EOF)
 	     return 0;
 
-	  if (public->latches[i].reset) 
+	  if (_public->latches[i].reset) 
 	    {
 	      if (put (' ', state) == EOF) return 0;
-	      if (aiger_put_u (state, put, public->latches[i].reset) == EOF)
+	      if (aiger_put_u (state, put, _public->latches[i].reset) == EOF)
 		return 0;
 	    }
 	  if (put ('\n', state) == EOF) return 0;
 	}
     }
 
-  if (public->num_outputs)
+  if (_public->num_outputs)
     {
-      for (i = 0; i < public->num_outputs; i++)
-	if (aiger_put_u (state, put, public->outputs[i].lit) == EOF ||
+      for (i = 0; i < _public->num_outputs; i++)
+	if (aiger_put_u (state, put, _public->outputs[i].lit) == EOF ||
 	    put ('\n', state) == EOF)
 	  return 0;
     }
 
-  if (public->num_bad)
+  if (_public->num_bad)
     {
-      for (i = 0; i < public->num_bad; i++)
-	if (aiger_put_u (state, put, public->bad[i].lit) == EOF ||
+      for (i = 0; i < _public->num_bad; i++)
+	if (aiger_put_u (state, put, _public->bad[i].lit) == EOF ||
 	    put ('\n', state) == EOF)
 	  return 0;
     }
 
-  if (public->num_constraints)
+  if (_public->num_constraints)
     {
-      for (i = 0; i < public->num_constraints; i++)
-	if (aiger_put_u (state, put, public->constraints[i].lit) == EOF ||
+      for (i = 0; i < _public->num_constraints; i++)
+	if (aiger_put_u (state, put, _public->constraints[i].lit) == EOF ||
 	    put ('\n', state) == EOF)
 	  return 0;
     }
 
-  if (public->num_justice)
+  if (_public->num_justice)
     {
-      for (i = 0; i < public->num_justice; i++)
+      for (i = 0; i < _public->num_justice; i++)
 	{
-	  if (aiger_put_u (state, put, public->justice[i].size) == EOF)
+	  if (aiger_put_u (state, put, _public->justice[i].size) == EOF)
 	    return 0;
 	  if (put ('\n', state) == EOF) return 0;
 	}
 
-      for (i = 0; i < public->num_justice; i++)
+      for (i = 0; i < _public->num_justice; i++)
 	{
-	  for (j = 0; j < public->justice[i].size; j++)
+	  for (j = 0; j < _public->justice[i].size; j++)
 	    {
-	      if (aiger_put_u (state, put, public->justice[i].lits[j]) == EOF)
+	      if (aiger_put_u (state, put, _public->justice[i].lits[j]) == EOF)
 	        return 0;
 	      if (put ('\n', state) == EOF) return 0;
 	    }
 	}
     }
 
-  if (public->num_fairness)
+  if (_public->num_fairness)
     {
-      for (i = 0; i < public->num_fairness; i++)
-	if (aiger_put_u (state, put, public->fairness[i].lit) == EOF ||
+      for (i = 0; i < _public->num_fairness; i++)
+	if (aiger_put_u (state, put, _public->fairness[i].lit) == EOF ||
 	    put ('\n', state) == EOF)
 	  return 0;
     }
@@ -1109,7 +1113,7 @@ aiger_write_header (aiger * public,
 }
 
 static int
-aiger_have_at_least_one_symbol_aux (aiger * public,
+aiger_have_at_least_one_symbol_aux (aiger * _public,
 				    aiger_symbol * symbols, unsigned size)
 {
   unsigned i;
@@ -1122,47 +1126,47 @@ aiger_have_at_least_one_symbol_aux (aiger * public,
 }
 
 static int
-aiger_have_at_least_one_symbol (aiger * public)
+aiger_have_at_least_one_symbol (aiger * _public)
 {
-  if (aiger_have_at_least_one_symbol_aux (public,
-					  public->inputs, public->num_inputs))
+  if (aiger_have_at_least_one_symbol_aux (_public,
+					  _public->inputs, _public->num_inputs))
     return 1;
 
-  if (aiger_have_at_least_one_symbol_aux (public,
-					  public->outputs,
-					  public->num_outputs))
+  if (aiger_have_at_least_one_symbol_aux (_public,
+					  _public->outputs,
+					  _public->num_outputs))
     return 1;
 
-  if (aiger_have_at_least_one_symbol_aux (public,
-					  public->latches,
-					  public->num_latches))
+  if (aiger_have_at_least_one_symbol_aux (_public,
+					  _public->latches,
+					  _public->num_latches))
     return 1;
 
-  if (aiger_have_at_least_one_symbol_aux (public,
-					  public->bad,
-					  public->num_bad))
+  if (aiger_have_at_least_one_symbol_aux (_public,
+					  _public->bad,
+					  _public->num_bad))
     return 1;
 
-  if (aiger_have_at_least_one_symbol_aux (public,
-					  public->constraints,
-					  public->num_constraints))
+  if (aiger_have_at_least_one_symbol_aux (_public,
+					  _public->constraints,
+					  _public->num_constraints))
     return 1;
 
-  if (aiger_have_at_least_one_symbol_aux (public,
-					  public->justice,
-					  public->num_justice))
+  if (aiger_have_at_least_one_symbol_aux (_public,
+					  _public->justice,
+					  _public->num_justice))
     return 1;
 
-  if (aiger_have_at_least_one_symbol_aux (public,
-					  public->fairness,
-					  public->num_fairness))
+  if (aiger_have_at_least_one_symbol_aux (_public,
+					  _public->fairness,
+					  _public->num_fairness))
     return 1;
 
   return 0;
 }
 
 static int
-aiger_write_symbols_aux (aiger * public,
+aiger_write_symbols_aux (aiger * _public,
 			 void *state, aiger_put put,
 			 const char *type,
 			 aiger_symbol * symbols, unsigned size)
@@ -1188,53 +1192,53 @@ aiger_write_symbols_aux (aiger * public,
 }
 
 static int
-aiger_write_symbols (aiger * public, void *state, aiger_put put)
+aiger_write_symbols (aiger * _public, void *state, aiger_put put)
 {
-  if (!aiger_write_symbols_aux (public, state, put,
-				"i", public->inputs, public->num_inputs))
+  if (!aiger_write_symbols_aux (_public, state, put,
+				"i", _public->inputs, _public->num_inputs))
     return 0;
 
-  if (!aiger_write_symbols_aux (public, state, put,
-				"l", public->latches, public->num_latches))
+  if (!aiger_write_symbols_aux (_public, state, put,
+				"l", _public->latches, _public->num_latches))
     return 0;
 
-  if (!aiger_write_symbols_aux (public, state, put,
-				"o", public->outputs, public->num_outputs))
+  if (!aiger_write_symbols_aux (_public, state, put,
+				"o", _public->outputs, _public->num_outputs))
     return 0;
 
-  if (!aiger_write_symbols_aux (public, state, put,
-				"b", public->bad, public->num_bad))
+  if (!aiger_write_symbols_aux (_public, state, put,
+				"b", _public->bad, _public->num_bad))
     return 0;
 
-  if (!aiger_write_symbols_aux (public, state, put,
-				"c", public->constraints,
-				public->num_constraints))
+  if (!aiger_write_symbols_aux (_public, state, put,
+				"c", _public->constraints,
+				_public->num_constraints))
     return 0;
 
-  if (!aiger_write_symbols_aux (public, state, put,
-				"j", public->justice, public->num_justice))
+  if (!aiger_write_symbols_aux (_public, state, put,
+				"j", _public->justice, _public->num_justice))
     return 0;
 
-  if (!aiger_write_symbols_aux (public, state, put,
-				"f", public->fairness, public->num_fairness))
+  if (!aiger_write_symbols_aux (_public, state, put,
+				"f", _public->fairness, _public->num_fairness))
     return 0;
 
   return 1;
 }
 
 int
-aiger_write_symbols_to_file (aiger * public, FILE * file)
+aiger_write_symbols_to_file (aiger * _public, FILE * file)
 {
-  assert (!aiger_error (public));
-  return aiger_write_symbols (public, file, (aiger_put) aiger_default_put);
+  assert (!aiger_error (_public));
+  return aiger_write_symbols (_public, file, (aiger_put) aiger_default_put);
 }
 
 static int
-aiger_write_comments (aiger * public, void *state, aiger_put put)
+aiger_write_comments (aiger * _public, void *state, aiger_put put)
 {
   char **p, *str;
 
-  for (p = public->comments; (str = *p); p++)
+  for (p = _public->comments; (str = *p); p++)
     {
       if (aiger_put_s (state, put, str) == EOF)
 	return 0;
@@ -1247,31 +1251,31 @@ aiger_write_comments (aiger * public, void *state, aiger_put put)
 }
 
 int
-aiger_write_comments_to_file (aiger * public, FILE * file)
+aiger_write_comments_to_file (aiger * _public, FILE * file)
 {
-  assert (!aiger_error (public));
-  return aiger_write_comments (public, file, (aiger_put) aiger_default_put);
+  assert (!aiger_error (_public));
+  return aiger_write_comments (_public, file, (aiger_put) aiger_default_put);
 }
 
 static int
-aiger_write_ascii (aiger * public, void *state, aiger_put put)
+aiger_write_ascii (aiger * _public, void *state, aiger_put put)
 {
-  aiger_and *and;
+  aiger_and *_and;
   unsigned i;
 
-  assert (!aiger_check (public));
+  assert (!aiger_check (_public));
 
-  if (!aiger_write_header (public, "aag", 0, state, put))
+  if (!aiger_write_header (_public, "aag", 0, state, put))
     return 0;
 
-  for (i = 0; i < public->num_ands; i++)
+  for (i = 0; i < _public->num_ands; i++)
     {
-      and = public->ands + i;
-      if (aiger_put_u (state, put, and->lhs) == EOF ||
+     _and = _public->ands + i;
+      if (aiger_put_u (state, put,_and->lhs) == EOF ||
 	  put (' ', state) == EOF ||
-	  aiger_put_u (state, put, and->rhs0) == EOF ||
+	  aiger_put_u (state, put,_and->rhs0) == EOF ||
 	  put (' ', state) == EOF ||
-	  aiger_put_u (state, put, and->rhs1) == EOF ||
+	  aiger_put_u (state, put,_and->rhs1) == EOF ||
 	  put ('\n', state) == EOF)
 	return 0;
     }
@@ -1280,23 +1284,23 @@ aiger_write_ascii (aiger * public, void *state, aiger_put put)
 }
 
 static unsigned
-aiger_max_input_or_latch (aiger * public)
+aiger_max_input_or_latch (aiger * _public)
 {
   unsigned i, tmp, res;
 
   res = 0;
 
-  for (i = 0; i < public->num_inputs; i++)
+  for (i = 0; i < _public->num_inputs; i++)
     {
-      tmp = public->inputs[i].lit;
+      tmp = _public->inputs[i].lit;
       assert (!aiger_sign (tmp));
       if (tmp > res)
 	res = tmp;
     }
 
-  for (i = 0; i < public->num_latches; i++)
+  for (i = 0; i < _public->num_latches; i++)
     {
-      tmp = public->latches[i].lit;
+      tmp = _public->latches[i].lit;
       assert (!aiger_sign (tmp));
       if (tmp > res)
 	res = tmp;
@@ -1306,43 +1310,43 @@ aiger_max_input_or_latch (aiger * public)
 }
 
 int
-aiger_is_reencoded (aiger * public)
+aiger_is_reencoded (aiger * _public)
 {
   unsigned i, tmp, max, lhs;
-  aiger_and *and;
+  aiger_and *_and;
 
   max = 0;
-  for (i = 0; i < public->num_inputs; i++)
+  for (i = 0; i < _public->num_inputs; i++)
     {
       max += 2;
-      tmp = public->inputs[i].lit;
+      tmp = _public->inputs[i].lit;
       if (max != tmp)
 	return 0;
     }
 
-  for (i = 0; i < public->num_latches; i++)
+  for (i = 0; i < _public->num_latches; i++)
     {
       max += 2;
-      tmp = public->latches[i].lit;
+      tmp = _public->latches[i].lit;
       if (max != tmp)
 	return 0;
     }
 
-  lhs = aiger_max_input_or_latch (public) + 2;
-  for (i = 0; i < public->num_ands; i++)
+  lhs = aiger_max_input_or_latch (_public) + 2;
+  for (i = 0; i < _public->num_ands; i++)
     {
-      and = public->ands + i;
+     _and = _public->ands + i;
 
-      if (and->lhs <= max)
+      if (_and->lhs <= max)
 	return 0;
 
-      if (and->lhs != lhs)
+      if (_and->lhs != lhs)
 	return 0;
 
-      if (and->lhs < and->rhs0)
+      if (_and->lhs <_and->rhs0)
 	return 0;
 
-      if (and->rhs0 < and->rhs1)
+      if (_and->rhs0 <_and->rhs1)
 	return 0;
 
       lhs += 2;
@@ -1352,25 +1356,25 @@ aiger_is_reencoded (aiger * public)
 }
 
 static void
-aiger_new_code (unsigned var, unsigned *new, unsigned *code)
+aiger_new_code (unsigned var, unsigned *_new, unsigned *code)
 {
   unsigned lit = aiger_var2lit (var), res;
   assert (!code[lit]);
-  res = *new;
+  res = *_new;
   code[lit] = res;
   code[lit + 1] = res + 1;
-  *new += 2;
+  *_new += 2;
 }
 
 static unsigned
-aiger_reencode_lit (aiger * public, unsigned lit,
-		    unsigned *new, unsigned *code,
+aiger_reencode_lit (aiger * _public, unsigned lit,
+		    unsigned *_new, unsigned *code,
 		    unsigned **stack_ptr, unsigned * size_stack_ptr)
 {
   unsigned res, old, top, child0, child1, tmp, var, size_stack, * stack;
-  IMPORT_private_FROM (public);
+  IMPORT_private_FROM (_public);
   aiger_type *type;
-  aiger_and *and;
+  aiger_and *_and;
 
   if (lit < 2)
     return lit;
@@ -1380,15 +1384,15 @@ aiger_reencode_lit (aiger * public, unsigned lit,
     return res;
 
   var = aiger_lit2var (lit);
-  assert (var <= public->maxvar);
-  type = private->types + var;
+  assert (var <= _public->maxvar);
+  type = _private->types + var;
 
-  if (type->and)
+  if (type->_and)
     {
       top = 0;
       stack = *stack_ptr;
       size_stack = *size_stack_ptr;
-      PUSH (stack, top, size_stack, var);
+      PUSH (stack, unsigned, top, size_stack, var);
 
       while (top > 0)
 	{
@@ -1398,24 +1402,24 @@ aiger_reencode_lit (aiger * public, unsigned lit,
 	      if (code[aiger_var2lit (old)])
 		continue;
 
-	      assert (old <= public->maxvar);
-	      type = private->types + old;
+	      assert (old <= _public->maxvar);
+	      type = _private->types + old;
 	      if (type->onstack)
 		continue;
 
 	      type->onstack = 1;
 
-	      PUSH (stack, top, size_stack, old);
-	      PUSH (stack, top, size_stack, 0);
+	      PUSH (stack, unsigned, top, size_stack, old);
+	      PUSH (stack, unsigned, top, size_stack, 0);
 
-	      assert (type->and);
-	      assert (type->idx < public->num_ands);
+	      assert (type->_and);
+	      assert (type->idx < _public->num_ands);
 
-	      and = public->ands + type->idx;
-	      assert (and);
+	     _and = _public->ands + type->idx;
+	      assert (_and);
 
-	      child0 = aiger_lit2var (and->rhs0);
-	      child1 = aiger_lit2var (and->rhs1);
+	      child0 = aiger_lit2var (_and->rhs0);
+	      child1 = aiger_lit2var (_and->rhs1);
 
 	      if (child0 < child1)
 		{
@@ -1428,16 +1432,16 @@ aiger_reencode_lit (aiger * public, unsigned lit,
 
 	      if (child0)
 		{
-		  type = private->types + child0;
+		  type = _private->types + child0;
 		  if (!type->input && !type->latch && !type->onstack)
-		    PUSH (stack, top, size_stack, child0);
+		    PUSH (stack, unsigned, top, size_stack, child0);
 		}
 
 	      if (child1)
 		{
-		  type = private->types + child1;
+		  type = _private->types + child1;
 		  if (!type->input && !type->latch && !type->onstack)
-		    PUSH (stack, top, size_stack, child1);
+		    PUSH (stack, unsigned, top, size_stack, child1);
 		}
 	    }
 	  else
@@ -1445,10 +1449,10 @@ aiger_reencode_lit (aiger * public, unsigned lit,
 	      assert (top > 0);
 	      old = stack[--top];
 	      assert (!code[aiger_var2lit (old)]);
-	      type = private->types + old;
+	      type = _private->types + old;
 	      assert (type->onstack);
 	      type->onstack = 0;
-	      aiger_new_code (old, new, code);
+	      aiger_new_code (old, _new, code);
 	    }
 	}
       *size_stack_ptr = size_stack;
@@ -1457,7 +1461,7 @@ aiger_reencode_lit (aiger * public, unsigned lit,
   else
     {
       assert (type->input || type->latch);
-      assert (lit < *new);
+      assert (lit < *_new);
 
       code[lit] = lit;
       code[aiger_not (lit)] = aiger_not (lit);
@@ -1471,123 +1475,123 @@ aiger_reencode_lit (aiger * public, unsigned lit,
 static int
 cmp_lhs (const void *a, const void *b)
 {
-  const aiger_and *c = a;
-  const aiger_and *d = b;
+  const aiger_and *c = (const aiger_and*) a;
+  const aiger_and *d = (const aiger_and*) b;
   return ((int) c->lhs) - (int) d->lhs;
 }
 
 void
-aiger_reencode (aiger * public)
+aiger_reencode (aiger * _public)
 {
-  unsigned *code, i, j, size_code, old, new, lhs, rhs0, rhs1, tmp;
+  unsigned *code, i, j, size_code, old, _new, lhs, rhs0, rhs1, tmp;
   unsigned *stack, size_stack;
-  IMPORT_private_FROM (public);
+  IMPORT_private_FROM (_public);
 
-  assert (!aiger_error (public));
+  assert (!aiger_error (_public));
 
   aiger_symbol *symbol;
   aiger_type *type;
-  aiger_and *and;
+  aiger_and *_and;
 
-  if (aiger_is_reencoded (public))
+  if (aiger_is_reencoded (_public))
     return;
 
-  size_code = 2 * (public->maxvar + 1);
+  size_code = 2 * (_public->maxvar + 1);
   if (size_code < 2)
     size_code = 2;
 
-  NEWN (code, size_code);
+  NEWN (code, unsigned, size_code);
 
   code[1] = 1;			/* not used actually */
 
-  new = 2;
+  _new = 2;
 
-  for (i = 0; i < public->num_inputs; i++)
+  for (i = 0; i < _public->num_inputs; i++)
     {
-      old = public->inputs[i].lit;
+      old = _public->inputs[i].lit;
 
-      code[old] = new;
-      code[old + 1] = new + 1;
+      code[old] = _new;
+      code[old + 1] = _new + 1;
 
-      new += 2;
+      _new += 2;
     }
 
-  for (i = 0; i < public->num_latches; i++)
+  for (i = 0; i < _public->num_latches; i++)
     {
-      old = public->latches[i].lit;
+      old = _public->latches[i].lit;
 
-      code[old] = new;
-      code[old + 1] = new + 1;
+      code[old] = _new;
+      code[old + 1] = _new + 1;
 
-      new += 2;
+      _new += 2;
     }
 
   stack = 0;
   size_stack = 0;
 
-  for (i = 0; i < public->num_latches; i++)
+  for (i = 0; i < _public->num_latches; i++)
     {
-      old = public->latches[i].next;
-      public->latches[i].next =
-	aiger_reencode_lit (public, old, &new, code, &stack, &size_stack);
+      old = _public->latches[i].next;
+      _public->latches[i].next =
+	aiger_reencode_lit (_public, old, &_new, code, &stack, &size_stack);
 
-      old = public->latches[i].reset;
-      public->latches[i].reset =
-	aiger_reencode_lit (public, old, &new, code, &stack, &size_stack);
+      old = _public->latches[i].reset;
+      _public->latches[i].reset =
+	aiger_reencode_lit (_public, old, &_new, code, &stack, &size_stack);
     }
 
-  for (i = 0; i < public->num_outputs; i++)
+  for (i = 0; i < _public->num_outputs; i++)
     {
-      old = public->outputs[i].lit;
-      public->outputs[i].lit =
-	aiger_reencode_lit (public, old, &new, code, &stack, &size_stack);
+      old = _public->outputs[i].lit;
+      _public->outputs[i].lit =
+	aiger_reencode_lit (_public, old, &_new, code, &stack, &size_stack);
     }
 
-  for (i = 0; i < public->num_bad; i++)
+  for (i = 0; i < _public->num_bad; i++)
     {
-      old = public->bad[i].lit;
-      public->bad[i].lit =
-	aiger_reencode_lit (public, old, &new, code, &stack, &size_stack);
+      old = _public->bad[i].lit;
+      _public->bad[i].lit =
+	aiger_reencode_lit (_public, old, &_new, code, &stack, &size_stack);
     }
 
-  for (i = 0; i < public->num_constraints; i++)
+  for (i = 0; i < _public->num_constraints; i++)
     {
-      old = public->constraints[i].lit;
-      public->constraints[i].lit =
-	aiger_reencode_lit (public, old, &new, code, &stack, &size_stack);
+      old = _public->constraints[i].lit;
+      _public->constraints[i].lit =
+	aiger_reencode_lit (_public, old, &_new, code, &stack, &size_stack);
     }
 
-  for (i = 0; i < public->num_justice; i++)
+  for (i = 0; i < _public->num_justice; i++)
     {
-      for (j = 0; j < public->justice[i].size; j++)
+      for (j = 0; j < _public->justice[i].size; j++)
 	{
-	  old = public->justice[i].lits[j];
-	  public->justice[i].lits[j] =
-	    aiger_reencode_lit (public, old, &new, code, &stack, &size_stack);
+	  old = _public->justice[i].lits[j];
+	  _public->justice[i].lits[j] =
+	    aiger_reencode_lit (_public, old, &_new, code, &stack, &size_stack);
 	}
     }
 
-  for (i = 0; i < public->num_fairness; i++)
+  for (i = 0; i < _public->num_fairness; i++)
     {
-      old = public->fairness[i].lit;
-      public->fairness[i].lit =
-	aiger_reencode_lit (public, old, &new, code, &stack, &size_stack);
+      old = _public->fairness[i].lit;
+      _public->fairness[i].lit =
+	aiger_reencode_lit (_public, old, &_new, code, &stack, &size_stack);
     }
 
   DELETEN (stack, size_stack);
 
   j = 0;
-  for (i = 0; i < public->num_ands; i++)
+  for (i = 0; i < _public->num_ands; i++)
     {
-      and = public->ands + i;
-      lhs = code[and->lhs];
+     _and = _public->ands + i;
+      lhs = code[_and->lhs];
       if (!lhs)
 	continue;
 
-      rhs0 = code[and->rhs0];
-      rhs1 = code[and->rhs1];
+      rhs0 = code[_and->rhs0];
+      rhs1 = code[_and->rhs1];
 
-      and = public->ands + j++;
+     _and = _public->ands + j++;
 
       if (rhs0 < rhs1)
 	{
@@ -1599,58 +1603,58 @@ aiger_reencode (aiger * public)
       assert (lhs > rhs0);
       assert (rhs0 >= rhs1);
 
-      and->lhs = lhs;
-      and->rhs0 = rhs0;
-      and->rhs1 = rhs1;
+     _and->lhs = lhs;
+     _and->rhs0 = rhs0;
+     _and->rhs1 = rhs1;
     }
-  public->num_ands = j;
+  _public->num_ands = j;
 
-  qsort (public->ands, j, sizeof (*and), cmp_lhs);
+  qsort (_public->ands, j, sizeof (*_and), cmp_lhs);
 
-  assert (new);
-  assert (public->maxvar >= aiger_lit2var (new - 1));
-  public->maxvar = aiger_lit2var (new - 1);
+  assert (_new);
+  assert (_public->maxvar >= aiger_lit2var (_new - 1));
+  _public->maxvar = aiger_lit2var (_new - 1);
 
   /* Reset types.
    */
-  for (i = 1; i <= public->maxvar; i++)
+  for (i = 1; i <= _public->maxvar; i++)
     {
-      type = private->types + i;
+      type = _private->types + i;
       type->input = 0;
       type->latch = 0;
-      type->and = 0;
+      type->_and = 0;
       type->idx = 0;
     }
 
   /* Fix types for ANDs.
    */
-  for (i = 0; i < public->num_ands; i++)
+  for (i = 0; i < _public->num_ands; i++)
     {
-      and = public->ands + i;
-      type = private->types + aiger_lit2var (and->lhs);
-      type->and = 1;
+     _and = _public->ands + i;
+      type = _private->types + aiger_lit2var (_and->lhs);
+      type->_and = 1;
       type->idx = i;
     }
 
   /* Fix types for inputs.
    */
-  for (i = 0; i < public->num_inputs; i++)
+  for (i = 0; i < _public->num_inputs; i++)
     {
-      symbol = public->inputs + i;
+      symbol = _public->inputs + i;
       assert (symbol->lit < size_code);
       symbol->lit = code[symbol->lit];
-      type = private->types + aiger_lit2var (symbol->lit);
+      type = _private->types + aiger_lit2var (symbol->lit);
       type->input = 1;
       type->idx = i;
     }
 
   /* Fix types for latches.
    */
-  for (i = 0; i < public->num_latches; i++)
+  for (i = 0; i < _public->num_latches; i++)
     {
-      symbol = public->latches + i;
+      symbol = _public->latches + i;
       symbol->lit = code[symbol->lit];
-      type = private->types + aiger_lit2var (symbol->lit);
+      type = _private->types + aiger_lit2var (symbol->lit);
       type->latch = 1;
       type->idx = i;
     }
@@ -1658,55 +1662,55 @@ aiger_reencode (aiger * public)
   DELETEN (code, size_code);
 
 #ifndef NDEBUG
-  for (i = 0; i <= public->maxvar; i++)
+  for (i = 0; i <= _public->maxvar; i++)
     {
-      type = private->types + i;
+      type = _private->types + i;
       assert (!(type->input && type->latch));
-      assert (!(type->input && type->and));
-      assert (!(type->latch && type->and));
+      assert (!(type->input && type->_and));
+      assert (!(type->latch && type->_and));
     }
 #endif
-  assert (aiger_is_reencoded (public));
-  assert (!aiger_check (public));
+  assert (aiger_is_reencoded (_public));
+  assert (!aiger_check (_public));
 }
 
 const unsigned char *
-aiger_coi (aiger * public)
+aiger_coi (aiger * _public)
 {
-  IMPORT_private_FROM (public);
-  private->size_coi = public->maxvar + 1;
-  NEWN (private->coi, private->size_coi);
-  memset (private->coi, 1, private->size_coi);
-  return private->coi;
+  IMPORT_private_FROM (_public);
+  _private->size_coi = _public->maxvar + 1;
+  NEWN (_private->coi, unsigned char, _private->size_coi);
+  memset (_private->coi, 1, _private->size_coi);
+  return _private->coi;
 }
 
 static int
-aiger_write_binary (aiger * public, void *state, aiger_put put)
+aiger_write_binary (aiger * _public, void *state, aiger_put put)
 {
-  aiger_and *and;
+  aiger_and *_and;
   unsigned lhs, i;
 
-  assert (!aiger_check (public));
+  assert (!aiger_check (_public));
 
-  aiger_reencode (public);
+  aiger_reencode (_public);
 
-  if (!aiger_write_header (public, "aig", 1, state, put))
+  if (!aiger_write_header (_public, "aig", 1, state, put))
     return 0;
 
-  lhs = aiger_max_input_or_latch (public) + 2;
+  lhs = aiger_max_input_or_latch (_public) + 2;
 
-  for (i = 0; i < public->num_ands; i++)
+  for (i = 0; i < _public->num_ands; i++)
     {
-      and = public->ands + i;
+     _and = _public->ands + i;
 
-      assert (lhs == and->lhs);
-      assert (lhs > and->rhs0);
-      assert (and->rhs0 >= and->rhs1);
+      assert (lhs ==_and->lhs);
+      assert (lhs >_and->rhs0);
+      assert (_and->rhs0 >=_and->rhs1);
 
-      if (!aiger_write_delta (state, put, lhs - and->rhs0))
+      if (!aiger_write_delta (state, put, lhs -_and->rhs0))
 	return 0;
 
-      if (!aiger_write_delta (state, put, and->rhs0 - and->rhs1))
+      if (!aiger_write_delta (state, put,_and->rhs0 -_and->rhs1))
 	return 0;
 
       lhs += 2;
@@ -1716,70 +1720,70 @@ aiger_write_binary (aiger * public, void *state, aiger_put put)
 }
 
 unsigned
-aiger_strip_symbols_and_comments (aiger * public)
+aiger_strip_symbols_and_comments (aiger * _public)
 {
-  IMPORT_private_FROM (public);
+  IMPORT_private_FROM (_public);
   unsigned res;
 
-  assert (!aiger_error (public));
+  assert (!aiger_error (_public));
 
-  res = aiger_delete_comments (public);
+  res = aiger_delete_comments (_public);
 
-  res += aiger_delete_symbols_aux (private,
-				   public->inputs,
-				   private->size_inputs);
-  res += aiger_delete_symbols_aux (private,
-				   public->latches,
-				   private->size_latches);
-  res += aiger_delete_symbols_aux (private,
-				   public->outputs,
-				   private->size_outputs);
-  res += aiger_delete_symbols_aux (private,
-				   public->bad, 
-				   private->size_bad);
-  res += aiger_delete_symbols_aux (private,
-				   public->constraints,
-				   private->size_constraints);
-  res += aiger_delete_symbols_aux (private,
-				   public->justice,
-				   private->size_justice);
-  res += aiger_delete_symbols_aux (private,
-				   public->fairness,
-				   private->size_fairness);
+  res += aiger_delete_symbols_aux (_private,
+				   _public->inputs,
+				   _private->size_inputs);
+  res += aiger_delete_symbols_aux (_private,
+				   _public->latches,
+				   _private->size_latches);
+  res += aiger_delete_symbols_aux (_private,
+				   _public->outputs,
+				   _private->size_outputs);
+  res += aiger_delete_symbols_aux (_private,
+				   _public->bad, 
+				   _private->size_bad);
+  res += aiger_delete_symbols_aux (_private,
+				   _public->constraints,
+				   _private->size_constraints);
+  res += aiger_delete_symbols_aux (_private,
+				   _public->justice,
+				   _private->size_justice);
+  res += aiger_delete_symbols_aux (_private,
+				   _public->fairness,
+				   _private->size_fairness);
   return res;
 }
 
 int
-aiger_write_generic (aiger * public,
+aiger_write_generic (aiger * _public,
 		     aiger_mode mode, void *state, aiger_put put)
 {
-  assert (!aiger_error (public));
+  assert (!aiger_error (_public));
 
   if ((mode & aiger_ascii_mode))
     {
-      if (!aiger_write_ascii (public, state, put))
+      if (!aiger_write_ascii (_public, state, put))
 	return 0;
     }
   else
     {
-      if (!aiger_write_binary (public, state, put))
+      if (!aiger_write_binary (_public, state, put))
 	return 0;
     }
 
   if (!(mode & aiger_stripped_mode))
     {
-      if (aiger_have_at_least_one_symbol (public))
+      if (aiger_have_at_least_one_symbol (_public))
 	{
-	  if (!aiger_write_symbols (public, state, put))
+	  if (!aiger_write_symbols (_public, state, put))
 	    return 0;
 	}
 
-      if (public->comments[0])
+      if (_public->comments[0])
 	{
 	  if (aiger_put_s (state, put, "c\n") == EOF)
 	    return 0;
 
-	  if (!aiger_write_comments (public, state, put))
+	  if (!aiger_write_comments (_public, state, put))
 	    return 0;
 	}
     }
@@ -1788,25 +1792,25 @@ aiger_write_generic (aiger * public,
 }
 
 int
-aiger_write_to_file (aiger * public, aiger_mode mode, FILE * file)
+aiger_write_to_file (aiger * _public, aiger_mode mode, FILE * file)
 {
-  assert (!aiger_error (public));
-  return aiger_write_generic (public,
+  assert (!aiger_error (_public));
+  return aiger_write_generic (_public,
 			      mode, file, (aiger_put) aiger_default_put);
 }
 
 int
-aiger_write_to_string (aiger * public, aiger_mode mode, char *str, size_t len)
+aiger_write_to_string (aiger * _public, aiger_mode mode, char *str, size_t len)
 {
   aiger_buffer buffer;
   int res;
 
-  assert (!aiger_error (public));
+  assert (!aiger_error (_public));
 
   buffer.start = str;
   buffer.cursor = str;
   buffer.end = str + len;
-  res = aiger_write_generic (public,
+  res = aiger_write_generic (_public,
 			     mode, &buffer, (aiger_put) aiger_string_put);
 
   if (!res)
@@ -1828,22 +1832,22 @@ aiger_has_suffix (const char *str, const char *suffix)
 }
 
 int
-aiger_open_and_write_to_file (aiger * public, const char *file_name)
+aiger_open_and_write_to_file (aiger * _public, const char *file_name)
 {
-  IMPORT_private_FROM (public);
+  IMPORT_private_FROM (_public);
   int res, pclose_file;
   char *cmd, size_cmd;
   aiger_mode mode;
   FILE *file;
 
-  assert (!aiger_error (public));
+  assert (!aiger_error (_public));
 
   assert (file_name);
 
   if (aiger_has_suffix (file_name, ".gz"))
     {
       size_cmd = strlen (file_name) + strlen (GZIP);
-      NEWN (cmd, size_cmd);
+      NEWN (cmd, char, size_cmd);
       sprintf (cmd, GZIP, file_name);
       file = popen (cmd, "w");
       DELETEN (cmd, size_cmd);
@@ -1864,7 +1868,7 @@ aiger_open_and_write_to_file (aiger * public, const char *file_name)
   else
     mode = aiger_binary_mode;
 
-  res = aiger_write_to_file (public, mode, file);
+  res = aiger_write_to_file (_public, mode, file);
 
   if (pclose_file)
     pclose (file);
@@ -1921,14 +1925,14 @@ aiger_read_number (aiger_reader * reader)
   return res;
 }
 
-/* Expect and read an unsigned number followed by at least one white space
+/* Expect_and read an unsigned number followed by at least one white space
  * character.  The white space should either the space character or a new
  * line as specified by the 'followed_by' parameter.  If a number can not be
  * found or there is no white space after the number, an apropriate error
  * message is returned.
  */
 static const char *
-aiger_read_literal (aiger_private * private,
+aiger_read_literal (aiger_private * _private,
 		    aiger_reader * reader,
 		    unsigned *res_ptr, 
 		    char expected_followed_by,
@@ -1941,7 +1945,7 @@ aiger_read_literal (aiger_private * private,
           !expected_followed_by);
 
   if (!isdigit (reader->ch))
-    return aiger_error_u (private,
+    return aiger_error_u (_private,
 			  "line %u: expected literal", reader->lineno);
 
   res = aiger_read_number (reader);
@@ -1949,21 +1953,21 @@ aiger_read_literal (aiger_private * private,
   if (expected_followed_by == ' ')
     {
       if (reader->ch != ' ')
-	return aiger_error_uu (private,
+	return aiger_error_uu (_private,
 			       "line %u: expected space after literal %u",
 			       reader->lineno_at_last_token_start, res);
     }
   if (expected_followed_by == '\n')
     {
       if (reader->ch != '\n')
-	return aiger_error_uu (private,
+	return aiger_error_uu (_private,
 			       "line %u: expected new line after literal %u",
 			       reader->lineno_at_last_token_start, res);
     }
   if (!expected_followed_by)
     {
       if (reader->ch != '\n' && reader->ch != ' ')
-	return aiger_error_uu (private,
+	return aiger_error_uu (_private,
 		 "line %u: expected space or new line after literal %u",
 		 reader->lineno_at_last_token_start, res);
     }
@@ -1979,9 +1983,9 @@ aiger_read_literal (aiger_private * private,
 }
 
 static const char *
-aiger_already_defined (aiger * public, aiger_reader * reader, unsigned lit)
+aiger_already_defined (aiger * _public, aiger_reader * reader, unsigned lit)
 {
-  IMPORT_private_FROM (public);
+  IMPORT_private_FROM (_public);
   aiger_type *type;
   unsigned var;
 
@@ -1990,32 +1994,32 @@ aiger_already_defined (aiger * public, aiger_reader * reader, unsigned lit)
 
   var = aiger_lit2var (lit);
 
-  if (public->maxvar < var)
+  if (_public->maxvar < var)
     return 0;
 
-  type = private->types + var;
+  type = _private->types + var;
 
   if (type->input)
-    return aiger_error_uu (private,
+    return aiger_error_uu (_private,
 			   "line %u: literal %u already defined as input",
 			   reader->lineno_at_last_token_start, lit);
 
   if (type->latch)
-    return aiger_error_uu (private,
+    return aiger_error_uu (_private,
 			   "line %u: literal %u already defined as latch",
 			   reader->lineno_at_last_token_start, lit);
 
-  if (type->and)
-    return aiger_error_uu (private,
+  if (type->_and)
+    return aiger_error_uu (_private,
 			   "line %u: literal %u already defined as AND",
 			   reader->lineno_at_last_token_start, lit);
   return 0;
 }
 
 static const char *
-aiger_read_header (aiger * public, aiger_reader * reader)
+aiger_read_header (aiger * _public, aiger_reader * reader)
 {
-  IMPORT_private_FROM (public);
+  IMPORT_private_FROM (_public);
   unsigned i, j, lit, next, reset;
   unsigned * sizes, * lits;
   const char *error;
@@ -2023,12 +2027,12 @@ aiger_read_header (aiger * public, aiger_reader * reader)
 
   aiger_next_ch (reader);
   if (reader->ch != 'a')
-    return aiger_error_u (private,
+    return aiger_error_u (_private,
 			  "line %u: expected 'a' as first character",
 			  reader->lineno);
 
   if (aiger_next_ch (reader) != 'i' && reader->ch != 'a')
-    return aiger_error_u (private,
+    return aiger_error_u (_private,
 			  "line %u: expected 'i' or 'a' after 'a'",
 			  reader->lineno);
 
@@ -2038,33 +2042,33 @@ aiger_read_header (aiger * public, aiger_reader * reader)
     reader->mode = aiger_binary_mode;
 
   if (aiger_next_ch (reader) != 'g')
-    return aiger_error_u (private,
+    return aiger_error_u (_private,
 			  "line %u: expected 'g' after 'a[ai]'",
 			  reader->lineno);
 
   if (aiger_next_ch (reader) != ' ')
-    return aiger_error_u (private,
+    return aiger_error_u (_private,
 			  "line %u: expected ' ' after 'a[ai]g'",
 			  reader->lineno);
 
   aiger_next_ch (reader);
 
-  if (aiger_read_literal (private, reader, &reader->maxvar, ' ', 0) ||
-      aiger_read_literal (private, reader, &reader->inputs, ' ', 0) ||
-      aiger_read_literal (private, reader, &reader->latches, ' ', 0) ||
-      aiger_read_literal (private, reader, &reader->outputs, ' ', 0) ||
-      aiger_read_literal (private, reader, &reader->ands, 0, &ch) ||
+  if (aiger_read_literal (_private, reader, &reader->maxvar, ' ', 0) ||
+      aiger_read_literal (_private, reader, &reader->inputs, ' ', 0) ||
+      aiger_read_literal (_private, reader, &reader->latches, ' ', 0) ||
+      aiger_read_literal (_private, reader, &reader->outputs, ' ', 0) ||
+      aiger_read_literal (_private, reader, &reader->ands, 0, &ch) ||
       (ch == ' ' &&
-       aiger_read_literal (private, reader, &reader->bad, 0, &ch)) ||
+       aiger_read_literal (_private, reader, &reader->bad, 0, &ch)) ||
       (ch == ' ' &&
-       aiger_read_literal (private, reader, &reader->constraints, 0, &ch)) ||
+       aiger_read_literal (_private, reader, &reader->constraints, 0, &ch)) ||
       (ch == ' ' &&
-       aiger_read_literal (private, reader, &reader->justice, 0, &ch)) ||
+       aiger_read_literal (_private, reader, &reader->justice, 0, &ch)) ||
       (ch == ' ' &&
-       aiger_read_literal (private, reader, &reader->fairness, '\n', 0)))
+       aiger_read_literal (_private, reader, &reader->fairness, '\n', 0)))
     {
-      assert (private->error);
-      return private->error;
+      assert (_private->error);
+      return _private->error;
     }
 
   if (reader->mode == aiger_binary_mode)
@@ -2074,144 +2078,145 @@ aiger_read_header (aiger * public, aiger_reader * reader)
       i += reader->ands;
 
       if (i != reader->maxvar)
-	return aiger_error_u (private,
+	return aiger_error_u (_private,
 			      "line %u: invalid maximal variable index",
 			      reader->lineno);
     }
 
-  public->maxvar = reader->maxvar;
+  _public->maxvar = reader->maxvar;
 
-  FIT (private->types, private->size_types, public->maxvar + 1);
-  FIT (public->inputs, private->size_inputs, reader->inputs);
-  FIT (public->latches, private->size_latches, reader->latches);
-  FIT (public->outputs, private->size_outputs, reader->outputs);
-  FIT (public->ands, private->size_ands, reader->ands);
-  FIT (public->bad, private->size_bad, reader->bad);
-  FIT (public->constraints, private->size_constraints, reader->constraints);
-  FIT (public->justice, private->size_justice, reader->justice);
-  FIT (public->fairness, private->size_fairness, reader->fairness);
+  FIT (_private->types, aiger_type, _private->size_types, _public->maxvar + 1);
+  FIT (_public->inputs, aiger_symbol, _private->size_inputs, reader->inputs);
+  FIT (_public->latches, aiger_symbol, _private->size_latches, reader->latches);
+  FIT (_public->outputs, aiger_symbol, _private->size_outputs, reader->outputs);
+  FIT (_public->ands, aiger_and, _private->size_ands, reader->ands);
+  FIT (_public->bad, aiger_symbol, _private->size_bad, reader->bad);
+  FIT (_public->constraints, aiger_symbol, _private->size_constraints,
+       reader->constraints);
+  FIT (_public->justice, aiger_symbol, _private->size_justice, reader->justice);
+  FIT (_public->fairness, aiger_symbol, _private->size_fairness, reader->fairness);
 
   for (i = 0; i < reader->inputs; i++)
     {
       if (reader->mode == aiger_ascii_mode)
 	{
-	  error = aiger_read_literal (private, reader, &lit, '\n', 0);
+	  error = aiger_read_literal (_private, reader, &lit, '\n', 0);
 	  if (error)
 	    return error;
 
 	  if (!lit || aiger_sign (lit)
-	      || aiger_lit2var (lit) > public->maxvar)
-	    return aiger_error_uu (private,
+	      || aiger_lit2var (lit) > _public->maxvar)
+	    return aiger_error_uu (_private,
 				   "line %u: literal %u is not a valid input",
 				   reader->lineno_at_last_token_start, lit);
 
-	  error = aiger_already_defined (public, reader, lit);
+	  error = aiger_already_defined (_public, reader, lit);
 	  if (error)
 	    return error;
 	}
       else
 	lit = 2 * (i + 1);
 
-      aiger_add_input (public, lit, 0);
+      aiger_add_input (_public, lit, 0);
     }
 
   for (i = 0; i < reader->latches; i++)
     {
       if (reader->mode == aiger_ascii_mode)
 	{
-	  error = aiger_read_literal (private, reader, &lit, ' ', 0);
+	  error = aiger_read_literal (_private, reader, &lit, ' ', 0);
 	  if (error)
 	    return error;
 
 	  if (!lit || aiger_sign (lit)
-	      || aiger_lit2var (lit) > public->maxvar)
-	    return aiger_error_uu (private,
+	      || aiger_lit2var (lit) > _public->maxvar)
+	    return aiger_error_uu (_private,
 				   "line %u: literal %u is not a valid latch",
 				   reader->lineno_at_last_token_start, lit);
 
-	  error = aiger_already_defined (public, reader, lit);
+	  error = aiger_already_defined (_public, reader, lit);
 	  if (error)
 	    return error;
 	}
       else
 	lit = 2 * (i + reader->inputs + 1);
 
-      error = aiger_read_literal (private, reader, &next, 0, &ch);
+      error = aiger_read_literal (_private, reader, &next, 0, &ch);
       if (error)
 	return error;
 
-      if (aiger_lit2var (next) > public->maxvar)
-	return aiger_error_uu (private,
+      if (aiger_lit2var (next) > _public->maxvar)
+	return aiger_error_uu (_private,
 			       "line %u: literal %u is not a valid literal",
 			       reader->lineno_at_last_token_start, next);
 
-      aiger_add_latch (public, lit, next, 0);
+      aiger_add_latch (_public, lit, next, 0);
 
       if (ch == ' ')
 	{
-	  error = aiger_read_literal (private, reader, &reset, '\n', 0);
+	  error = aiger_read_literal (_private, reader, &reset, '\n', 0);
 	  if (error)
 	    return error;
 
-	  aiger_add_reset (public, lit, reset);
+	  aiger_add_reset (_public, lit, reset);
 	}
     }
 
   for (i = 0; i < reader->outputs; i++)
     {
-      error = aiger_read_literal (private, reader, &lit, '\n', 0);
+      error = aiger_read_literal (_private, reader, &lit, '\n', 0);
       if (error)
 	return error;
 
-      if (aiger_lit2var (lit) > public->maxvar)
-	return aiger_error_uu (private,
+      if (aiger_lit2var (lit) > _public->maxvar)
+	return aiger_error_uu (_private,
 			       "line %u: literal %u is not a valid output",
 			       reader->lineno_at_last_token_start, lit);
 
-      aiger_add_output (public, lit, 0);
+      aiger_add_output (_public, lit, 0);
     }
 
   for (i = 0; i < reader->bad; i++)
     {
-      error = aiger_read_literal (private, reader, &lit, '\n', 0);
+      error = aiger_read_literal (_private, reader, &lit, '\n', 0);
       if (error)
 	return error;
 
-      if (aiger_lit2var (lit) > public->maxvar)
-	return aiger_error_uu (private,
+      if (aiger_lit2var (lit) > _public->maxvar)
+	return aiger_error_uu (_private,
 			       "line %u: literal %u is not valid bad",
 			       reader->lineno_at_last_token_start, lit);
 
-      aiger_add_bad (public, lit, 0);
+      aiger_add_bad (_public, lit, 0);
     }
 
   for (i = 0; i < reader->constraints; i++)
     {
-      error = aiger_read_literal (private, reader, &lit, '\n', 0);
+      error = aiger_read_literal (_private, reader, &lit, '\n', 0);
       if (error)
 	return error;
 
-      if (aiger_lit2var (lit) > public->maxvar)
-	return aiger_error_uu (private,
+      if (aiger_lit2var (lit) > _public->maxvar)
+	return aiger_error_uu (_private,
 		 "line %u: literal %u is not a valid constraint",
 		 reader->lineno_at_last_token_start, lit);
 
-      aiger_add_constraint (public, lit, 0);
+      aiger_add_constraint (_public, lit, 0);
     }
 
   if (reader->justice)
     {
-      NEWN (sizes, reader->justice);
+      NEWN (sizes, unsigned, reader->justice);
       error =  0;
       for (i = 0; !error && i < reader->justice; i++)
-	error = aiger_read_literal (private, reader, sizes + i, '\n', 0);
+	error = aiger_read_literal (_private, reader, sizes + i, '\n', 0);
       for (i = 0; !error && i < reader->justice; i++)
 	{
-	  NEWN (lits, sizes[i]);
+	  NEWN (lits, unsigned, sizes[i]);
 	  for (j = 0; !error && j < sizes[i]; j++)
-	    error = aiger_read_literal (private, reader, lits + j, '\n', 0);
+	    error = aiger_read_literal (_private, reader, lits + j, '\n', 0);
 	  if (!error)
-	    aiger_add_justice (public, sizes[i], lits, 0);
+	    aiger_add_justice (_public, sizes[i], lits, 0);
 	  DELETEN (lits, sizes[i]);
 	}
       DELETEN (sizes, reader->justice);
@@ -2221,16 +2226,16 @@ aiger_read_header (aiger * public, aiger_reader * reader)
 
   for (i = 0; i < reader->fairness; i++)
     {
-      error = aiger_read_literal (private, reader, &lit, '\n', 0);
+      error = aiger_read_literal (_private, reader, &lit, '\n', 0);
       if (error)
 	return error;
 
-      if (aiger_lit2var (lit) > public->maxvar)
-	return aiger_error_uu (private,
+      if (aiger_lit2var (lit) > _public->maxvar)
+	return aiger_error_uu (_private,
 		 "line %u: literal %u is not valid fairness",
 		 reader->lineno_at_last_token_start, lit);
 
-      aiger_add_fairness (public, lit, 0);
+      aiger_add_fairness (_public, lit, 0);
     }
 
   reader->done_with_reading_header = 1;
@@ -2240,54 +2245,54 @@ aiger_read_header (aiger * public, aiger_reader * reader)
 }
 
 static const char *
-aiger_read_ascii (aiger * public, aiger_reader * reader)
+aiger_read_ascii (aiger * _public, aiger_reader * reader)
 {
-  IMPORT_private_FROM (public);
+  IMPORT_private_FROM (_public);
   unsigned i, lhs, rhs0, rhs1;
   const char *error;
 
   for (i = 0; i < reader->ands; i++)
     {
-      error = aiger_read_literal (private, reader, &lhs, ' ', 0);
+      error = aiger_read_literal (_private, reader, &lhs, ' ', 0);
       if (error)
 	return error;
 
-      if (!lhs || aiger_sign (lhs) || aiger_lit2var (lhs) > public->maxvar)
-	return aiger_error_uu (private,
+      if (!lhs || aiger_sign (lhs) || aiger_lit2var (lhs) > _public->maxvar)
+	return aiger_error_uu (_private,
 			       "line %u: "
 			       "literal %u is not a valid LHS of AND",
 			       reader->lineno_at_last_token_start, lhs);
 
-      error = aiger_already_defined (public, reader, lhs);
+      error = aiger_already_defined (_public, reader, lhs);
       if (error)
 	return error;
 
-      error = aiger_read_literal (private, reader, &rhs0, ' ', 0);
+      error = aiger_read_literal (_private, reader, &rhs0, ' ', 0);
       if (error)
 	return error;
 
-      if (aiger_lit2var (rhs0) > public->maxvar)
-	return aiger_error_uu (private,
+      if (aiger_lit2var (rhs0) > _public->maxvar)
+	return aiger_error_uu (_private,
 			       "line %u: literal %u is not a valid literal",
 			       reader->lineno_at_last_token_start, rhs0);
 
-      error = aiger_read_literal (private, reader, &rhs1, '\n', 0);
+      error = aiger_read_literal (_private, reader, &rhs1, '\n', 0);
       if (error)
 	return error;
 
-      if (aiger_lit2var (rhs1) > public->maxvar)
-	return aiger_error_uu (private,
+      if (aiger_lit2var (rhs1) > _public->maxvar)
+	return aiger_error_uu (_private,
 			       "line %u: literal %u is not a valid literal",
 			       reader->lineno_at_last_token_start, rhs1);
 
-      aiger_add_and (public, lhs, rhs0, rhs1);
+      aiger_add_and (_public, lhs, rhs0, rhs1);
     }
 
   return 0;
 }
 
 static const char *
-aiger_read_delta (aiger_private * private, aiger_reader * reader,
+aiger_read_delta (aiger_private * _private, aiger_reader * reader,
 		  unsigned *res_ptr)
 {
   unsigned res, i, charno;
@@ -2295,7 +2300,7 @@ aiger_read_delta (aiger_private * private, aiger_reader * reader,
 
   if (reader->ch == EOF)
   UNEXPECTED_EOF:
-    return aiger_error_u (private,
+    return aiger_error_u (_private,
 			  "character %u: unexpected end of file",
 			  reader->charno);
   i = 0;
@@ -2310,7 +2315,7 @@ aiger_read_delta (aiger_private * private, aiger_reader * reader,
 
       if (i == 5)
       INVALID_CODE:
-	return aiger_error_u (private, "character %u: invalid code", charno);
+	return aiger_error_u (_private, "character %u: invalid code", charno);
 
       res |= (ch & 0x7f) << (7 * i++);
       aiger_next_ch (reader);
@@ -2332,32 +2337,32 @@ aiger_read_delta (aiger_private * private, aiger_reader * reader,
 }
 
 static const char *
-aiger_read_binary (aiger * public, aiger_reader * reader)
+aiger_read_binary (aiger * _public, aiger_reader * reader)
 {
   unsigned i, lhs, rhs0, rhs1, delta, charno;
-  IMPORT_private_FROM (public);
+  IMPORT_private_FROM (_public);
   const char *error;
 
   delta = 0;			/* avoid warning with -O3 */
 
-  lhs = aiger_max_input_or_latch (public);
+  lhs = aiger_max_input_or_latch (_public);
 
   for (i = 0; i < reader->ands; i++)
     {
       lhs += 2;
       charno = reader->charno;
-      error = aiger_read_delta (private, reader, &delta);
+      error = aiger_read_delta (_private, reader, &delta);
       if (error)
 	return error;
 
       if (delta > lhs)		/* can at most be the same */
       INVALID_DELTA:
-	return aiger_error_u (private, "character %u: invalid delta", charno);
+	return aiger_error_u (_private, "character %u: invalid delta", charno);
 
       rhs0 = lhs - delta;
 
       charno = reader->charno;
-      error = aiger_read_delta (private, reader, &delta);
+      error = aiger_read_delta (_private, reader, &delta);
       if (error)
 	return error;
 
@@ -2366,22 +2371,22 @@ aiger_read_binary (aiger * public, aiger_reader * reader)
 
       rhs1 = rhs0 - delta;
 
-      aiger_add_and (public, lhs, rhs0, rhs1);
+      aiger_add_and (_public, lhs, rhs0, rhs1);
     }
 
   return 0;
 }
 
 static void
-aiger_reader_push_ch (aiger_private * private, aiger_reader * reader, char ch)
+aiger_reader_push_ch (aiger_private * _private, aiger_reader * reader, char ch)
 {
-  PUSH (reader->buffer, reader->top_buffer, reader->size_buffer, ch);
+  PUSH (reader->buffer, char, reader->top_buffer, reader->size_buffer, ch);
 }
 
 static const char *
-aiger_read_comments (aiger * public, aiger_reader * reader)
+aiger_read_comments (aiger * _public, aiger_reader * reader)
 {
-  IMPORT_private_FROM (public);
+  IMPORT_private_FROM (_public);
   assert( reader->ch == '\n' );
 
   aiger_next_ch (reader);
@@ -2390,18 +2395,18 @@ aiger_read_comments (aiger * public, aiger_reader * reader)
     {
       while (reader->ch != '\n')
 	{
-	  aiger_reader_push_ch (private, reader, reader->ch);
+	  aiger_reader_push_ch (_private, reader, reader->ch);
 	  aiger_next_ch (reader);
 
 	  if (reader->ch == EOF)
-	    return aiger_error_u (private,
+	    return aiger_error_u (_private,
 				  "line %u: new line after comment missing",
 				  reader->lineno);
 	}
 
       aiger_next_ch (reader);
-      aiger_reader_push_ch (private, reader, 0);
-      aiger_add_comment (public, reader->buffer);
+      aiger_reader_push_ch (_private, reader, 0);
+      aiger_add_comment (_public, reader->buffer);
       reader->top_buffer = 0;
     }
 
@@ -2409,9 +2414,9 @@ aiger_read_comments (aiger * public, aiger_reader * reader)
 }
 
 static const char *
-aiger_read_symbols_and_comments (aiger * public, aiger_reader * reader)
+aiger_read_symbols_and_comments (aiger * _public, aiger_reader * reader)
 {
-  IMPORT_private_FROM (public);
+  IMPORT_private_FROM (_public);
   const char *error, *type;
   unsigned pos, num, count;
   aiger_symbol *symbol;
@@ -2432,11 +2437,11 @@ aiger_read_symbols_and_comments (aiger * public, aiger_reader * reader)
 	  reader->ch != 'f')
 	{
 	  if (reader->looks_like_aag)
-	    return aiger_error_u (private,
+	    return aiger_error_u (_private,
 				  "line %u: corrupted symbol table "
 				  "('aig' instead of 'aag' header?)",
 				  reader->lineno);
-	  return aiger_error_u (private,
+	  return aiger_error_u (_private,
 			        "line %u: expected '[cilobcjf]' or EOF",
 			        reader->lineno);
 	}
@@ -2446,61 +2451,61 @@ aiger_read_symbols_and_comments (aiger * public, aiger_reader * reader)
       if (reader->ch == 'c')
 	{	  
 	  if ( aiger_next_ch (reader) == '\n' )
-	    return aiger_read_comments(public, reader);
+	    return aiger_read_comments(_public, reader);
 
 	  type = "constraint";
-	  num = public->num_constraints;
-	  symbol = public->constraints;
+	  num = _public->num_constraints;
+	  symbol = _public->constraints;
 	}
       else 
 	{
 	  if (reader->ch == 'i')
 	    {
 	      type = "input";
-	      num = public->num_inputs;
-	      symbol = public->inputs;
+	      num = _public->num_inputs;
+	      symbol = _public->inputs;
 	    }
 	  else if (reader->ch == 'l')
 	    {
 	      type = "latch";
-	      num = public->num_latches;
-	      symbol = public->latches;
+	      num = _public->num_latches;
+	      symbol = _public->latches;
 	    }
 	  else if (reader->ch == 'o')
 	    {
 	      type = "output";
-	      num = public->num_outputs;
-	      symbol = public->outputs;
+	      num = _public->num_outputs;
+	      symbol = _public->outputs;
 	    }
 	  else if (reader->ch == 'b')
 	    {
 	      type = "bad";
-	      num = public->num_bad;
-	      symbol = public->bad;
+	      num = _public->num_bad;
+	      symbol = _public->bad;
 	    }     
 	  else if (reader->ch == 'j')
 	    {
 	      type = "justice";
-	      num = public->num_justice;
-	      symbol = public->justice;
+	      num = _public->num_justice;
+	      symbol = _public->justice;
 	    }
 	  else
 	    {
 	      assert (reader->ch == 'f');
 	      type = "fairness";
-	      num = public->num_fairness;
-	      symbol = public->fairness;
+	      num = _public->num_fairness;
+	      symbol = _public->fairness;
 	    }
 
 	  aiger_next_ch (reader);
 	}
 
-      error = aiger_read_literal (private, reader, &pos, ' ', 0);
+      error = aiger_read_literal (_private, reader, &pos, ' ', 0);
       if (error)
 	return error;
 
       if (pos >= num)
-	return aiger_error_usu (private,
+	return aiger_error_usu (_private,
 				"line %u: "
 				"%s symbol table entry position %u too large",
 				reader->lineno_at_last_token_start, type,
@@ -2509,38 +2514,38 @@ aiger_read_symbols_and_comments (aiger * public, aiger_reader * reader)
       symbol += pos;
 
       if (symbol->name)
-	return aiger_error_usu (private,
+	return aiger_error_usu (_private,
 				"line %u: %s %u has multiple symbols",
 				reader->lineno_at_last_token_start, type,
 				symbol->lit);
 
       while (reader->ch != '\n' && reader->ch != EOF)
 	{
-	  aiger_reader_push_ch (private, reader, reader->ch);
+	  aiger_reader_push_ch (_private, reader, reader->ch);
 	  aiger_next_ch (reader);
 	}
 
       if (reader->ch == EOF)
-	return aiger_error_u (private,
+	return aiger_error_u (_private,
 			      "line %u: new line missing", reader->lineno);
 
       assert (reader->ch == '\n');
       aiger_next_ch (reader);
 
-      aiger_reader_push_ch (private, reader, 0);
-      symbol->name = aiger_copy_str (private, reader->buffer);
+      aiger_reader_push_ch (_private, reader, 0);
+      symbol->name = aiger_copy_str (_private, reader->buffer);
       reader->top_buffer = 0;
     }
 }
 
 const char *
-aiger_read_generic (aiger * public, void *state, aiger_get get)
+aiger_read_generic (aiger * _public, void *state, aiger_get get)
 {
-  IMPORT_private_FROM (public);
+  IMPORT_private_FROM (_public);
   aiger_reader reader;
   const char *error;
 
-  assert (!aiger_error (public));
+  assert (!aiger_error (_public));
 
   CLR (reader);
 
@@ -2549,50 +2554,50 @@ aiger_read_generic (aiger * public, void *state, aiger_get get)
   reader.get = get;
   reader.ch = ' ';
 
-  error = aiger_read_header (public, &reader);
+  error = aiger_read_header (_public, &reader);
   if (error)
     return error;
 
   if (reader.mode == aiger_ascii_mode)
-    error = aiger_read_ascii (public, &reader);
+    error = aiger_read_ascii (_public, &reader);
   else
-    error = aiger_read_binary (public, &reader);
+    error = aiger_read_binary (_public, &reader);
 
   if (error)
     return error;
 
-  error = aiger_read_symbols_and_comments (public, &reader);
+  error = aiger_read_symbols_and_comments (_public, &reader);
 
   DELETEN (reader.buffer, reader.size_buffer);
 
   if (error)
     return error;
 
-  return aiger_check (public);
+  return aiger_check (_public);
 }
 
 const char *
-aiger_read_from_file (aiger * public, FILE * file)
+aiger_read_from_file (aiger * _public, FILE * file)
 {
-  assert (!aiger_error (public));
-  return aiger_read_generic (public, file, (aiger_get) aiger_default_get);
+  assert (!aiger_error (_public));
+  return aiger_read_generic (_public, file, (aiger_get) aiger_default_get);
 }
 
 const char *
-aiger_open_and_read_from_file (aiger * public, const char *file_name)
+aiger_open_and_read_from_file (aiger * _public, const char *file_name)
 {
-  IMPORT_private_FROM (public);
+  IMPORT_private_FROM (_public);
   char *cmd, size_cmd;
   const char *res;
   int pclose_file;
   FILE *file;
 
-  assert (!aiger_error (public));
+  assert (!aiger_error (_public));
 
   if (aiger_has_suffix (file_name, ".gz"))
     {
       size_cmd = strlen (file_name) + strlen (GUNZIP);
-      NEWN (cmd, size_cmd);
+      NEWN (cmd, char, size_cmd);
       sprintf (cmd, GUNZIP, file_name);
       file = popen (cmd, "r");
       DELETEN (cmd, size_cmd);
@@ -2605,9 +2610,9 @@ aiger_open_and_read_from_file (aiger * public, const char *file_name)
     }
 
   if (!file)
-    return aiger_error_s (private, "can not read '%s'", file_name);
+    return aiger_error_s (_private, "can not read '%s'", file_name);
 
-  res = aiger_read_from_file (public, file);
+  res = aiger_read_from_file (_public, file);
 
   if (pclose_file)
     pclose (file);
@@ -2618,26 +2623,26 @@ aiger_open_and_read_from_file (aiger * public, const char *file_name)
 }
 
 const char *
-aiger_get_symbol (aiger * public, unsigned lit)
+aiger_get_symbol (aiger * _public, unsigned lit)
 {
-  IMPORT_private_FROM (public);
+  IMPORT_private_FROM (_public);
   aiger_symbol *symbol;
   aiger_type *type;
   unsigned var;
 
-  assert (!aiger_error (public));
+  assert (!aiger_error (_public));
 
   assert (lit);
   assert (!aiger_sign (lit));
 
   var = aiger_lit2var (lit);
-  assert (var <= public->maxvar);
-  type = private->types + var;
+  assert (var <= _public->maxvar);
+  type = _private->types + var;
 
   if (type->input)
-    symbol = public->inputs;
+    symbol = _public->inputs;
   else if (type->latch)
-    symbol = public->latches;
+    symbol = _public->latches;
   else
     return 0;
 
@@ -2645,76 +2650,76 @@ aiger_get_symbol (aiger * public, unsigned lit)
 }
 
 static aiger_type *
-aiger_lit2type (aiger * public, unsigned lit)
+aiger_lit2type (aiger * _public, unsigned lit)
 {
-  IMPORT_private_FROM (public);
+  IMPORT_private_FROM (_public);
   aiger_type *type;
   unsigned var;
 
   assert (!aiger_sign (lit));
   var = aiger_lit2var (lit);
-  assert (var <= public->maxvar);
-  type = private->types + var;
+  assert (var <= _public->maxvar);
+  type = _private->types + var;
 
   return type;
 }
 
 int
-aiger_lit2tag (aiger * public, unsigned lit) 
+aiger_lit2tag (aiger * _public, unsigned lit) 
 {
   aiger_type * type;
   lit = aiger_strip (lit);
   if (!lit) return 0;
-  type = aiger_lit2type (public, lit);
+  type = aiger_lit2type (_public, lit);
   if (type->input) return 1;
   if (type->latch) return 2;
   return 3;
 }
 
 aiger_symbol *
-aiger_is_input (aiger * public, unsigned lit)
+aiger_is_input (aiger * _public, unsigned lit)
 {
   aiger_type *type;
   aiger_symbol *res;
 
-  assert (!aiger_error (public));
-  type = aiger_lit2type (public, lit);
+  assert (!aiger_error (_public));
+  type = aiger_lit2type (_public, lit);
   if (!type->input)
     return 0;
 
-  res = public->inputs + type->idx;
+  res = _public->inputs + type->idx;
 
   return res;
 }
 
 aiger_symbol *
-aiger_is_latch (aiger * public, unsigned lit)
+aiger_is_latch (aiger * _public, unsigned lit)
 {
   aiger_symbol *res;
   aiger_type *type;
 
-  assert (!aiger_error (public));
-  type = aiger_lit2type (public, lit);
+  assert (!aiger_error (_public));
+  type = aiger_lit2type (_public, lit);
   if (!type->latch)
     return 0;
 
-  res = public->latches + type->idx;
+  res = _public->latches + type->idx;
 
   return res;
 }
 
 aiger_and *
-aiger_is_and (aiger * public, unsigned lit)
+aiger_is_and (aiger * _public, unsigned lit)
 {
   aiger_type *type;
   aiger_and *res;
 
-  assert (!aiger_error (public));
-  type = aiger_lit2type (public, lit);
-  if (!type->and)
+  assert (!aiger_error (_public));
+  type = aiger_lit2type (_public, lit);
+  if (!type->_and)
     return 0;
 
-  res = public->ands + type->idx;
+  res = _public->ands + type->idx;
 
   return res;
 }
@@ -2732,49 +2737,49 @@ swap_values(void* a, void* b, unsigned size) {
 }
 
 static void
-aiger_remove_input(aiger* public, unsigned input_lit) {
-    IMPORT_private_FROM (public);
-    assert (!aiger_error (public));
-    aiger_symbol* input_symbol = aiger_is_input(public, input_lit);
+aiger_remove_input(aiger* _public, unsigned input_lit) {
+    IMPORT_private_FROM (_public);
+    assert (!aiger_error (_public));
+    aiger_symbol* input_symbol = aiger_is_input(_public, input_lit);
     assert (input_symbol);
 
     unsigned i;
-    for (i = 0; i < public->num_inputs-1; i++) {
-        aiger_symbol* cur = public->inputs + i;
+    for (i = 0; i < _public->num_inputs-1; i++) {
+        aiger_symbol* cur = _public->inputs + i;
         if (cur >= input_symbol) { //assumes that inputs were allocated on heap..
             swap_values(cur, cur + 1, sizeof(aiger_symbol));
             // we also have to exchange type->idx,
             // which is an address of aiger_symbol
-            // within public->inputs
-            aiger_type* cur_type = aiger_lit2type(public, cur->lit);
-            aiger_type* next_type = aiger_lit2type(public, (cur+1)->lit);
+            // within _public->inputs
+            aiger_type* cur_type = aiger_lit2type(_public, cur->lit);
+            aiger_type* next_type = aiger_lit2type(_public, (cur+1)->lit);
             swap_values(&(cur_type->idx), &(next_type->idx), sizeof(unsigned));
         }
     }
     input_symbol = NULL; //became invalid
     //remove name from symbols table
-    aiger_symbol* where_to_del = public->inputs + public->num_inputs - 1;
-    aiger_delete_symbols_aux(private, where_to_del, 1);
-    aiger_type* type = aiger_import_literal(private, input_lit);
+    aiger_symbol* where_to_del = _public->inputs + _public->num_inputs - 1;
+    aiger_delete_symbols_aux(_private, where_to_del, 1);
+    aiger_type* type = aiger_import_literal(_private, input_lit);
     //clean to prevent from being id'd as input
-    type->and = 0;
+    type->_and = 0;
     type->input = 0;
     type->latch = 0;
 
-    public->num_inputs--;
+    _public->num_inputs--;
 }
 
 void
-aiger_redefine_input_as_and(aiger* public, unsigned input_lit, 
+aiger_redefine_input_as_and(aiger* _public, unsigned input_lit, 
                             unsigned rhs0, unsigned rhs1){
-    aiger_remove_input(public, input_lit);
-    aiger_add_and(public, input_lit, rhs0, rhs1);
+    aiger_remove_input(_public, input_lit);
+    aiger_add_and(_public, input_lit, rhs0, rhs1);
 }
 
 void
-aiger_remove_outputs(aiger* public) {
-    IMPORT_private_FROM (public);
-    assert (!aiger_error (public));
-    aiger_delete_symbols_aux (private, public->outputs, private->size_outputs);
-    public->num_outputs--;
+aiger_remove_outputs(aiger* _public) {
+    IMPORT_private_FROM (_public);
+    assert (!aiger_error (_public));
+    aiger_delete_symbols_aux (_private, _public->outputs, _private->size_outputs);
+    _public->num_outputs--;
 }
