@@ -2611,7 +2611,6 @@ aiger_open_and_read_from_file (aiger * _public, const char *file_name)
 
   if (!file)
     return aiger_error_s (_private, "can not read '%s'", file_name);
-
   res = aiger_read_from_file (_public, file);
 
   if (pclose_file)

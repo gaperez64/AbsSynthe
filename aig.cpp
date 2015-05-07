@@ -51,16 +51,17 @@ AIG::AIG(const char* aiger_file_name, bool intro_error_latch) {
     this->spec = NULL;
     // start lodaing
     this->spec = aiger_init();
-    int err = aiger_open_and_write_to_file (spec, aiger_file_name);
+    const char* err = aiger_open_and_read_from_file (spec, aiger_file_name);
     if (err) {
-        errMsg(std::string("Error ") + std::to_string(err) +
+        errMsg(std::string("Error ") + err +
                " encountered while reading AIGER file " +
                aiger_file_name);
         exit(1);
     }
     if (spec->num_outputs != 1) {
         errMsg(std::string() +
-               std::to_string(spec->num_outputs) + " > 1 number of outputs in AIGER file " +
+               std::to_string(spec->num_outputs) + " > 1 number of outputs in " +
+               "AIGER file " +
                aiger_file_name);
         exit(1);
     }

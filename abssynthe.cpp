@@ -134,7 +134,7 @@ void parse_arguments(int argc, char** argv) {
 
 int main (int argc, char** argv) {
     parse_arguments(argc, argv);
-    AIG aig = new AIG(settings.spec_file);
+    AIG aig(settings.spec_file);
     // try to open the spec now
 
     if (settings.comp_algo != 0) {

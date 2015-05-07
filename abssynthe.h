@@ -28,8 +28,8 @@
 struct settings_struct {
     bool use_trans;
     int comp_algo;
-    char* spec_file;
-    char* out_file;
+    const char* spec_file;
+    const char* out_file;
 };
 extern struct settings_struct settings;
 
