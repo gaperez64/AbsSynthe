@@ -134,17 +134,18 @@ void parse_arguments(int argc, char** argv) {
 
 int main (int argc, char** argv) {
     parse_arguments(argc, argv);
-    AIG aig(settings.spec_file);
     // try to open the spec now
-
+    AIG aig(settings.spec_file);
+    // solve the synthesis problem
+    bool result;
     if (settings.comp_algo != 0) {
         // not implemented for the moment
         // TODO: remove this error here
         exit(1);
     } else {
         // traditional fixpoint computation
-        // call solve
+        result = solve(&aig);        
     }
 
-    exit(0);
+    exit(result ? EXIT_STATUS_REALIZABLE : EXIT_STATUS_UNREALIZABLE);
 }

@@ -44,12 +44,11 @@ class AIG {
     aiger_symbol* error_fake_latch;
     void introduceErrorLatch();
     void replaceErrorFunction();
-
+    */
     static:
-    long negateLit(long lit) { return lit ^ 1; }
-    bool litIsNegated(long lit) { return (lit & 1) == 1; }
-    long stripLit(long lit) { return long & ~1; }
-    long symbolLit(aiger_symbol* const symbol) { return symbol.lit; }*/
+    unsigned negateLit(unsigned lit) { return lit ^ 1; }
+    bool litIsNegated(unsigned lit) { return (lit & 1) == 1; }
+    unsigned stripLit(unsigned lit) { return unsigned & ~1; }
 
     public:
     AIG(const char*, bool intro_error_latch=false);

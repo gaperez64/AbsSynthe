@@ -29,6 +29,33 @@
 #include "aig.h"
 #include "logging.h"
 
+cudd_bdd AIG::lit2bdd(unsigned lit) {
+    // TODO: implement cache
+    cudd_bdd result;
+    unsigned stripped_lit = AIG.stripLit(lit);
+    aiger_and* and_gate = aiger_is_and(this->spec, stripped_lit);
+    // is it a gate? then recurse
+    if (and_gate) {
+        result = (this->lit2bdd(and_gate->rhs0) &
+                  this->lit2bdd(and_gate->rhs1));
+    } else if (stripped_lit == 1) { // then return the true/false BDD
+        result = cudd.false();
+    } else if (stripped_lit == this->error_fake_latch->lit) {
+        result = cudd.bdd(stripped_lit);
+    } else {
+        aiger_symbol* symbol = aiger_is_input(this->spec, stripped_lit);
+        if (!symbol)
+            symbol = aiger_is_latch(this->spec, stripped_lit);
+        // is it an input or latch? these are base cases
+        if (!symbol)
+            result = cudd.bdd(stripped_lit);
+    }
+    // let us deal with the negation now
+    if (AIG.litIsNegated(lit))
+        result = ~result;
+    return result;
+}
+
 unsigned AIG::nextLit() {
     return (this->spec->maxvar + 1) * 2;
 }
@@ -78,20 +105,26 @@ AIG::AIG(const char* aiger_file_name, bool intro_error_latch) {
         else
             this->u_inputs.push_back(symbol);
     }
+
+#ifndef NDEBUG
     // print some debug information
     std::string litstring;
     for (std::vector<aiger_symbol*>::iterator i = this->latches.begin();
          i != this->latches.end(); i++)
         litstring += std::to_string((*i)->lit) + ", ";
-    dbgMsg(std::string() + std::to_string(this->latches.size()) + " Latches: " + litstring);
+    dbgMsg(std::string() + std::to_string(this->latches.size()) + " Latches: " +
+           litstring);
     litstring.clear();
     for (std::vector<aiger_symbol*>::iterator i = this->c_inputs.begin();
          i != this->c_inputs.end(); i++)
         litstring += std::to_string((*i)->lit) + ", ";
-    dbgMsg(std::string() + std::to_string(this->c_inputs.size()) + " C.Inputs: " + litstring);
+    dbgMsg(std::string() + std::to_string(this->c_inputs.size()) + " C.Inputs: " +
+           litstring);
     litstring.clear();
     for (std::vector<aiger_symbol*>::iterator i = this->u_inputs.begin();
          i != this->u_inputs.end(); i++)
         litstring += std::to_string((*i)->lit) + ", ";
-    dbgMsg(std::string() + std::to_string(this->u_inputs.size()) + " U.Inputs: " + litstring);
+    dbgMsg(std::string() + std::to_string(this->u_inputs.size()) + " U.Inputs: " +
+           litstring);
+#endif
 }
