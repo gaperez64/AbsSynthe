@@ -24,23 +24,53 @@
 
 #include <string>
 
+#include "cuddObj.hh"
+
 #include "abssynthe.h"
 #include "logging.h"
 #include "aig.h"
 
-bool solve(AIG* spec) {
-    
-    init_state = game.init()
-    error_states = game.error()
-    dbgMsg("Computing fixpoint of UPRE.")
-    win_region = ~fixpoint(
-        error_states,
-        fun=lambda x: x | game.upre(x),
-        early_exit=lambda x: x & init_state
-    )
-
-    if not (win_region & init_state):
-        return None
-    else:
-        return win_region
+static void substituteLatchesNext(BDDAIG* spec, BDD* dst, BDD &result) {
+    if (settings.use_trans) {
+        BDD* trans_rel_bdd = spec->transRelBdd();
+        BDD primed_dst;
+        spec->primeLatchesInBdd(dst, primed_dst);
+        result = trans_rel_bdd->AndAbstract(primed_dst,
+                                            *spec->primedLatchCube());
+    } else {
+        result = dst->VectorCompose(*spec->nextFunComposeVec());
+    }
 }
+
+// NOTE: trans_bdd contains the set of all transitions going into bad
+// states after the upre step (the complement of all good transitions)
+static void upre(BDDAIG* spec, BDD* dst, BDD &result, BDD &trans_bdd) {
+    substituteLatchesNext(spec, dst, trans_bdd);
+    BDD temp_bdd = trans_bdd.UnivAbstract(*spec->cinputCube());
+    result = temp_bdd.ExistAbstract(*spec->uinputCube());
+}
+
+bool solve(AIG* spec_base) {
+    Cudd mgr(0, 0);
+    BDD init_state, error_states, prev_error;
+    mgr.AutodynEnable(CUDD_REORDER_SIFT);
+    BDDAIG spec(*spec_base, &mgr);
+
+    dbgMsg("Computing fixpoint of UPRE.");
+    bool includes_init = false;
+    BDD bad_transitions;
+    spec.initState(init_state);
+    spec.errorStates(error_states);
+    prev_error = mgr.bddZero();
+    while (!includes_init && error_states != prev_error) {
+        prev_error = error_states;
+        upre(&spec, &prev_error, error_states, bad_transitions);
+        error_states = prev_error | error_states;
+        includes_init = ((error_states & init_state) != mgr.bddZero());
+    }
+    // if !includes_init == true, then ~bad_transitions is the set of all
+    // good transitions for controller (Eve)
+    
+    return !includes_init;
+}
+

@@ -27,31 +27,35 @@
 
 #include <string>
 #include <vector>
+#include <unordered_map>
+
+#include "cuddObj.hh"
 
 #include "aiger.h"
 
+/* The AIG class has no explicit destructor because it only keeps a collection
+ * of pointers to elements in the original aiger structure. Also, since we
+ * manipulate copies of AIGs, it would be bad to delete stuff while another,
+ * previous created, copy is still being used...
+ */
 class AIG {
-    private:
-    aiger* spec;
-    std::vector<aiger_symbol*> latches;
-    std::vector<aiger_symbol*> c_inputs;
-    std::vector<aiger_symbol*> u_inputs;
-    aiger_symbol* error_fake_latch;
-
-    unsigned nextLit();
-    void introduceErrorLatch();
-        /*
-    aiger_symbol* error_fake_latch;
-    void introduceErrorLatch();
-    void replaceErrorFunction();
-    */
-    static:
-    unsigned negateLit(unsigned lit) { return lit ^ 1; }
-    bool litIsNegated(unsigned lit) { return (lit & 1) == 1; }
-    unsigned stripLit(unsigned lit) { return unsigned & ~1; }
+    protected:
+        aiger* spec;
+        std::vector<aiger_symbol*> latches;
+        std::vector<aiger_symbol*> c_inputs;
+        std::vector<aiger_symbol*> u_inputs;
+        aiger_symbol* error_fake_latch;
+        unsigned nextLit();
+        void introduceErrorLatch();
 
     public:
-    AIG(const char*, bool intro_error_latch=false);
+        static unsigned negateLit(unsigned lit) { return lit ^ 1; }
+        static bool litIsNegated(unsigned lit) { return (lit & 1) == 1; }
+        static unsigned stripLit(unsigned lit) { return lit & ~1; }
+
+        AIG(const char*, bool intro_error_latch=true);
+        AIG(const AIG&);
+        unsigned maxVar();
     /*long numLatches();
     long maxVar();
     long nextLit();*/
@@ -75,6 +79,30 @@ class AIG {
     long** latchDepMap(long* const, int);
     aiger_symbol* newSymbol();
 */
+};
+
+class BDDAIG : public AIG {
+    protected:
+        Cudd* mgr;
+        BDD* primed_latch_cube;
+        BDD* cinput_cube;
+        BDD* uinput_cube;
+        BDD* trans_rel;
+        std::vector<BDD>* next_fun_compose_vec;
+        void lit2bdd(unsigned, BDD&, std::unordered_map<unsigned, BDD>*);
+
+    public:
+        static unsigned primeVar(unsigned lit) { return AIG::stripLit(lit) + 1; }
+        BDDAIG(const AIG&, Cudd*);
+        ~BDDAIG();
+        void initState(BDD&);
+        void errorStates(BDD&);
+        void primeLatchesInBdd(BDD*, BDD&);
+        BDD* primedLatchCube();
+        BDD* cinputCube();
+        BDD* uinputCube();
+        BDD* transRelBdd();
+        std::vector<BDD>* nextFunComposeVec(); 
 };
 
 #endif

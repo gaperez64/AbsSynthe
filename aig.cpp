@@ -23,41 +23,22 @@
  *************************************************************************/
 
 #include <stdlib.h>
+#include <string>
+#include <vector>
+#include <unordered_map>
+
+#include "cuddObj.hh"
 
 #include "aiger.h"
-
 #include "aig.h"
 #include "logging.h"
 
-cudd_bdd AIG::lit2bdd(unsigned lit) {
-    // TODO: implement cache
-    cudd_bdd result;
-    unsigned stripped_lit = AIG.stripLit(lit);
-    aiger_and* and_gate = aiger_is_and(this->spec, stripped_lit);
-    // is it a gate? then recurse
-    if (and_gate) {
-        result = (this->lit2bdd(and_gate->rhs0) &
-                  this->lit2bdd(and_gate->rhs1));
-    } else if (stripped_lit == 1) { // then return the true/false BDD
-        result = cudd.false();
-    } else if (stripped_lit == this->error_fake_latch->lit) {
-        result = cudd.bdd(stripped_lit);
-    } else {
-        aiger_symbol* symbol = aiger_is_input(this->spec, stripped_lit);
-        if (!symbol)
-            symbol = aiger_is_latch(this->spec, stripped_lit);
-        // is it an input or latch? these are base cases
-        if (!symbol)
-            result = cudd.bdd(stripped_lit);
-    }
-    // let us deal with the negation now
-    if (AIG.litIsNegated(lit))
-        result = ~result;
-    return result;
+unsigned AIG::maxVar() {
+    return this->spec->maxvar;
 }
 
 unsigned AIG::nextLit() {
-    return (this->spec->maxvar + 1) * 2;
+    return (this->maxVar() + 1) * 2;
 }
 
 void AIG::introduceErrorLatch() {
@@ -92,11 +73,14 @@ AIG::AIG(const char* aiger_file_name, bool intro_error_latch) {
                aiger_file_name);
         exit(1);
     }
-    // we now introduce a fake latch for the error function
-    this->introduceErrorLatch();
     // let us now build the vector of latches, c_inputs, and u_inputs
     for (int i = 0; i <= spec->num_latches; i++)
         this->latches.push_back(spec->latches + i);
+    // we now introduce a fake latch for the error function
+    if (intro_error_latch) {
+        this->introduceErrorLatch();
+        this->latches.push_back(this->error_fake_latch);
+    }
     for (int i = 0; i <= spec->num_inputs; i++) {
         aiger_symbol* symbol = spec->inputs + i;
         std::string name(symbol->name);
@@ -127,4 +111,170 @@ AIG::AIG(const char* aiger_file_name, bool intro_error_latch) {
     dbgMsg(std::string() + std::to_string(this->u_inputs.size()) + " U.Inputs: " +
            litstring);
 #endif
+}
+
+AIG::AIG(const AIG &other) {
+    this->spec = other.spec;
+    this->latches = other.latches;
+    this->c_inputs = other.c_inputs;
+    this->u_inputs = other.u_inputs;
+}
+
+BDDAIG::BDDAIG(const AIG &base, Cudd* local_mgr) : AIG(base) {
+    this->mgr = local_mgr;
+    this->primed_latch_cube = NULL;
+    this->cinput_cube = NULL;
+    this->uinput_cube = NULL;
+    this->next_fun_compose_vec = NULL;
+    this->trans_rel = NULL;
+}
+
+BDDAIG::~BDDAIG() {
+    if (this->primed_latch_cube != NULL)
+        delete this->primed_latch_cube;
+    if (this->cinput_cube != NULL)
+        delete this->cinput_cube;
+    if (this->uinput_cube != NULL)
+        delete this->uinput_cube;
+    if (this->next_fun_compose_vec != NULL)
+        delete this->next_fun_compose_vec;
+    if (this->trans_rel != NULL)
+        delete this->trans_rel;
+}
+
+void BDDAIG::initState(BDD &result) {
+    result = this->mgr->bddOne();
+    for (std::vector<aiger_symbol*>::iterator i = this->latches.begin();
+         i != this->latches.end(); i++)
+        result &= this->mgr->bddVar((*i)->lit);
+}
+
+void BDDAIG::errorStates(BDD &result) {
+    result = this->mgr->bddVar(this->error_fake_latch->lit);
+}
+
+void BDDAIG::primeLatchesInBdd(BDD* original, BDD &primed) {
+    std::vector<BDD> latch_bdds, primed_latch_bdds;
+    for (std::vector<aiger_symbol*>::iterator i = this->latches.begin();
+         i != this->latches.end(); i++) {
+        latch_bdds.push_back(this->mgr->bddVar((*i)->lit));
+        primed_latch_bdds.push_back(this->mgr->bddVar(BDDAIG::primeVar((*i)->lit)));
+    }
+    primed = original->SwapVariables(latch_bdds, primed_latch_bdds);
+}
+
+BDD* BDDAIG::primedLatchCube() {
+    if (this->primed_latch_cube == NULL) {
+        BDD result = this->mgr->bddOne();
+        for (std::vector<aiger_symbol*>::iterator i = this->latches.begin();
+             i != this->latches.end(); i++)
+            result &= this->mgr->bddVar(BDDAIG::primeVar((*i)->lit));
+        this->primed_latch_cube = new BDD(result);
+    }
+    return this->primed_latch_cube;
+}
+
+BDD* BDDAIG::cinputCube() {
+    if (this->cinput_cube == NULL) {
+        BDD result = this->mgr->bddOne();
+        for (std::vector<aiger_symbol*>::iterator i = this->c_inputs.begin();
+             i != this->c_inputs.end(); i++)
+            result &= this->mgr->bddVar(BDDAIG::primeVar((*i)->lit));
+        this->cinput_cube = new BDD(result);
+    }
+    return this->cinput_cube;
+}
+
+BDD* BDDAIG::uinputCube() {
+    if (this->uinput_cube == NULL) {
+        BDD result = this->mgr->bddOne();
+        for (std::vector<aiger_symbol*>::iterator i = this->u_inputs.begin();
+             i != this->u_inputs.end(); i++)
+            result &= this->mgr->bddVar(BDDAIG::primeVar((*i)->lit));
+        this->uinput_cube = new BDD(result);
+    }
+    return this->uinput_cube;
+}
+
+void BDDAIG::lit2bdd(unsigned lit, BDD &result,
+                     std::unordered_map<unsigned, BDD>* cache=NULL) {
+    // we first check the cache
+    if (cache != NULL && cache->find(lit) != cache->end())
+        return;
+    unsigned stripped_lit = AIG::stripLit(lit);
+    aiger_and* and_gate = aiger_is_and(this->spec, stripped_lit);
+    // is it a gate? then recurse
+    if (and_gate) {
+        BDD left, right;
+        this->lit2bdd(and_gate->rhs0, left, cache);
+        this->lit2bdd(and_gate->rhs1, right, cache);
+        result = left & right;
+    } else if (stripped_lit == 1) { // then return the true/false BDD
+        result = ~this->mgr->bddOne();
+    } else if (stripped_lit == this->error_fake_latch->lit) {
+        result = this->mgr->bddVar(stripped_lit);
+    } else {
+        aiger_symbol* symbol = aiger_is_input(this->spec, stripped_lit);
+        if (!symbol)
+            symbol = aiger_is_latch(this->spec, stripped_lit);
+        // is it an input or latch? these are base cases
+        if (!symbol)
+            result = this->mgr->bddVar(stripped_lit);
+    }
+    // let us deal with the negation now
+    if (AIG::litIsNegated(lit))
+        result = ~result;
+    // cache result if possible
+    if (cache != NULL)
+        (*cache)[lit] = result;
+}
+
+std::vector<BDD>* BDDAIG::nextFunComposeVec() {
+    if (this->next_fun_compose_vec == NULL) {
+        this->next_fun_compose_vec = new std::vector<BDD>();
+        // get the right bdd for the next fun of every latch
+        std::unordered_map<unsigned, BDD> lit2bdd_map;
+        unsigned latch_lits[this->latches.size()];
+        int j = 0;
+        BDD next_fun_bdd;
+        for (std::vector<aiger_symbol*>::iterator i = this->latches.begin();
+             i != this->latches.end(); i++) {
+            latch_lits[j++] = (*i)->lit;
+            this->lit2bdd((*i)->next, next_fun_bdd, &lit2bdd_map);
+        }
+
+        // fill the vector with singleton bdds except for the latches
+        for (unsigned i = 0; i < this->maxVar() * 2; i++) {
+            if (std::find(latch_lits, latch_lits + this->latches.size(), i)) {
+                this->next_fun_compose_vec->push_back(lit2bdd_map[i]);
+            } else {
+                this->next_fun_compose_vec->push_back(this->mgr->bddVar(i));
+            }
+        }
+    }
+    return this->next_fun_compose_vec;
+}
+
+BDD* BDDAIG::transRelBdd() {
+    if (this->trans_rel == NULL) {
+        // get the right bdd for the next fun of every latch
+        std::unordered_map<unsigned, BDD> lit2bdd_map;
+        BDD next_fun_bdd;
+        for (std::vector<aiger_symbol*>::iterator i = this->latches.begin();
+             i != this->latches.end(); i++) {
+            this->lit2bdd((*i)->next, next_fun_bdd, &lit2bdd_map);
+        }
+
+        // take the conjunction of each primed var and its next fun
+        BDD result = this->mgr->bddOne();
+        for (std::vector<aiger_symbol*>::iterator i = this->latches.begin();
+             i != this->latches.end(); i++) {
+            result &= (~this->mgr->bddVar(BDDAIG::primeVar((*i)->lit)) |
+                       lit2bdd_map[(*i)->next]) &
+                      (this->mgr->bddVar(BDDAIG::primeVar((*i)->lit)) |
+                       ~lit2bdd_map[(*i)->next]);
+        }
+        this->trans_rel = new BDD(result);
+    }
+    return this->trans_rel;
 }

@@ -25,6 +25,8 @@
 #ifndef ABSSYNTHE_H
 #define ABSSYNTHE_H
 
+#include "aig.h"
+
 struct settings_struct {
     bool use_trans;
     int comp_algo;
@@ -32,5 +34,7 @@ struct settings_struct {
     const char* out_file;
 };
 extern struct settings_struct settings;
+
+bool solve(AIG*);
 
 #endif
