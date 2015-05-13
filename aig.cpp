@@ -118,6 +118,7 @@ AIG::AIG(const AIG &other) {
     this->latches = other.latches;
     this->c_inputs = other.c_inputs;
     this->u_inputs = other.u_inputs;
+    this->error_fake_latch = other.error_fake_latch;
 }
 
 BDDAIG::BDDAIG(const AIG &base, Cudd* local_mgr) : AIG(base) {
@@ -200,33 +201,42 @@ void BDDAIG::lit2bdd(unsigned lit, BDD &result,
                      std::unordered_map<unsigned, BDD>* cache=NULL) {
     // we first check the cache
     if (cache != NULL && cache->find(lit) != cache->end())
-        return;
+        result = (*cache)[lit];
     unsigned stripped_lit = AIG::stripLit(lit);
-    aiger_and* and_gate = aiger_is_and(this->spec, stripped_lit);
-    // is it a gate? then recurse
-    if (and_gate) {
-        BDD left, right;
-        this->lit2bdd(and_gate->rhs0, left, cache);
-        this->lit2bdd(and_gate->rhs1, right, cache);
-        result = left & right;
-    } else if (stripped_lit == 1) { // then return the true/false BDD
+    if (stripped_lit == 0) { // return the true/false BDD
         result = ~this->mgr->bddOne();
-    } else if (stripped_lit == this->error_fake_latch->lit) {
-        result = this->mgr->bddVar(stripped_lit);
     } else {
-        aiger_symbol* symbol = aiger_is_input(this->spec, stripped_lit);
-        if (!symbol)
-            symbol = aiger_is_latch(this->spec, stripped_lit);
-        // is it an input or latch? these are base cases
-        if (!symbol)
+        aiger_and* and_gate = aiger_is_and(this->spec, stripped_lit);
+        // is it a gate? then recurse
+        if (and_gate) {
+            BDD left, right;
+            this->lit2bdd(and_gate->rhs0, left, cache);
+            this->lit2bdd(and_gate->rhs1, right, cache);
+            result = left & right;
+        } else if (stripped_lit == this->error_fake_latch->lit) {
             result = this->mgr->bddVar(stripped_lit);
+        } else {
+            aiger_symbol* symbol = aiger_is_input(this->spec, stripped_lit);
+            if (!symbol) {
+                symbol = aiger_is_latch(this->spec, stripped_lit);
+            }
+            // is it an input or latch? these are base cases
+            if (symbol) {
+                result = this->mgr->bddVar(stripped_lit);
+            } else {
+                errMsg("lit2bdd on lit " + std::to_string(lit) + " failed!");
+                exit(1);
+            }
+        }
     }
     // let us deal with the negation now
     if (AIG::litIsNegated(lit))
         result = ~result;
     // cache result if possible
-    if (cache != NULL)
+    if (cache != NULL) {
         (*cache)[lit] = result;
+        (*cache)[AIG::negateLit(lit)] = ~result;
+    }
 }
 
 std::vector<BDD>* BDDAIG::nextFunComposeVec() {
@@ -242,6 +252,7 @@ std::vector<BDD>* BDDAIG::nextFunComposeVec() {
             latch_lits[j++] = (*i)->lit;
             this->lit2bdd((*i)->next, next_fun_bdd, &lit2bdd_map);
         }
+        dbgMsg("Recursive definition of next functions done");
 
         // fill the vector with singleton bdds except for the latches
         for (unsigned i = 0; i < this->maxVar() * 2; i++) {

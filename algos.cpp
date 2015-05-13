@@ -31,6 +31,7 @@
 #include "aig.h"
 
 static void substituteLatchesNext(BDDAIG* spec, BDD* dst, BDD &result) {
+    dbgMsg("Substituting the latches by their next function");
     if (settings.use_trans) {
         BDD* trans_rel_bdd = spec->transRelBdd();
         BDD primed_dst;
@@ -45,6 +46,7 @@ static void substituteLatchesNext(BDDAIG* spec, BDD* dst, BDD &result) {
 // NOTE: trans_bdd contains the set of all transitions going into bad
 // states after the upre step (the complement of all good transitions)
 static void upre(BDDAIG* spec, BDD* dst, BDD &result, BDD &trans_bdd) {
+    dbgMsg("Computing UPRE step");
     substituteLatchesNext(spec, dst, trans_bdd);
     BDD temp_bdd = trans_bdd.UnivAbstract(*spec->cinputCube());
     result = temp_bdd.ExistAbstract(*spec->uinputCube());
@@ -61,16 +63,16 @@ bool solve(AIG* spec_base) {
     BDD bad_transitions;
     spec.initState(init_state);
     spec.errorStates(error_states);
-    prev_error = mgr.bddZero();
+    prev_error = ~mgr.bddOne();
     while (!includes_init && error_states != prev_error) {
         prev_error = error_states;
         upre(&spec, &prev_error, error_states, bad_transitions);
         error_states = prev_error | error_states;
-        includes_init = ((error_states & init_state) != mgr.bddZero());
+        includes_init = ((error_states & init_state) != ~mgr.bddOne());
     }
+    dbgMsg("Exited fixpoint loop!");
     // if !includes_init == true, then ~bad_transitions is the set of all
     // good transitions for controller (Eve)
     
     return !includes_init;
 }
-
