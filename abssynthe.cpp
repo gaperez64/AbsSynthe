@@ -101,7 +101,7 @@ void parse_arguments(int argc, char** argv) {
                 parseLogLevelString(optarg);
                 break;
             case 't':
-                logMsg("use trans");
+                logMsg("Using transition relation.");
                 settings.use_trans = true;
                 break;
             case 'c':
@@ -144,7 +144,7 @@ int main (int argc, char** argv) {
         exit(1);
     } else {
         // traditional fixpoint computation
-        result = solve(&aig);        
+        result = solve(&aig);
     }
 
     exit(result ? EXIT_STATUS_REALIZABLE : EXIT_STATUS_UNREALIZABLE);

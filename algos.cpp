@@ -30,49 +30,77 @@
 #include "logging.h"
 #include "aig.h"
 
-static void substituteLatchesNext(BDDAIG* spec, BDD* dst, BDD &result) {
-    dbgMsg("Substituting the latches by their next function");
+static BDD safeRestrict(BDD original, BDD rest_region) {
+    BDD approx = original.Restrict(rest_region);
+    if (approx.nodeCount() < original.nodeCount())
+        return approx;
+    else
+        return original;
+}
+
+static BDD substituteLatchesNext(BDDAIG* spec, BDD dst) {
+    BDD result;
     if (settings.use_trans) {
-        BDD* trans_rel_bdd = spec->transRelBdd();
-        BDD primed_dst;
-        spec->primeLatchesInBdd(dst, primed_dst);
-        result = trans_rel_bdd->AndAbstract(primed_dst,
-                                            *spec->primedLatchCube());
+        BDD trans_rel_bdd = spec->transRelBdd();
+        BDD primed_dst = spec->primeLatchesInBdd(dst);
+        BDD primed_latch_cube = spec->primedLatchCube();
+        result = trans_rel_bdd.AndAbstract(primed_dst,
+                                           primed_latch_cube);
     } else {
-        result = dst->VectorCompose(*spec->nextFunComposeVec());
+        std::vector<BDD> next_funs = spec->nextFunComposeVec();
+        result = dst.VectorCompose(next_funs);
+#if false       
+        BDD trans_rel_bdd = spec->transRelBdd();
+        BDD primed_dst = spec->primeLatchesInBdd(dst);
+        BDD primed_latch_cube = spec->primedLatchCube();
+        BDD result2 = trans_rel_bdd.AndAbstract(primed_dst,
+                                                primed_latch_cube);
+        if (result != result2) {
+            errMsg("Vector compose resulted in the wrong BDD");
+        }
+#endif
     }
+    return result;
 }
 
 // NOTE: trans_bdd contains the set of all transitions going into bad
 // states after the upre step (the complement of all good transitions)
-static void upre(BDDAIG* spec, BDD* dst, BDD &result, BDD &trans_bdd) {
-    dbgMsg("Computing UPRE step");
-    substituteLatchesNext(spec, dst, trans_bdd);
-    BDD temp_bdd = trans_bdd.UnivAbstract(*spec->cinputCube());
-    result = temp_bdd.ExistAbstract(*spec->uinputCube());
+static BDD upre(BDDAIG* spec, BDD dst, BDD &trans_bdd) {
+    trans_bdd = substituteLatchesNext(spec, dst);
+    BDD cinput_cube = spec->cinputCube();
+    BDD uinput_cube = spec->uinputCube();
+    BDD temp_bdd = trans_bdd.UnivAbstract(cinput_cube);
+    return temp_bdd.ExistAbstract(uinput_cube);
 }
 
 bool solve(AIG* spec_base) {
     Cudd mgr(0, 0);
-    BDD init_state, error_states, prev_error;
     mgr.AutodynEnable(CUDD_REORDER_SIFT);
     BDDAIG spec(*spec_base, &mgr);
 
     dbgMsg("Computing fixpoint of UPRE.");
     bool includes_init = false;
+    unsigned cnt = 0;
     BDD bad_transitions;
-    spec.initState(init_state);
-    spec.errorStates(error_states);
-    prev_error = ~mgr.bddOne();
+    BDD init_state = spec.initState();
+    BDD error_states = spec.errorStates();
+    BDD prev_error = ~mgr.bddOne();
+        includes_init = ((init_state & error_states) != ~mgr.bddOne());
     while (!includes_init && error_states != prev_error) {
         prev_error = error_states;
-        upre(&spec, &prev_error, error_states, bad_transitions);
-        error_states = prev_error | error_states;
-        includes_init = ((error_states & init_state) != ~mgr.bddOne());
+        error_states = prev_error | upre(&spec, prev_error, bad_transitions);
+        includes_init = ((init_state & error_states) != ~mgr.bddOne());
+        cnt++;
     }
-    dbgMsg("Exited fixpoint loop!");
+    
+    dbgMsg("Early exit? " + std::to_string(includes_init) + 
+           ", after " + std::to_string(cnt) + " iterations.");
+
+#ifndef NDEBUG
+    spec.dump2dot(error_states & init_state, "uprestar_and_init.dot");
+#endif
+
     // if !includes_init == true, then ~bad_transitions is the set of all
     // good transitions for controller (Eve)
-    
     return !includes_init;
 }

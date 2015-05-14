@@ -89,20 +89,21 @@ class BDDAIG : public AIG {
         BDD* uinput_cube;
         BDD* trans_rel;
         std::vector<BDD>* next_fun_compose_vec;
-        void lit2bdd(unsigned, BDD&, std::unordered_map<unsigned, BDD>*);
+        BDD lit2bdd(unsigned, std::unordered_map<unsigned, BDD>*);
 
     public:
         static unsigned primeVar(unsigned lit) { return AIG::stripLit(lit) + 1; }
         BDDAIG(const AIG&, Cudd*);
         ~BDDAIG();
-        void initState(BDD&);
-        void errorStates(BDD&);
-        void primeLatchesInBdd(BDD*, BDD&);
-        BDD* primedLatchCube();
-        BDD* cinputCube();
-        BDD* uinputCube();
-        BDD* transRelBdd();
-        std::vector<BDD>* nextFunComposeVec(); 
+        void dump2dot(BDD, const char*);
+        BDD initState();
+        BDD errorStates();
+        BDD primeLatchesInBdd(BDD);
+        BDD primedLatchCube();
+        BDD cinputCube();
+        BDD uinputCube();
+        BDD transRelBdd();
+        std::vector<BDD> nextFunComposeVec(); 
 };
 
 #endif
