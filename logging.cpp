@@ -52,8 +52,10 @@ void logMsg(const char* message) { logMsg(string(message)); }
 void errMsg(const char* message) { errMsg(string(message)); }
 
 void dbgMsg(string message) {
+#ifndef NDEBUG
     if (logging_debug_level)
         cout << "[DBG] " << message << endl;
+#endif
 }
 
 void wrnMsg(string message) {

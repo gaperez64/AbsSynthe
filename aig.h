@@ -27,6 +27,8 @@
 
 #include <string>
 #include <vector>
+#include <set>
+#include <unordered_set>
 #include <unordered_map>
 
 #include "cuddObj.hh"
@@ -36,7 +38,8 @@
 /* The AIG class has no explicit destructor because it only keeps a collection
  * of pointers to elements in the original aiger structure. Also, since we
  * manipulate copies of AIGs, it would be bad to delete stuff while another,
- * previous created, copy is still being used...
+ * previous created, copy is still being used... However, if we want to clean
+ * up caches or other stuff used by AIG, one may use cleanCaches.
  */
 class AIG {
     protected:
@@ -45,8 +48,16 @@ class AIG {
         std::vector<aiger_symbol*> c_inputs;
         std::vector<aiger_symbol*> u_inputs;
         aiger_symbol* error_fake_latch;
-        unsigned nextLit();
         void introduceErrorLatch();
+        std::unordered_map<unsigned, std::set<unsigned>>* lit2deps_map;
+        std::unordered_map<unsigned,
+                           std::pair<std::vector<unsigned>,
+                                     std::vector<unsigned>>>* lit2ninputand_map;
+        void getNInputAnd(unsigned, std::vector<unsigned>*,
+                          std::vector<unsigned>*);
+        void getLitDepsRecur(unsigned, std::set<unsigned>&,
+                             std::unordered_set<unsigned>*);
+        std::set<unsigned> getLitDeps(unsigned);
 
     public:
         static unsigned negateLit(unsigned lit) { return lit ^ 1; }
@@ -55,10 +66,8 @@ class AIG {
 
         AIG(const char*, bool intro_error_latch=true);
         AIG(const AIG&);
+        void cleanCaches();
         unsigned maxVar();
-    /*long numLatches();
-    long maxVar();
-    long nextLit();*/
     /*
     void input2and(aiger_symbol*, aiger_symbol*);
     void writeSpec();
@@ -90,10 +99,13 @@ class BDDAIG : public AIG {
         BDD* trans_rel;
         std::vector<BDD>* next_fun_compose_vec;
         BDD lit2bdd(unsigned, std::unordered_map<unsigned, BDD>*);
+        std::vector<BDD> mergeSomeSignals(BDD, std::vector<unsigned>*);
+        std::set<unsigned> semanticDeps(BDD);
 
     public:
         static unsigned primeVar(unsigned lit) { return AIG::stripLit(lit) + 1; }
         BDDAIG(const AIG&, Cudd*);
+        BDDAIG(const BDDAIG&, BDD);
         ~BDDAIG();
         void dump2dot(BDD, const char*);
         BDD initState();
@@ -103,7 +115,9 @@ class BDDAIG : public AIG {
         BDD cinputCube();
         BDD uinputCube();
         BDD transRelBdd();
-        std::vector<BDD> nextFunComposeVec(); 
+        std::set<unsigned> getBddDeps(BDD);
+        std::vector<BDD> nextFunComposeVec();
+        std::vector<BDDAIG> decompose();
 };
 
 #endif

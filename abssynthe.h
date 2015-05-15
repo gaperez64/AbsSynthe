@@ -36,5 +36,6 @@ struct settings_struct {
 extern struct settings_struct settings;
 
 bool solve(AIG*);
+bool comp_solve1(AIG*);
 
 #endif

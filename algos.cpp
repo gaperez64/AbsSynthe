@@ -104,3 +104,12 @@ bool solve(AIG* spec_base) {
     // good transitions for controller (Eve)
     return !includes_init;
 }
+
+bool comp_solve1(AIG* spec_base) {
+    Cudd mgr(0, 0);
+    mgr.AutodynEnable(CUDD_REORDER_SIFT);
+    BDDAIG spec(*spec_base, &mgr);
+    std::vector<BDDAIG> subgames = spec.decompose();
+
+    return false;
+}
