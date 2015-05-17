@@ -35,15 +35,10 @@
 
 #include "aiger.h"
 
-/* The AIG class has no explicit destructor because it only keeps a collection
- * of pointers to elements in the original aiger structure. Also, since we
- * manipulate copies of AIGs, it would be bad to delete stuff while another,
- * previous created, copy is still being used... However, if we want to clean
- * up caches or other stuff used by AIG, one may use cleanCaches.
- */
 class AIG {
     protected:
         aiger* spec;
+        bool must_clean;
         std::vector<aiger_symbol*> latches;
         std::vector<aiger_symbol*> c_inputs;
         std::vector<aiger_symbol*> u_inputs;
@@ -66,26 +61,16 @@ class AIG {
 
         AIG(const char*, bool intro_error_latch=true);
         AIG(const AIG&);
+        ~AIG();
         void cleanCaches();
         unsigned maxVar();
     /*
     void input2and(aiger_symbol*, aiger_symbol*);
     void writeSpec();
-    void getLitType(long lit);
-    void getLitName(long lit);
-    bool litIsAnd(long lit);
     aiger_symbol* const getErrSymbol();
     aiger_symbol* const addGate(long, aiger_symbol*, aiger_symbol*);
     aiger_symbol* const addOutput(long, char*);
-    void removeOutputs();*/
-    /*
-    void aigSearchUntilNegs(aiger_symbol*, std::vector<long>, std::vector<long>);
-    std::vector<long>* getMultLitDeps(std::vector<long>*);
-    std::vector<long>* getLitDeps(long);
-    std::vector<long>* getLitLatchDeps(long);
-    std::vector<long>* getLitCInputDeps(long);
-    std::vector<long>* getLitUInputDeps(long);
-    long** latchDepMap(long* const, int);
+    void removeOutputs();
     aiger_symbol* newSymbol();
 */
 };
@@ -97,6 +82,7 @@ class BDDAIG : public AIG {
         BDD* cinput_cube;
         BDD* uinput_cube;
         BDD* trans_rel;
+        BDD* short_error;
         std::vector<BDD>* next_fun_compose_vec;
         BDD lit2bdd(unsigned, std::unordered_map<unsigned, BDD>*);
         std::vector<BDD> mergeSomeSignals(BDD, std::vector<unsigned>*);
@@ -117,7 +103,7 @@ class BDDAIG : public AIG {
         BDD transRelBdd();
         std::set<unsigned> getBddDeps(BDD);
         std::vector<BDD> nextFunComposeVec();
-        std::vector<BDDAIG> decompose();
+        std::vector<BDDAIG*> decompose();
 };
 
 #endif

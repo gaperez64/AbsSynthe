@@ -139,7 +139,7 @@ int main (int argc, char** argv) {
     // solve the synthesis problem
     bool result;
     if (settings.comp_algo == 1) {
-        result = comp_solve1(&aig);
+        result = compSolve1(&aig);
     } else if (settings.comp_algo != 0) {
         // not implemented for the moment
         // TODO: remove this error here
@@ -148,8 +148,6 @@ int main (int argc, char** argv) {
         // traditional fixpoint computation
         result = solve(&aig);
     }
-    // delete dynamic memory allocated for caches in AIG
-    aig.cleanCaches();
     // return the realizability test result
     exit(result ? EXIT_STATUS_REALIZABLE : EXIT_STATUS_UNREALIZABLE);
 }

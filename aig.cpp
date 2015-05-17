@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <assert.h>
+#include <string.h>
 #include <string>
 #include <vector>
 #include <set>
@@ -39,6 +40,14 @@
 #include "aiger.h"
 #include "aig.h"
 #include "logging.h"
+
+static BDD safeRestrict(BDD original, BDD rest_region) {
+    BDD approx = original.Restrict(rest_region);
+    if (approx.nodeCount() < original.nodeCount())
+        return approx;
+    else
+        return original;
+}
 
 unsigned AIG::maxVar() {
     return this->spec->maxvar;
@@ -58,6 +67,7 @@ void AIG::introduceErrorLatch() {
 
 AIG::AIG(const char* aiger_file_name, bool intro_error_latch) {
     // default values for some local (for this instance) variables
+    this->must_clean = true;
     this->error_fake_latch = NULL;
     this->spec = NULL;
     this->lit2deps_map = new std::unordered_map<unsigned, std::set<unsigned>>();
@@ -82,14 +92,14 @@ AIG::AIG(const char* aiger_file_name, bool intro_error_latch) {
         exit(1);
     }
     // let us now build the vector of latches, c_inputs, and u_inputs
-    for (int i = 0; i < spec->num_latches; i++)
+    for (unsigned i = 0; i < spec->num_latches; i++)
         this->latches.push_back(spec->latches + i);
     // we now introduce a fake latch for the error function
     if (intro_error_latch) {
         this->introduceErrorLatch();
         this->latches.push_back(this->error_fake_latch);
     }
-    for (int i = 0; i < spec->num_inputs; i++) {
+    for (unsigned i = 0; i < spec->num_inputs; i++) {
         aiger_symbol* symbol = spec->inputs + i;
         std::string name(symbol->name);
         if (name.find("controllable") == 0) // starts with "controllable"
@@ -122,6 +132,7 @@ AIG::AIG(const char* aiger_file_name, bool intro_error_latch) {
 }
 
 AIG::AIG(const AIG &other) {
+    this->must_clean = false;
     this->spec = other.spec;
     this->latches = other.latches;
     this->c_inputs = other.c_inputs;
@@ -129,6 +140,13 @@ AIG::AIG(const AIG &other) {
     this->error_fake_latch = other.error_fake_latch;
     this->lit2deps_map = other.lit2deps_map;
     this->lit2ninputand_map = other.lit2ninputand_map;
+}
+
+AIG::~AIG() {
+    if (this->must_clean) {
+        dbgMsg("Cleaning!");
+        this->cleanCaches();
+    }
 }
 
 void AIG::cleanCaches() {
@@ -188,7 +206,6 @@ void AIG::getLitDepsRecur(unsigned lit, std::set<unsigned> &result,
 }
 
 std::set<unsigned> AIG::getLitDeps(unsigned lit) {
-    dbgMsg("Getting dependencies for literal " + std::to_string(lit));
     std::unordered_set<unsigned> visited;
     std::set<unsigned> deps;
     this->getLitDepsRecur(lit, deps, &visited);
@@ -256,6 +273,7 @@ BDDAIG::BDDAIG(const AIG &base, Cudd* local_mgr) : AIG(base) {
     this->uinput_cube = NULL;
     this->next_fun_compose_vec = NULL;
     this->trans_rel = NULL;
+    this->short_error = NULL;
 }
 
 BDDAIG::BDDAIG(const BDDAIG &base, BDD error) : AIG(base) {
@@ -265,6 +283,50 @@ BDDAIG::BDDAIG(const BDDAIG &base, BDD error) : AIG(base) {
     this->uinput_cube = NULL;
     this->next_fun_compose_vec = NULL;
     this->trans_rel = NULL;
+    this->short_error = new BDD(error);
+    // we are now going to reduce the size of the latches and inputs based on
+    // error
+    dbgMsg("Creating new game with less variables");
+    std::set<unsigned> deps = this->getBddDeps(error);
+    std::vector<aiger_symbol*> new_vector;
+    unsigned c = 0;
+    for (std::vector<aiger_symbol*>::iterator i = this->latches.begin();
+         i != this->latches.end(); i++) {
+        if ((*i)->lit != this->error_fake_latch->lit &&
+            deps.find((*i)->lit) == deps.end()) {
+            c++;
+            continue; // skip latches not in the cone of error
+        }
+        new_vector.push_back(*i);
+    }
+    dbgMsg("Removed " + std::to_string(c) + " latches");
+    this->latches = new_vector;
+    // controllable inputs now
+    new_vector.clear();
+    c = 0;
+    for (std::vector<aiger_symbol*>::iterator i = this->c_inputs.begin();
+         i != this->c_inputs.end(); i++) {
+        if (deps.find((*i)->lit) == deps.end()) {
+            c++;
+            continue; // skip latches not in the cone of error
+        }
+        new_vector.push_back(*i);
+    }
+    dbgMsg("Removed " + std::to_string(c) + " controllable inputs");
+    this->c_inputs = new_vector;
+    // uncontrollable inputs to finish
+    new_vector.clear();
+    c = 0;
+    for (std::vector<aiger_symbol*>::iterator i = this->u_inputs.begin();
+         i != this->u_inputs.end(); i++) {
+        if (deps.find((*i)->lit) == deps.end()) {
+            c++;
+            continue; // skip latches not in the cone of error
+        }
+        new_vector.push_back(*i);
+    }
+    dbgMsg("Removed " + std::to_string(c) + " uncontrollable inputs");
+    this->u_inputs = new_vector;
 }
 
 void BDDAIG::dump2dot(BDD b, const char* file_name) {
@@ -286,6 +348,8 @@ BDDAIG::~BDDAIG() {
         delete this->next_fun_compose_vec;
     if (this->trans_rel != NULL)
         delete this->trans_rel;
+    if (this->short_error != NULL)
+        delete this->short_error;
 }
 
 BDD BDDAIG::initState() {
@@ -394,14 +458,27 @@ std::vector<BDD> BDDAIG::nextFunComposeVec() {
         std::unordered_map<unsigned, BDD> lit2bdd_map;
         BDD next_fun_bdd;
         for (std::vector<aiger_symbol*>::iterator i = this->latches.begin();
-             i != this->latches.end(); i++)
+             i != this->latches.end(); i++) {
             next_fun_bdd = this->lit2bdd((*i)->next, &lit2bdd_map);
+        }
 
         // fill the vector with singleton bdds except for the latches
         std::vector<aiger_symbol*>::iterator latch_it = this->latches.begin();
-        for (unsigned i = 0; i < this->mgr->ReadSize(); i++) {
+        for (unsigned i = 0; ((int) i) < this->mgr->ReadSize(); i++) {
             if (latch_it != this->latches.end() && i == (*latch_it)->lit) {
-                this->next_fun_compose_vec->push_back(lit2bdd_map[(*latch_it)->next]);
+                // since we allow for short_error to override the next fun...
+                if (i == this->error_fake_latch->lit &&
+                    this->short_error != NULL) {
+                    BDD error_next_fun = *this->short_error; // lit2bdd_map[(*i)->next] | *this->short_error;
+                    this->next_fun_compose_vec->push_back(error_next_fun);
+                } else if (this->short_error != NULL) { // simplify functions
+                    this->next_fun_compose_vec->push_back(
+                        safeRestrict(lit2bdd_map[(*latch_it)->next],
+                                     ~(*this->short_error)));
+                } else {
+                    this->next_fun_compose_vec->push_back(
+                        lit2bdd_map[(*latch_it)->next]);
+                }
                 latch_it++;
             } else {
                 this->next_fun_compose_vec->push_back(this->mgr->bddVar(i));
@@ -425,10 +502,27 @@ BDD BDDAIG::transRelBdd() {
         BDD result = this->mgr->bddOne();
         for (std::vector<aiger_symbol*>::iterator i = this->latches.begin();
              i != this->latches.end(); i++) {
-            result &= (~this->mgr->bddVar(BDDAIG::primeVar((*i)->lit)) |
-                       lit2bdd_map[(*i)->next]) &
-                      (this->mgr->bddVar(BDDAIG::primeVar((*i)->lit)) |
-                       ~lit2bdd_map[(*i)->next]);
+            // since we allow for short_error to override the next fun...
+            if ((*i)->lit == this->error_fake_latch->lit &&
+                this->short_error != NULL) {
+                BDD error_next_fun = *this->short_error; // lit2bdd_map[(*i)->next] | *this->short_error;
+                result &= (~this->mgr->bddVar(BDDAIG::primeVar((*i)->lit)) |
+                           error_next_fun) &
+                          (this->mgr->bddVar(BDDAIG::primeVar((*i)->lit)) |
+                           ~error_next_fun);
+            } else if (this->short_error != NULL) { // simplify functions
+                BDD fun = safeRestrict(lit2bdd_map[(*i)->next],
+                                       ~(*this->short_error));
+                result &= (~this->mgr->bddVar(BDDAIG::primeVar((*i)->lit)) |
+                           fun) &
+                          (this->mgr->bddVar(BDDAIG::primeVar((*i)->lit)) |
+                           ~fun);
+            } else {
+                result &= (~this->mgr->bddVar(BDDAIG::primeVar((*i)->lit)) |
+                           lit2bdd_map[(*i)->next]) &
+                          (this->mgr->bddVar(BDDAIG::primeVar((*i)->lit)) |
+                           ~lit2bdd_map[(*i)->next]);
+            }
         }
         this->trans_rel = new BDD(result);
     }
@@ -463,7 +557,6 @@ std::set<unsigned> BDDAIG::getBddDeps(BDD b) {
 std::vector<BDD> BDDAIG::mergeSomeSignals(BDD cube, std::vector<unsigned>* original) {
     logMsg(std::to_string(original->size()) + " sub-games originally");
     std::set<unsigned> cube_deps = this->getBddDeps(cube);
-    dbgMsg("Got the bdddeps");
     std::vector<std::set<unsigned>> dep_vector;
     std::vector<BDD> bdd_vector;
     std::unordered_map<unsigned, BDD> lit2bdd_map;
@@ -479,12 +572,10 @@ std::vector<BDD> BDDAIG::mergeSomeSignals(BDD cube, std::vector<unsigned>* origi
         bool found = false;
         for (; dep_it != dep_vector.end();) {
             if ((*dep_it) >= deps) {
-                dbgMsg("Some key subsumes current deps");
                 (*bdd_it) &= this->lit2bdd(*i, &lit2bdd_map);
                 found = true;
                 break;
             } else if ((*dep_it) <= deps) {
-                dbgMsg("New deps subsumes some key");
                 (*bdd_it) &= this->lit2bdd(*i, &lit2bdd_map);
                 // we also update the deps because the new one is bigger
                 (*dep_it) = deps;
@@ -493,7 +584,6 @@ std::vector<BDD> BDDAIG::mergeSomeSignals(BDD cube, std::vector<unsigned>* origi
             bdd_it++;
         }
         if (!found) {
-            dbgMsg("Adding a new subgame");
             dep_vector.push_back(deps);
             bdd_vector.push_back(this->lit2bdd(*i, &lit2bdd_map));
         }
@@ -526,8 +616,8 @@ std::set<unsigned> BDDAIG::semanticDeps(BDD b) {
     return result;
 }
 
-std::vector<BDDAIG> BDDAIG::decompose() {
-    std::vector<BDDAIG> result;
+std::vector<BDDAIG*> BDDAIG::decompose() {
+    std::vector<BDDAIG*> result;
     if (AIG::litIsNegated(this->error_fake_latch->next)) {
         logMsg("Decomposition possible (BIG OR case)");
         std::vector<unsigned> A, B;
@@ -536,8 +626,7 @@ std::vector<BDDAIG> BDDAIG::decompose() {
                                                                 &A);
         for (std::vector<BDD>::iterator i = clean_signals.begin();
              i != clean_signals.end(); i++) {
-            BDDAIG subgame(*this, *i);
-            result.push_back(subgame);
+            result.push_back(new BDDAIG(*this, *i));
         }
     } else {
         std::vector<unsigned> A, B;
@@ -574,8 +663,7 @@ std::vector<BDDAIG> BDDAIG::decompose() {
                                                                     &C);
             for (std::vector<BDD>::iterator i = clean_signals.begin();
                  i != clean_signals.end(); i++) {
-                BDDAIG subgame(*this, *i);
-                result.push_back(subgame);
+                result.push_back(new BDDAIG(*this, *i));
             }
         }
     }

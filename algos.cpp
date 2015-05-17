@@ -30,14 +30,6 @@
 #include "logging.h"
 #include "aig.h"
 
-static BDD safeRestrict(BDD original, BDD rest_region) {
-    BDD approx = original.Restrict(rest_region);
-    if (approx.nodeCount() < original.nodeCount())
-        return approx;
-    else
-        return original;
-}
-
 static BDD substituteLatchesNext(BDDAIG* spec, BDD dst) {
     BDD result;
     if (settings.use_trans) {
@@ -73,23 +65,19 @@ static BDD upre(BDDAIG* spec, BDD dst, BDD &trans_bdd) {
     return temp_bdd.ExistAbstract(uinput_cube);
 }
 
-bool solve(AIG* spec_base) {
-    Cudd mgr(0, 0);
-    mgr.AutodynEnable(CUDD_REORDER_SIFT);
-    BDDAIG spec(*spec_base, &mgr);
-
+static bool internalSolve(Cudd* mgr, BDDAIG* spec) {
     dbgMsg("Computing fixpoint of UPRE.");
     bool includes_init = false;
     unsigned cnt = 0;
     BDD bad_transitions;
-    BDD init_state = spec.initState();
-    BDD error_states = spec.errorStates();
-    BDD prev_error = ~mgr.bddOne();
-        includes_init = ((init_state & error_states) != ~mgr.bddOne());
+    BDD init_state = spec->initState();
+    BDD error_states = spec->errorStates();
+    BDD prev_error = ~mgr->bddOne();
+        includes_init = ((init_state & error_states) != ~mgr->bddOne());
     while (!includes_init && error_states != prev_error) {
         prev_error = error_states;
-        error_states = prev_error | upre(&spec, prev_error, bad_transitions);
-        includes_init = ((init_state & error_states) != ~mgr.bddOne());
+        error_states = prev_error | upre(spec, prev_error, bad_transitions);
+        includes_init = ((init_state & error_states) != ~mgr->bddOne());
         cnt++;
     }
     
@@ -97,7 +85,7 @@ bool solve(AIG* spec_base) {
            ", after " + std::to_string(cnt) + " iterations.");
 
 #ifndef NDEBUG
-    spec.dump2dot(error_states & init_state, "uprestar_and_init.dot");
+    spec->dump2dot(error_states & init_state, "uprestar_and_init.dot");
 #endif
 
     // if !includes_init == true, then ~bad_transitions is the set of all
@@ -105,11 +93,76 @@ bool solve(AIG* spec_base) {
     return !includes_init;
 }
 
-bool comp_solve1(AIG* spec_base) {
+bool solve(AIG* spec_base) {
     Cudd mgr(0, 0);
     mgr.AutodynEnable(CUDD_REORDER_SIFT);
     BDDAIG spec(*spec_base, &mgr);
-    std::vector<BDDAIG> subgames = spec.decompose();
+    return internalSolve(&mgr, &spec);
+}
 
-    return false;
+bool compSolve1(AIG* spec_base) {
+    Cudd mgr(0, 0);
+    mgr.AutodynEnable(CUDD_REORDER_SIFT);
+    BDDAIG spec(*spec_base, &mgr);
+    std::vector<BDDAIG*> subgames = spec.decompose();
+    if (subgames.size() == 0) return internalSolve(&mgr, &spec);
+
+    // Let us aggregate the losing region
+    BDD losing_states = spec.errorStates();
+    BDD losing_transitions = ~mgr.bddOne();
+    for (std::vector<BDDAIG*>::iterator i = subgames.begin();
+         i != subgames.end(); i++) {
+        dbgMsg("Solving a subgame");
+        bool includes_init = false;
+        unsigned cnt = 0;
+        BDD bad_transitions;
+        BDD init_state = (*i)->initState();
+        BDD error_states = (*i)->errorStates();
+        BDD prev_error = ~mgr.bddOne();
+            includes_init = ((init_state & error_states) != ~mgr.bddOne());
+        while (!includes_init && error_states != prev_error) {
+            prev_error = error_states;
+            error_states = prev_error | upre(&spec, prev_error, bad_transitions);
+            includes_init = ((init_state & error_states) != ~mgr.bddOne());
+            cnt++;
+        }
+        
+        dbgMsg("Early exit? " + std::to_string(includes_init) + 
+               ", after " + std::to_string(cnt) + " iterations.");
+        if (includes_init) {
+            return false;
+        }
+        else {
+            // we aggregate the losing states and transitions
+            losing_states |= error_states;
+            losing_transitions |= bad_transitions;
+        }
+        // we have to release the memory used for the caches and stuff
+        delete (*i);
+    }
+
+    // we now solve the aggregated game
+    dbgMsg("Solving the aggregated game");
+    BDDAIG aggregated_game(spec, losing_transitions);
+    dbgMsg("Computing fixpoint of UPRE.");
+    bool includes_init = false;
+    unsigned cnt = 0;
+    BDD bad_transitions;
+    BDD init_state = aggregated_game.initState();
+    BDD error_states = aggregated_game.errorStates();
+    BDD prev_error = ~mgr.bddOne();
+        includes_init = ((init_state & error_states) != ~mgr.bddOne());
+    while (!includes_init && error_states != prev_error) {
+        prev_error = error_states;
+        error_states = prev_error | upre(&aggregated_game, prev_error, bad_transitions);
+        includes_init = ((init_state & error_states) != ~mgr.bddOne());
+        cnt++;
+    }
+    
+    dbgMsg("Early exit? " + std::to_string(includes_init) + 
+           ", after " + std::to_string(cnt) + " iterations.");
+
+    // if !includes_init == true, then ~bad_transitions is the set of all
+    // good transitions for controller (Eve)
+    return !includes_init;
 }
