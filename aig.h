@@ -52,9 +52,9 @@ class AIG {
                           std::vector<unsigned>*);
         void getLitDepsRecur(unsigned, std::set<unsigned>&,
                              std::unordered_set<unsigned>*);
-        std::set<unsigned> getLitDeps(unsigned);
 
     public:
+        std::set<unsigned> getLitDeps(unsigned);
         static unsigned negateLit(unsigned lit) { return lit ^ 1; }
         static bool litIsNegated(unsigned lit) { return (lit & 1) == 1; }
         static unsigned stripLit(unsigned lit) { return lit & ~1; }

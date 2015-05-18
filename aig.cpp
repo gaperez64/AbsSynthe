@@ -162,14 +162,6 @@ void AIG::getLitDepsRecur(unsigned lit, std::set<unsigned> &result,
     visited->insert(lit);
     visited->insert(AIG::negateLit(lit));
     
-    // check cache
-    std::unordered_map<unsigned, std::set<unsigned>>::iterator cache_hit =
-        this->lit2deps_map->find(stripped_lit);
-    if (cache_hit != this->lit2deps_map->end()) {
-        result.insert(cache_hit->second.begin(), cache_hit->second.end());
-        return;
-    }
-
     if (stripped_lit != 0) {
         aiger_and* and_gate = aiger_is_and(this->spec, stripped_lit);
         // is it a gate? then recurse
@@ -190,22 +182,32 @@ void AIG::getLitDepsRecur(unsigned lit, std::set<unsigned> &result,
                 // we are sure that we have a latch here, we have to recurse
                 // on latch.next
                 if (visited->find(symbol->next) == visited->end()) {
-                    dbgMsg("Recursing on latch " + std::to_string(symbol->lit));
+                    //dbgMsg("Recursing on latch " + std::to_string(symbol->lit));
                     this->getLitDepsRecur(symbol->next, result, visited);
                 }
             }
             result.insert(stripped_lit);
         }
     }
-    
-    // cache the result
-    (*this->lit2deps_map)[stripped_lit] = result;
 }
 
 std::set<unsigned> AIG::getLitDeps(unsigned lit) {
-    std::unordered_set<unsigned> visited;
     std::set<unsigned> deps;
+
+    // check cache
+    std::unordered_map<unsigned, std::set<unsigned>>::iterator cache_hit =
+        this->lit2deps_map->find(lit);
+    if (cache_hit != this->lit2deps_map->end()) {
+        deps.insert(cache_hit->second.begin(), cache_hit->second.end());
+        return deps;
+    }
+
+    std::unordered_set<unsigned> visited;
     this->getLitDepsRecur(lit, deps, &visited);
+    
+    // cache the result
+    (*this->lit2deps_map)[lit] = deps;
+
     return deps;
 }
 
@@ -471,14 +473,14 @@ std::vector<BDD> BDDAIG::nextFunComposeVec() {
                 if (i == this->error_fake_latch->lit &&
                     this->short_error != NULL) {
                     next_fun = *this->short_error; // lit2bdd_map[(*i)->next] | *this->short_error;
-                    dbgMsg("Latch " + std::to_string(i) + " is the error latch");
+                    //dbgMsg("Latch " + std::to_string(i) + " is the error latch");
                 } else if (this->short_error != NULL) { // simplify functions
                     next_fun = safeRestrict(lit2bdd_map[(*latch_it)->next],
                                             ~(*this->short_error));
-                    dbgMsg("Restricting next function of latch " + std::to_string(i));
+                    //dbgMsg("Restricting next function of latch " + std::to_string(i));
                 } else {
                     next_fun = lit2bdd_map[(*latch_it)->next];
-                    dbgMsg("Taking the next function of latch " + std::to_string(i));
+                    //dbgMsg("Taking the next function of latch " + std::to_string(i));
                 }
 #ifndef NDEBUG
                 this->dump2dot(next_fun, "next_fun.dot");
@@ -490,6 +492,7 @@ std::vector<BDD> BDDAIG::nextFunComposeVec() {
                 this->next_fun_compose_vec->push_back(this->mgr->bddVar(i));
             }
         }
+        dbgMsg("done with the next_fun_compose_vec");
     }
     return *this->next_fun_compose_vec;
 }
@@ -539,43 +542,23 @@ BDD BDDAIG::transRelBdd() {
 }
 
 std::set<unsigned> BDDAIG::getBddDeps(BDD b) {
-    dbgMsg("Computing the deps of a BDD");
     std::set<unsigned> one_step_deps = this->semanticDeps(b);
     std::vector<unsigned> latch_next_to_explore;
-    std::string litstr;
     for (std::set<unsigned>::iterator i = one_step_deps.begin();
          i != one_step_deps.end(); i++) {
-        litstr += std::to_string(*i) + ", ";
         aiger_symbol* symbol = aiger_is_latch(this->spec, *i);
         if (symbol) {
             latch_next_to_explore.push_back(symbol->next);
-            dbgMsg("We still have to explore the next of latch " +
-                   std::to_string(symbol->lit) + " with next fun " +
-                   std::to_string(symbol->next));
         }
     }
-    dbgMsg("Vars in BDD: " + litstr);
-
     // once we have all latch deps in one step, we can call getLitDeps (which
     // is completely recursive) and get the full set
     std::set<unsigned> result = one_step_deps;
     for (std::vector<unsigned>::iterator i = latch_next_to_explore.begin();
          i != latch_next_to_explore.end(); i++) {
         std::set<unsigned> lit_deps = this->getLitDeps(*i);
-#ifndef NDEBUG
-        std::string litstr;
-        for (std::set<unsigned>::iterator j = lit_deps.begin(); j != lit_deps.end();
-             j++) {
-            litstr += std::to_string(*j) + ", ";
-        }
-        dbgMsg("Deps of next fun " + std::to_string(*i) + ": " + litstr);
-#endif
         result.insert(lit_deps.begin(), lit_deps.end());
     }
-    litstr.clear();
-    for (std::set<unsigned>::iterator i = result.begin(); i != result.end(); i++)
-        litstr += std::to_string(*i) + ", ";
-    dbgMsg("Final result deps :" + litstr);
     return result;
 }
 
