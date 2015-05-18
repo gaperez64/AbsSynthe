@@ -43,7 +43,7 @@ static struct option long_options[] = {
     {"help", no_argument, NULL, 'h'},
     {"comp_algo", required_argument, NULL, 'c'},
     {"out_file", required_argument, NULL, 'o'},
-    {0, 0, 0, 0}
+    {NULL, 0, NULL, 0}
 };
 
 void usage() {
@@ -74,7 +74,6 @@ void usage() {
 << "                                   be used. The argument is ignored if spec"
 << std::endl
 << "                                   is not realizable." << std::endl;
-    exit(1);
 }
 
 void parse_arguments(int argc, char** argv) {
@@ -97,6 +96,7 @@ void parse_arguments(int argc, char** argv) {
                 break;
             case 'h':
                 usage();
+                exit(0);
             case 'v':
                 parseLogLevelString(optarg);
                 break;
@@ -108,16 +108,17 @@ void parse_arguments(int argc, char** argv) {
                 settings.comp_algo = atoi(optarg);
                 if (settings.comp_algo < 1 || settings.comp_algo > 3) {
                     errMsg(std::string("Expected comp_algo to be in {1,2,3} "
-                                       "instead of") + optarg);
+                                       "instead of ") + optarg);
                     usage();
+                    exit(1);
                 }
                 break;
             case 'o':
                 logMsg(optarg);
                 break;
             default:
-                errMsg(std::string() + "Unknown option " + optarg);
                 usage();
+                exit(1);
         }
     }
     argc -= optind;

@@ -104,6 +104,9 @@ class BDDAIG : public AIG {
         std::set<unsigned> getBddDeps(BDD);
         std::vector<BDD> nextFunComposeVec();
         std::vector<BDDAIG*> decompose();
+        bool isSubGameOf(BDDAIG*);
+        bool isValidLatchBdd(BDD);
+        bool isValidBdd(BDD);
 };
 
 #endif

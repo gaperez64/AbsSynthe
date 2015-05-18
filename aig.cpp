@@ -43,6 +43,7 @@
 
 static BDD safeRestrict(BDD original, BDD rest_region) {
     BDD approx = original.Restrict(rest_region);
+    assert((approx & rest_region) == (original & rest_region));
     if (approx.nodeCount() < original.nodeCount())
         return approx;
     else
@@ -114,20 +115,17 @@ AIG::AIG(const char* aiger_file_name, bool intro_error_latch) {
     for (std::vector<aiger_symbol*>::iterator i = this->latches.begin();
          i != this->latches.end(); i++)
         litstring += std::to_string((*i)->lit) + ", ";
-    dbgMsg(std::string() + std::to_string(this->latches.size()) + " Latches: " +
-           litstring);
+    dbgMsg(std::to_string(this->latches.size()) + " Latches: " + litstring);
     litstring.clear();
     for (std::vector<aiger_symbol*>::iterator i = this->c_inputs.begin();
          i != this->c_inputs.end(); i++)
         litstring += std::to_string((*i)->lit) + ", ";
-    dbgMsg(std::string() + std::to_string(this->c_inputs.size()) + " C.Inputs: " +
-           litstring);
+    dbgMsg(std::to_string(this->c_inputs.size()) + " C.Inputs: " + litstring);
     litstring.clear();
     for (std::vector<aiger_symbol*>::iterator i = this->u_inputs.begin();
          i != this->u_inputs.end(); i++)
         litstring += std::to_string((*i)->lit) + ", ";
-    dbgMsg(std::string() + std::to_string(this->u_inputs.size()) + " U.Inputs: " +
-           litstring);
+    dbgMsg(std::to_string(this->u_inputs.size()) + " U.Inputs: " + litstring);
 #endif
 }
 
@@ -176,7 +174,6 @@ void AIG::getLitDepsRecur(unsigned lit, std::set<unsigned> &result,
         aiger_and* and_gate = aiger_is_and(this->spec, stripped_lit);
         // is it a gate? then recurse
         if (and_gate) {
-            std::set<unsigned> temp;
             if (visited->find(and_gate->rhs0) == visited->end()) {
                 this->getLitDepsRecur(and_gate->rhs0, result, visited);
             }
@@ -193,7 +190,7 @@ void AIG::getLitDepsRecur(unsigned lit, std::set<unsigned> &result,
                 // we are sure that we have a latch here, we have to recurse
                 // on latch.next
                 if (visited->find(symbol->next) == visited->end()) {
-                    std::set<unsigned> temp;
+                    dbgMsg("Recursing on latch " + std::to_string(symbol->lit));
                     this->getLitDepsRecur(symbol->next, result, visited);
                 }
             }
@@ -360,6 +357,7 @@ BDD BDDAIG::initState() {
 #ifndef NDEBUG
     this->dump2dot(result, "init_state.dot");
 #endif
+    assert(this->isValidLatchBdd(result));
     return result;
 }
 
@@ -368,6 +366,7 @@ BDD BDDAIG::errorStates() {
 #ifndef NDEBUG
     this->dump2dot(result, "error_states.dot");
 #endif
+    assert(this->isValidLatchBdd(result));
     return result;
 }
 
@@ -453,6 +452,7 @@ BDD BDDAIG::lit2bdd(unsigned lit, std::unordered_map<unsigned, BDD>* cache=NULL)
 
 std::vector<BDD> BDDAIG::nextFunComposeVec() {
     if (this->next_fun_compose_vec == NULL) {
+        dbgMsg("building and caching next_fun_compose_vec");
         this->next_fun_compose_vec = new std::vector<BDD>();
         // get the right bdd for the next fun of every latch
         std::unordered_map<unsigned, BDD> lit2bdd_map;
@@ -467,18 +467,24 @@ std::vector<BDD> BDDAIG::nextFunComposeVec() {
         for (unsigned i = 0; ((int) i) < this->mgr->ReadSize(); i++) {
             if (latch_it != this->latches.end() && i == (*latch_it)->lit) {
                 // since we allow for short_error to override the next fun...
+                BDD next_fun;
                 if (i == this->error_fake_latch->lit &&
                     this->short_error != NULL) {
-                    BDD error_next_fun = *this->short_error; // lit2bdd_map[(*i)->next] | *this->short_error;
-                    this->next_fun_compose_vec->push_back(error_next_fun);
+                    next_fun = *this->short_error; // lit2bdd_map[(*i)->next] | *this->short_error;
+                    dbgMsg("Latch " + std::to_string(i) + " is the error latch");
                 } else if (this->short_error != NULL) { // simplify functions
-                    this->next_fun_compose_vec->push_back(
-                        safeRestrict(lit2bdd_map[(*latch_it)->next],
-                                     ~(*this->short_error)));
+                    next_fun = safeRestrict(lit2bdd_map[(*latch_it)->next],
+                                            ~(*this->short_error));
+                    dbgMsg("Restricting next function of latch " + std::to_string(i));
                 } else {
-                    this->next_fun_compose_vec->push_back(
-                        lit2bdd_map[(*latch_it)->next]);
+                    next_fun = lit2bdd_map[(*latch_it)->next];
+                    dbgMsg("Taking the next function of latch " + std::to_string(i));
                 }
+#ifndef NDEBUG
+                this->dump2dot(next_fun, "next_fun.dot");
+#endif
+                assert(this->isValidBdd(next_fun));
+                this->next_fun_compose_vec->push_back(next_fun);
                 latch_it++;
             } else {
                 this->next_fun_compose_vec->push_back(this->mgr->bddVar(i));
@@ -533,15 +539,22 @@ BDD BDDAIG::transRelBdd() {
 }
 
 std::set<unsigned> BDDAIG::getBddDeps(BDD b) {
+    dbgMsg("Computing the deps of a BDD");
     std::set<unsigned> one_step_deps = this->semanticDeps(b);
     std::vector<unsigned> latch_next_to_explore;
+    std::string litstr;
     for (std::set<unsigned>::iterator i = one_step_deps.begin();
          i != one_step_deps.end(); i++) {
+        litstr += std::to_string(*i) + ", ";
         aiger_symbol* symbol = aiger_is_latch(this->spec, *i);
         if (symbol) {
             latch_next_to_explore.push_back(symbol->next);
+            dbgMsg("We still have to explore the next of latch " +
+                   std::to_string(symbol->lit) + " with next fun " +
+                   std::to_string(symbol->next));
         }
     }
+    dbgMsg("Vars in BDD: " + litstr);
 
     // once we have all latch deps in one step, we can call getLitDeps (which
     // is completely recursive) and get the full set
@@ -549,14 +562,33 @@ std::set<unsigned> BDDAIG::getBddDeps(BDD b) {
     for (std::vector<unsigned>::iterator i = latch_next_to_explore.begin();
          i != latch_next_to_explore.end(); i++) {
         std::set<unsigned> lit_deps = this->getLitDeps(*i);
+#ifndef NDEBUG
+        std::string litstr;
+        for (std::set<unsigned>::iterator j = lit_deps.begin(); j != lit_deps.end();
+             j++) {
+            litstr += std::to_string(*j) + ", ";
+        }
+        dbgMsg("Deps of next fun " + std::to_string(*i) + ": " + litstr);
+#endif
         result.insert(lit_deps.begin(), lit_deps.end());
     }
+    litstr.clear();
+    for (std::set<unsigned>::iterator i = result.begin(); i != result.end(); i++)
+        litstr += std::to_string(*i) + ", ";
+    dbgMsg("Final result deps :" + litstr);
     return result;
 }
 
 std::vector<BDD> BDDAIG::mergeSomeSignals(BDD cube, std::vector<unsigned>* original) {
     logMsg(std::to_string(original->size()) + " sub-games originally");
     std::set<unsigned> cube_deps = this->getBddDeps(cube);
+#ifndef NDEBUG
+        // print some debug information
+        std::string litstring;
+        for (std::set<unsigned>::iterator i = cube_deps.begin(); i != cube_deps.end(); i++)
+            litstring += std::to_string(*i) + ", ";
+        dbgMsg("the cube deps: " + litstring);
+#endif
     std::vector<std::set<unsigned>> dep_vector;
     std::vector<BDD> bdd_vector;
     std::unordered_map<unsigned, BDD> lit2bdd_map;
@@ -567,16 +599,26 @@ std::vector<BDD> BDDAIG::mergeSomeSignals(BDD cube, std::vector<unsigned>* origi
         std::set<unsigned> deps;
         deps.insert(cube_deps.begin(), cube_deps.end());
         deps.insert(lit_deps.begin(), lit_deps.end());
+#if false
+        // print some debug information
+        std::string litstring;
+        for (std::set<unsigned>::iterator i = deps.begin(); i != deps.end(); i++)
+            litstring += std::to_string(*i) + ", ";
+        dbgMsg("the current subgame has in its cone... " + litstring);
+#endif
         std::vector<std::set<unsigned>>::iterator dep_it = dep_vector.begin();
         std::vector<BDD>::iterator bdd_it = bdd_vector.begin();
         bool found = false;
         for (; dep_it != dep_vector.end();) {
             if ((*dep_it) >= deps) {
+                //dbgMsg("this subgame is subsumed by some previous subgame");
                 (*bdd_it) &= this->lit2bdd(*i, &lit2bdd_map);
                 found = true;
                 break;
             } else if ((*dep_it) <= deps) {
+                //dbgMsg("this new subgame subsumes some previous subgame");
                 (*bdd_it) &= this->lit2bdd(*i, &lit2bdd_map);
+                assert((*bdd_it) == ((*bdd_it) & this->lit2bdd(*i, &lit2bdd_map)));
                 // we also update the deps because the new one is bigger
                 (*dep_it) = deps;
             }
@@ -593,24 +635,42 @@ std::vector<BDD> BDDAIG::mergeSomeSignals(BDD cube, std::vector<unsigned>* origi
     logMsg(std::to_string(dep_vector.size()) + " sub-games after incl. red.");
     
     // as a last step, we should take NOT x AND cube, for each bdd
+    std::vector<BDD> bdd_vector_with_cube;
     for (std::vector<BDD>::iterator i = bdd_vector.begin();
-         i != bdd_vector.end(); i++)
-        (*i) = ~(*i) & cube;
+         i != bdd_vector.end(); i++) {
+        bdd_vector_with_cube.push_back(~(*i) & cube);
+    }
 
-    return bdd_vector;
+#ifndef NDEBUG
+    // check the assignement was a success
+    std::vector<BDD>::iterator i = bdd_vector.begin();
+    std::vector<BDD>::iterator j = bdd_vector_with_cube.begin();
+    for (; i != bdd_vector.end();) {
+        assert((*j) == (~(*i) & cube));
+        assert((~(*j) | this->lit2bdd(this->error_fake_latch->next)) == this->mgr->bddOne());
+        i++;
+        j++;
+    }
+#endif
+
+    return bdd_vector_with_cube;
 }
 
 std::set<unsigned> BDDAIG::semanticDeps(BDD b) {
     std::set<unsigned> result;
     std::vector<DdNode*> waiting;
-    waiting.push_back(b.getNode());
+    waiting.push_back(b.getRegularNode());
     while (waiting.size() > 0) {
         DdNode* node = waiting.back();
         waiting.pop_back();
         if (!Cudd_IsConstant(node)) {
             result.insert((unsigned) node->index);
-            waiting.push_back(Cudd_T(node));
-            waiting.push_back(Cudd_E(node));
+            DdNode* child = Cudd_Regular(Cudd_T(node));
+            if (!Cudd_IsConstant(child))
+                waiting.push_back(child);
+            child = Cudd_Regular(Cudd_E(node));
+            if (!Cudd_IsConstant(child))
+                waiting.push_back(child);
         }
     }
     return result;
@@ -668,4 +728,98 @@ std::vector<BDDAIG*> BDDAIG::decompose() {
         }
     }
     return result;
+}
+
+bool BDDAIG::isSubGameOf(BDDAIG* other) {
+    return (this->mgr == other->mgr &&
+            this->short_error != NULL &&
+            (~(*this->short_error) | 
+               other->lit2bdd(other->error_fake_latch->next)) == this->mgr->bddOne());
+}
+
+bool BDDAIG::isValidLatchBdd(BDD b) {
+    std::set<unsigned> vars_in_cone = this->semanticDeps(b);
+    int hits = 0;
+    for (std::vector<aiger_symbol*>::iterator i = this->latches.begin();
+         i != this->latches.end(); i++) {
+        if (vars_in_cone.find((*i)->lit) != vars_in_cone.end())
+            hits++;
+    }
+    if (hits != vars_in_cone.size()) {
+        std::string litstring;
+        for (std::vector<aiger_symbol*>::iterator i = this->latches.begin();
+             i != this->latches.end(); i++)
+            litstring += std::to_string((*i)->lit) + ", ";
+        dbgMsg(std::to_string(this->latches.size()) + " Latches: " + litstring);
+        litstring.clear();
+        for (std::vector<aiger_symbol*>::iterator i = this->c_inputs.begin();
+             i != this->c_inputs.end(); i++)
+            litstring += std::to_string((*i)->lit) + ", ";
+        dbgMsg(std::to_string(this->c_inputs.size()) + " C.Inputs: " + litstring);
+        litstring.clear();
+        for (std::vector<aiger_symbol*>::iterator i = this->u_inputs.begin();
+             i != this->u_inputs.end(); i++)
+            litstring += std::to_string((*i)->lit) + ", ";
+        dbgMsg(std::to_string(this->u_inputs.size()) + " U.Inputs: " + litstring);
+        litstring.clear();
+        for (std::set<unsigned>::iterator i = vars_in_cone.begin();
+             i != vars_in_cone.end(); i++)
+            litstring += std::to_string(*i) + ", ";
+        dbgMsg(std::to_string(vars_in_cone.size()) + " Vars in cone: " + litstring);
+        return false;
+    } else {
+        return true;
+    }
+}
+
+bool BDDAIG::isValidBdd(BDD b) {
+    std::set<unsigned> vars_in_cone = this->semanticDeps(b);
+    int hits = 0;
+    for (std::vector<aiger_symbol*>::iterator i = this->latches.begin();
+         i != this->latches.end(); i++) {
+        if (vars_in_cone.find((*i)->lit) != vars_in_cone.end())
+            hits++;
+    }
+    for (std::vector<aiger_symbol*>::iterator i = this->c_inputs.begin();
+         i != this->c_inputs.end(); i++) {
+        if (vars_in_cone.find((*i)->lit) != vars_in_cone.end())
+            hits++;
+    }
+    for (std::vector<aiger_symbol*>::iterator i = this->u_inputs.begin();
+         i != this->u_inputs.end(); i++) {
+        if (vars_in_cone.find((*i)->lit) != vars_in_cone.end())
+            hits++;
+    }
+    if (hits != vars_in_cone.size()) {
+        std::string litstring;
+        for (std::vector<aiger_symbol*>::iterator i = this->latches.begin();
+             i != this->latches.end(); i++)
+            litstring += std::to_string((*i)->lit) + ", ";
+        dbgMsg(std::to_string(this->latches.size()) + " Latches: " + litstring);
+        litstring.clear();
+        for (std::vector<aiger_symbol*>::iterator i = this->c_inputs.begin();
+             i != this->c_inputs.end(); i++)
+            litstring += std::to_string((*i)->lit) + ", ";
+        dbgMsg(std::to_string(this->c_inputs.size()) + " C.Inputs: " + litstring);
+        litstring.clear();
+        for (std::vector<aiger_symbol*>::iterator i = this->u_inputs.begin();
+             i != this->u_inputs.end(); i++)
+            litstring += std::to_string((*i)->lit) + ", ";
+        dbgMsg(std::to_string(this->u_inputs.size()) + " U.Inputs: " + litstring);
+        litstring.clear();
+        for (std::set<unsigned>::iterator i = vars_in_cone.begin();
+             i != vars_in_cone.end(); i++)
+            litstring += std::to_string(*i) + ", ";
+        dbgMsg(std::to_string(vars_in_cone.size()) + " Vars in bdd: " + litstring);
+        litstring.clear();
+        std::set<unsigned> all_deps = this->getBddDeps(*this->short_error);
+        for (std::set<unsigned>::iterator i = all_deps.begin();
+             i != all_deps.end(); i++)
+            litstring += std::to_string(*i) + ", ";
+        dbgMsg(std::to_string(vars_in_cone.size()) + " Vars in cone: " + litstring);
+        litstring.clear();
+        return false;
+    } else {
+        return true;
+    }
 }

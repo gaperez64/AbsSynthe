@@ -22,6 +22,7 @@
  * gperezme@ulb.ac.be
  *************************************************************************/
 
+#include <assert.h>
 #include <string>
 
 #include "cuddObj.hh"
@@ -73,7 +74,7 @@ static bool internalSolve(Cudd* mgr, BDDAIG* spec) {
     BDD init_state = spec->initState();
     BDD error_states = spec->errorStates();
     BDD prev_error = ~mgr->bddOne();
-        includes_init = ((init_state & error_states) != ~mgr->bddOne());
+    includes_init = ((init_state & error_states) != ~mgr->bddOne());
     while (!includes_init && error_states != prev_error) {
         prev_error = error_states;
         error_states = prev_error | upre(spec, prev_error, bad_transitions);
@@ -112,6 +113,9 @@ bool compSolve1(AIG* spec_base) {
     BDD losing_transitions = ~mgr.bddOne();
     for (std::vector<BDDAIG*>::iterator i = subgames.begin();
          i != subgames.end(); i++) {
+        // we can check that the error function in the sub-game implies the
+        // error function in the global game
+        assert((*i)->isSubGameOf(&spec));
         dbgMsg("Solving a subgame");
         bool includes_init = false;
         unsigned cnt = 0;
@@ -119,10 +123,10 @@ bool compSolve1(AIG* spec_base) {
         BDD init_state = (*i)->initState();
         BDD error_states = (*i)->errorStates();
         BDD prev_error = ~mgr.bddOne();
-            includes_init = ((init_state & error_states) != ~mgr.bddOne());
+        includes_init = ((init_state & error_states) != ~mgr.bddOne());
         while (!includes_init && error_states != prev_error) {
             prev_error = error_states;
-            error_states = prev_error | upre(&spec, prev_error, bad_transitions);
+            error_states = prev_error | upre(*i, prev_error, bad_transitions);
             includes_init = ((init_state & error_states) != ~mgr.bddOne());
             cnt++;
         }
@@ -130,6 +134,10 @@ bool compSolve1(AIG* spec_base) {
         dbgMsg("Early exit? " + std::to_string(includes_init) + 
                ", after " + std::to_string(cnt) + " iterations.");
         if (includes_init) {
+#ifndef NDEBUG
+            (*i)->dump2dot(init_state, "local_init.dot");
+            (*i)->dump2dot(error_states & init_state, "uprestar_and_init.dot");
+#endif
             return false;
         }
         else {
@@ -151,10 +159,11 @@ bool compSolve1(AIG* spec_base) {
     BDD init_state = aggregated_game.initState();
     BDD error_states = aggregated_game.errorStates();
     BDD prev_error = ~mgr.bddOne();
-        includes_init = ((init_state & error_states) != ~mgr.bddOne());
+    includes_init = ((init_state & error_states) != ~mgr.bddOne());
     while (!includes_init && error_states != prev_error) {
         prev_error = error_states;
-        error_states = prev_error | upre(&aggregated_game, prev_error, bad_transitions);
+        error_states = prev_error | upre(&aggregated_game, prev_error,
+                                         bad_transitions);
         includes_init = ((init_state & error_states) != ~mgr.bddOne());
         cnt++;
     }
