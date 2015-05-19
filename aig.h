@@ -52,9 +52,9 @@ class AIG {
                           std::vector<unsigned>*);
         void getLitDepsRecur(unsigned, std::set<unsigned>&,
                              std::unordered_set<unsigned>*);
-
-    public:
         std::set<unsigned> getLitDeps(unsigned);
+        static unsigned primeVar(unsigned lit) { return AIG::stripLit(lit) + 1; }
+    public:
         static unsigned negateLit(unsigned lit) { return lit ^ 1; }
         static bool litIsNegated(unsigned lit) { return (lit & 1) == 1; }
         static unsigned stripLit(unsigned lit) { return lit & ~1; }
@@ -64,6 +64,12 @@ class AIG {
         ~AIG();
         void cleanCaches();
         unsigned maxVar();
+        void addGate(unsigned, unsigned, unsigned);
+        void input2gate(unsigned, unsigned);
+        void writeToFile(const char*);
+        std::vector<aiger_symbol*> getLatches() { return this->latches; }
+        std::vector<aiger_symbol*> getCInputs() { return this->c_inputs; }
+
     /*
     void input2and(aiger_symbol*, aiger_symbol*);
     void writeSpec();
@@ -87,9 +93,11 @@ class BDDAIG : public AIG {
         BDD lit2bdd(unsigned, std::unordered_map<unsigned, BDD>*);
         std::vector<BDD> mergeSomeSignals(BDD, std::vector<unsigned>*);
         std::set<unsigned> semanticDeps(BDD);
-
+        bool isValidLatchBdd(BDD);
+        bool isValidBdd(BDD);
     public:
-        static unsigned primeVar(unsigned lit) { return AIG::stripLit(lit) + 1; }
+        static BDD safeRestrict(BDD, BDD);
+        
         BDDAIG(const AIG&, Cudd*);
         BDDAIG(const BDDAIG&, BDD);
         ~BDDAIG();
@@ -104,9 +112,6 @@ class BDDAIG : public AIG {
         std::set<unsigned> getBddDeps(BDD);
         std::vector<BDD> nextFunComposeVec();
         std::vector<BDDAIG*> decompose();
-        bool isSubGameOf(BDDAIG*);
-        bool isValidLatchBdd(BDD);
-        bool isValidBdd(BDD);
 };
 
 #endif

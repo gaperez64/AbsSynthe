@@ -114,7 +114,7 @@ void parse_arguments(int argc, char** argv) {
                 }
                 break;
             case 'o':
-                logMsg(optarg);
+                settings.out_file = optarg;
                 break;
             default:
                 usage();
@@ -150,5 +150,6 @@ int main (int argc, char** argv) {
         result = solve(&aig);
     }
     // return the realizability test result
+    logMsg("Realizable? " + std::to_string(result));
     exit(result ? EXIT_STATUS_REALIZABLE : EXIT_STATUS_UNREALIZABLE);
 }

@@ -31,6 +31,133 @@
 #include "logging.h"
 #include "aig.h"
 
+static unsigned optimizedGate(AIG* spec, unsigned a_lit, unsigned b_lit) {
+    if (a_lit == 0 || b_lit == 0)
+        return 0;
+    if (a_lit == 1 && b_lit == 1)
+        return 1;
+    if (a_lit == 1)
+        return b_lit;
+    if (b_lit == 1)
+        return a_lit;
+    assert(a_lit > 1 && b_lit > 1);
+    unsigned a_and_b_lit = (spec->maxVar() + 1) * 2;
+    spec->addGate(a_and_b_lit, a_lit, b_lit);
+    return a_and_b_lit;
+}
+
+/* I'm going to play a dangerous game here...
+ * Since Cudd keeps a unique table with DdNodes that are currently referrenced
+ * and the BDD class is in fact a wrapper for a pointer to such a node, I will
+ * cache the actual address of the Nodes with their corresponding aig
+ */
+static unsigned bdd2aig(Cudd* mgr, BDDAIG* spec, BDD a_bdd, 
+                        std::unordered_map<unsigned long, unsigned>* cache) {
+    std::unordered_map<unsigned long, unsigned>::iterator cache_hit =
+        cache->find((unsigned long) a_bdd.getRegularNode());
+    if (cache_hit != cache->end()) {
+        unsigned res = (*cache_hit).second;
+        if (Cudd_IsComplement(a_bdd.getNode()))
+            res = AIG::negateLit(res);
+        return res;
+    }
+
+    if (Cudd_IsConstant(a_bdd.getNode()))
+        return (a_bdd == mgr->bddOne()) ? 1 : 0;
+
+    unsigned a_lit = a_bdd.NodeReadIndex();
+
+    BDD then_bdd(*mgr, Cudd_T(a_bdd.getNode()));
+    BDD else_bdd(*mgr, Cudd_E(a_bdd.getNode()));
+    /* We are performing the following operation
+     *
+     * ite(a_bdd, then_bdd, else_bdd)
+     * = a^then v ~a^else
+     * = ~(~(a^then) ^ ~(~a^else))
+     *
+     * so we need 3 more ANDs
+     */
+    unsigned then_lit = bdd2aig(mgr, spec, then_bdd, cache);
+    unsigned else_lit = bdd2aig(mgr, spec, else_bdd, cache);
+    unsigned a_then_lit = optimizedGate(spec, a_lit, then_lit);
+    unsigned na_else_lit = optimizedGate(spec, AIG::negateLit(a_lit), else_lit);
+    unsigned n_a_then_lit = AIG::negateLit(a_then_lit);
+    unsigned n_na_else_lit = AIG::negateLit(na_else_lit);
+    unsigned ite_lit = optimizedGate(spec, n_a_then_lit, n_na_else_lit);
+    unsigned res = AIG::negateLit(ite_lit);
+
+    (*cache)[(unsigned long) a_bdd.getRegularNode()] = res;
+
+    if (Cudd_IsComplement(a_bdd.getNode()))
+        res = AIG::negateLit(res);
+
+    return res;
+}
+
+static void synthAlgo(Cudd* mgr, BDDAIG* spec, BDD non_det_strategy,
+                      BDD* ext_care_set=NULL) {
+    BDD care_set;
+    if (ext_care_set == NULL)
+        care_set = mgr->bddOne();
+    else
+        care_set = *ext_care_set;
+
+    BDD strategy = non_det_strategy;
+    std::vector<aiger_symbol*> c_inputs = spec->getCInputs();
+    std::vector<unsigned> c_input_lits;
+    std::vector<BDD> c_input_funs;
+
+    // as a first step, we compute a single bdd per controllable input
+    for (std::vector<aiger_symbol*>::iterator i = c_inputs.begin();
+         i != c_inputs.end(); i++) {
+        BDD c = mgr->bddVar((*i)->lit);
+        BDD others_cube = mgr->bddOne();
+        for (std::vector<aiger_symbol*>::iterator j = c_inputs.begin();
+             j != c_inputs.end(); j++) {
+            if ((*i)->lit == (*j)->lit)
+                continue;
+            others_cube &= mgr->bddVar((*j)->lit);
+        }
+        BDD c_arena = strategy.ExistAbstract(others_cube);
+        // pairs (x,u) in which c can be true
+        BDD can_be_true = c_arena.Cofactor(c);
+        // pairs (x,u) in which c can be false
+        BDD can_be_false = c_arena.Cofactor(~c);
+        BDD must_be_true = (~can_be_false) & can_be_true;
+        BDD must_be_false = (~can_be_true) & can_be_false;
+        BDD local_care_set = care_set & (must_be_true | must_be_false);
+        // on care set: must_be_true.restrict(care_set) <-> must_be_true
+        // or         ~(must_be_false).restrict(care_set) <-> ~must_be_false
+        BDD opt1 = BDDAIG::safeRestrict(must_be_true, local_care_set);
+        BDD opt2 = BDDAIG::safeRestrict(~must_be_false, local_care_set);
+        BDD res;
+        if (opt1.nodeCount() < opt2.nodeCount())
+            res = opt1;
+        else
+            res = opt2;
+        dbgMsg("Size of function for " + std::to_string(c.NodeReadIndex()) + " = " +
+               std::to_string(res.nodeCount()));
+        strategy &= (~c | res) & (~res | c);
+        c_input_funs.push_back(res);
+        c_input_lits.push_back((*i)->lit);
+    }
+    
+    // we now get rid of all controllable inputs in the aig spec by replacing
+    // each one with an and computed using bdd2aig...
+    // NOTE: because of the way bdd2aig is implemented, we must ensure that BDDs are
+    // no longer operated on after this point!
+    std::unordered_map<unsigned long, unsigned> cache;
+    std::vector<unsigned>::iterator i = c_input_lits.begin();
+    std::vector<BDD>::iterator j = c_input_funs.begin();
+    for (; i != c_input_lits.end();) {
+        spec->input2gate(*i, bdd2aig(mgr, spec, *j, &cache));
+        i++;
+        j++;
+    }
+    // Finally, we write the modified spec to file
+    spec->writeToFile(settings.out_file);
+}
+
 static BDD substituteLatchesNext(BDDAIG* spec, BDD dst) {
     BDD result;
     if (settings.use_trans) {
@@ -91,6 +218,8 @@ static bool internalSolve(Cudd* mgr, BDDAIG* spec) {
 
     // if !includes_init == true, then ~bad_transitions is the set of all
     // good transitions for controller (Eve)
+    if (!includes_init && settings.out_file != NULL)
+        synthAlgo(mgr, spec, ~bad_transitions);
     return !includes_init;
 }
 
@@ -113,9 +242,6 @@ bool compSolve1(AIG* spec_base) {
     BDD losing_transitions = ~mgr.bddOne();
     for (std::vector<BDDAIG*>::iterator i = subgames.begin();
          i != subgames.end(); i++) {
-        // we can check that the error function in the sub-game implies the
-        // error function in the global game
-        assert((*i)->isSubGameOf(&spec));
         dbgMsg("Solving a subgame");
         bool includes_init = false;
         unsigned cnt = 0;
@@ -173,5 +299,7 @@ bool compSolve1(AIG* spec_base) {
 
     // if !includes_init == true, then ~bad_transitions is the set of all
     // good transitions for controller (Eve)
+    if (!includes_init && settings.out_file != NULL)
+        synthAlgo(&mgr, &spec, ~bad_transitions);
     return !includes_init;
 }

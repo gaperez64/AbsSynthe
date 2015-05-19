@@ -41,17 +41,21 @@
 #include "aig.h"
 #include "logging.h"
 
-static BDD safeRestrict(BDD original, BDD rest_region) {
-    BDD approx = original.Restrict(rest_region);
-    assert((approx & rest_region) == (original & rest_region));
-    if (approx.nodeCount() < original.nodeCount())
-        return approx;
-    else
-        return original;
-}
-
 unsigned AIG::maxVar() {
     return this->spec->maxvar;
+}
+
+void AIG::writeToFile(const char* aiger_file_name) {
+    aiger_open_and_write_to_file(this->spec, aiger_file_name);
+}
+
+void AIG::addGate(unsigned res, unsigned rh0, unsigned rh1) {
+    aiger_add_and(this->spec, res, rh0, rh1);
+}
+
+void AIG::input2gate(unsigned input, unsigned rh0) {
+    aiger_redefine_input_as_and(this->spec, input, rh0, rh0);
+    dbgMsg("Gated input " + std::to_string(input));
 }
 
 void AIG::introduceErrorLatch() {
@@ -265,6 +269,16 @@ void AIG::getNInputAnd(unsigned lit, std::vector<unsigned>* A,
     (*this->lit2ninputand_map)[lit] = std::make_pair(*A, *B);
 }
 
+BDD BDDAIG::safeRestrict(BDD original, BDD rest_region) {
+    BDD approx = original.Restrict(rest_region);
+    assert((approx & rest_region) == (original & rest_region));
+    if (approx.nodeCount() < original.nodeCount())
+        return approx;
+    else
+        return original;
+}
+
+
 BDDAIG::BDDAIG(const AIG &base, Cudd* local_mgr) : AIG(base) {
     this->mgr = local_mgr;
     this->primed_latch_cube = NULL;
@@ -377,7 +391,7 @@ BDD BDDAIG::primeLatchesInBdd(BDD original) {
     for (std::vector<aiger_symbol*>::iterator i = this->latches.begin();
          i != this->latches.end(); i++) {
         latch_bdds.push_back(this->mgr->bddVar((*i)->lit));
-        primed_latch_bdds.push_back(this->mgr->bddVar(BDDAIG::primeVar((*i)->lit)));
+        primed_latch_bdds.push_back(this->mgr->bddVar(AIG::primeVar((*i)->lit)));
     }
     BDD result = original.SwapVariables(latch_bdds, primed_latch_bdds);
     return result;
@@ -388,7 +402,7 @@ BDD BDDAIG::primedLatchCube() {
         BDD result = this->mgr->bddOne();
         for (std::vector<aiger_symbol*>::iterator i = this->latches.begin();
              i != this->latches.end(); i++)
-            result &= this->mgr->bddVar(BDDAIG::primeVar((*i)->lit));
+            result &= this->mgr->bddVar(AIG::primeVar((*i)->lit));
         this->primed_latch_cube = new BDD(result);
     }
     return BDD(*this->primed_latch_cube);
@@ -475,8 +489,8 @@ std::vector<BDD> BDDAIG::nextFunComposeVec() {
                     next_fun = *this->short_error; // lit2bdd_map[(*i)->next] | *this->short_error;
                     //dbgMsg("Latch " + std::to_string(i) + " is the error latch");
                 } else if (this->short_error != NULL) { // simplify functions
-                    next_fun = safeRestrict(lit2bdd_map[(*latch_it)->next],
-                                            ~(*this->short_error));
+                    next_fun = BDDAIG::safeRestrict(lit2bdd_map[(*latch_it)->next],
+                                                    ~(*this->short_error));
                     //dbgMsg("Restricting next function of latch " + std::to_string(i));
                 } else {
                     next_fun = lit2bdd_map[(*latch_it)->next];
@@ -515,21 +529,21 @@ BDD BDDAIG::transRelBdd() {
             if ((*i)->lit == this->error_fake_latch->lit &&
                 this->short_error != NULL) {
                 BDD error_next_fun = *this->short_error; // lit2bdd_map[(*i)->next] | *this->short_error;
-                result &= (~this->mgr->bddVar(BDDAIG::primeVar((*i)->lit)) |
+                result &= (~this->mgr->bddVar(AIG::primeVar((*i)->lit)) |
                            error_next_fun) &
-                          (this->mgr->bddVar(BDDAIG::primeVar((*i)->lit)) |
+                          (this->mgr->bddVar(AIG::primeVar((*i)->lit)) |
                            ~error_next_fun);
             } else if (this->short_error != NULL) { // simplify functions
-                BDD fun = safeRestrict(lit2bdd_map[(*i)->next],
-                                       ~(*this->short_error));
-                result &= (~this->mgr->bddVar(BDDAIG::primeVar((*i)->lit)) |
+                BDD fun = BDDAIG::safeRestrict(lit2bdd_map[(*i)->next],
+                                               ~(*this->short_error));
+                result &= (~this->mgr->bddVar(AIG::primeVar((*i)->lit)) |
                            fun) &
-                          (this->mgr->bddVar(BDDAIG::primeVar((*i)->lit)) |
+                          (this->mgr->bddVar(AIG::primeVar((*i)->lit)) |
                            ~fun);
             } else {
-                result &= (~this->mgr->bddVar(BDDAIG::primeVar((*i)->lit)) |
+                result &= (~this->mgr->bddVar(AIG::primeVar((*i)->lit)) |
                            lit2bdd_map[(*i)->next]) &
-                          (this->mgr->bddVar(BDDAIG::primeVar((*i)->lit)) |
+                          (this->mgr->bddVar(AIG::primeVar((*i)->lit)) |
                            ~lit2bdd_map[(*i)->next]);
             }
         }
@@ -713,14 +727,8 @@ std::vector<BDDAIG*> BDDAIG::decompose() {
     return result;
 }
 
-bool BDDAIG::isSubGameOf(BDDAIG* other) {
-    return (this->mgr == other->mgr &&
-            this->short_error != NULL &&
-            (~(*this->short_error) | 
-               other->lit2bdd(other->error_fake_latch->next)) == this->mgr->bddOne());
-}
-
 bool BDDAIG::isValidLatchBdd(BDD b) {
+#ifndef NDEBUG
     std::set<unsigned> vars_in_cone = this->semanticDeps(b);
     int hits = 0;
     for (std::vector<aiger_symbol*>::iterator i = this->latches.begin();
@@ -753,9 +761,13 @@ bool BDDAIG::isValidLatchBdd(BDD b) {
     } else {
         return true;
     }
+#else
+    return true;
+#endif
 }
 
 bool BDDAIG::isValidBdd(BDD b) {
+#ifndef NDEBUG
     std::set<unsigned> vars_in_cone = this->semanticDeps(b);
     int hits = 0;
     for (std::vector<aiger_symbol*>::iterator i = this->latches.begin();
@@ -805,4 +817,7 @@ bool BDDAIG::isValidBdd(BDD b) {
     } else {
         return true;
     }
+#else
+    return true;
+#endif
 }
