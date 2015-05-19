@@ -64,7 +64,10 @@ class AIG {
         ~AIG();
         void cleanCaches();
         unsigned maxVar();
+				unsigned numLatches();
     /*
+	return latches.size();
+}
     void input2and(aiger_symbol*, aiger_symbol*);
     void writeSpec();
     aiger_symbol* const getErrSymbol();

@@ -265,6 +265,9 @@ void AIG::getNInputAnd(unsigned lit, std::vector<unsigned>* A,
     (*this->lit2ninputand_map)[lit] = std::make_pair(*A, *B);
 }
 
+unsigned AIG::numLatches(){
+	return latches.size();
+}
 BDDAIG::BDDAIG(const AIG &base, Cudd* local_mgr) : AIG(base) {
     this->mgr = local_mgr;
     this->primed_latch_cube = NULL;
@@ -578,28 +581,33 @@ std::vector<BDD> BDDAIG::mergeSomeSignals(BDD cube, std::vector<unsigned>* origi
 
     for (std::vector<unsigned>::iterator i = original->begin();
          i != original->end(); i++) {
+        dbgMsg("Processing subgame...");
         std::set<unsigned> lit_deps = this->getLitDeps(*i);
         std::set<unsigned> deps;
         deps.insert(cube_deps.begin(), cube_deps.end());
         deps.insert(lit_deps.begin(), lit_deps.end());
-#if false
+#if true
         // print some debug information
         std::string litstring;
-        for (std::set<unsigned>::iterator i = deps.begin(); i != deps.end(); i++)
-            litstring += std::to_string(*i) + ", ";
+        for (std::set<unsigned>::iterator j = deps.begin(); j != deps.end(); j++)
+            litstring += std::to_string(*j) + ", ";
         dbgMsg("the current subgame has in its cone... " + litstring);
 #endif
+        dbgMsg("We will compare with " + std::to_string(dep_vector.size()) + " previous subgames");
         std::vector<std::set<unsigned>>::iterator dep_it = dep_vector.begin();
         std::vector<BDD>::iterator bdd_it = bdd_vector.begin();
         bool found = false;
         for (; dep_it != dep_vector.end();) {
             if ((*dep_it) >= deps) {
-                //dbgMsg("this subgame is subsumed by some previous subgame");
+                std::string litstring;
+                for (std::set<unsigned>::iterator j = dep_it->begin(); j != dep_it->end(); j++)
+                    litstring += std::to_string(*j) + ", ";
+                dbgMsg("subsumed by previous subgame: " + litstring);
                 (*bdd_it) &= this->lit2bdd(*i, &lit2bdd_map);
                 found = true;
                 break;
             } else if ((*dep_it) <= deps) {
-                //dbgMsg("this new subgame subsumes some previous subgame");
+                dbgMsg("this new subgame subsumes some previous subgame");
                 (*bdd_it) &= this->lit2bdd(*i, &lit2bdd_map);
                 assert((*bdd_it) == ((*bdd_it) & this->lit2bdd(*i, &lit2bdd_map)));
                 // we also update the deps because the new one is bigger
@@ -609,6 +617,7 @@ std::vector<BDD> BDDAIG::mergeSomeSignals(BDD cube, std::vector<unsigned>* origi
             bdd_it++;
         }
         if (!found) {
+            dbgMsg("Adding new");
             dep_vector.push_back(deps);
             bdd_vector.push_back(this->lit2bdd(*i, &lit2bdd_map));
         }

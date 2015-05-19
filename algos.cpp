@@ -24,7 +24,7 @@
 
 #include <assert.h>
 #include <string>
-
+#include <algorithm>
 #include "cuddObj.hh"
 
 #include "abssynthe.h"
@@ -102,12 +102,17 @@ bool solve(AIG* spec_base) {
 }
 
 bool compSolve1(AIG* spec_base) {
+		bool latchless = false;
     Cudd mgr(0, 0);
     mgr.AutodynEnable(CUDD_REORDER_SIFT);
     BDDAIG spec(*spec_base, &mgr);
     std::vector<BDDAIG*> subgames = spec.decompose();
     if (subgames.size() == 0) return internalSolve(&mgr, &spec);
 
+    if(std::all_of(subgames.begin(),subgames.end(),[](BDDAIG*sg){return (sg->numLatches() == 1);})){
+			latchless = true;
+			dbgMsg("-- LATCHLESS -- \n");
+		}
     // Let us aggregate the losing region
     BDD losing_states = spec.errorStates();
     BDD losing_transitions = ~mgr.bddOne();
