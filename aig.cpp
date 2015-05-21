@@ -295,6 +295,7 @@ BDDAIG::BDDAIG(const AIG &base, Cudd* local_mgr) : AIG(base) {
     this->mgr = local_mgr;
     this->must_clean = true;
     this->lit2bdd_map = new std::unordered_map<unsigned, BDD>();
+    this->bdd2deps_map = new std::unordered_map<unsigned long, std::set<unsigned>>();
     this->primed_latch_cube = NULL;
     this->cinput_cube = NULL;
     this->uinput_cube = NULL;
@@ -307,6 +308,7 @@ BDDAIG::BDDAIG(const BDDAIG &base, BDD error) : AIG(base) {
     this->mgr = base.mgr;
     this->must_clean = false;
     this->lit2bdd_map = base.lit2bdd_map;
+    this->bdd2deps_map = base.bdd2deps_map;
     this->primed_latch_cube = NULL;
     this->cinput_cube = NULL;
     this->uinput_cube = NULL;
@@ -380,8 +382,10 @@ BDDAIG::~BDDAIG() {
         delete this->trans_rel;
     if (this->short_error != NULL)
         delete this->short_error;
-    if (this->must_clean)
+    if (this->must_clean) {
         delete this->lit2bdd_map;
+        delete this->bdd2deps_map;
+    }
 }
 
 BDD BDDAIG::initState() {
@@ -588,6 +592,14 @@ BDD BDDAIG::transRelBdd() {
 }
 
 std::set<unsigned> BDDAIG::getBddDeps(BDD b) {
+    unsigned long key = (unsigned long) b.getRegularNode();
+    if (this->bdd2deps_map->find(key) != this->bdd2deps_map->end()) {
+        dbgMsg("bdd deps cache hit");
+        return (*this->bdd2deps_map)[key];
+    }
+
+    dbgMsg("bdd deps cache miss");
+
     std::set<unsigned> one_step_deps = this->semanticDeps(b);
     std::vector<unsigned> latch_next_to_explore;
     for (std::set<unsigned>::iterator i = one_step_deps.begin();
@@ -605,6 +617,9 @@ std::set<unsigned> BDDAIG::getBddDeps(BDD b) {
         std::set<unsigned> lit_deps = this->getLitDeps(*i);
         result.insert(lit_deps.begin(), lit_deps.end());
     }
+
+    // cache the result
+    (*this->bdd2deps_map)[key] = result;
     return result;
 }
 

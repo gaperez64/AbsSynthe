@@ -95,6 +95,7 @@ class BDDAIG : public AIG {
         BDD* trans_rel;
         BDD* short_error;
         std::unordered_map<unsigned, BDD>* lit2bdd_map;
+        std::unordered_map<unsigned long, std::set<unsigned>>* bdd2deps_map;
         std::vector<BDD>* next_fun_compose_vec;
         BDD lit2bdd(unsigned);
         std::vector<BDD> mergeSomeSignals(BDD, std::vector<unsigned>*);
