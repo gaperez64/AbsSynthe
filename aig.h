@@ -30,6 +30,7 @@
 #include <set>
 #include <unordered_set>
 #include <unordered_map>
+#include <cassert>
 
 #include "cuddObj.hh"
 
@@ -69,8 +70,23 @@ class AIG {
         void writeToFile(const char*);
         std::vector<aiger_symbol*> getLatches() { return this->latches; }
         std::vector<aiger_symbol*> getCInputs() { return this->c_inputs; }
-
+	    unsigned numLatches();
+        void check(){
+#ifndef NDEBUG
+          if (this->c_inputs.size() != 1 ){
+            std::cout << "c_inputs size: " << this->c_inputs.size() << std::endl;
+            std::cout << "u_inputs size: " << this->u_inputs.size() << std::endl;
+          }
+          assert(this->c_inputs.size() == 1);
+          //assert(this->u_inputs.size() == 10);
+          //std::cout << "--\n";
+#endif
+        }
+        std::vector<unsigned> getCInputLits();
+        std::vector<unsigned> getUInputLits();
     /*
+	return latches.size();
+}
     void input2and(aiger_symbol*, aiger_symbol*);
     void writeSpec();
     aiger_symbol* const getErrSymbol();
@@ -83,7 +99,6 @@ class AIG {
 
 class BDDAIG : public AIG {
     protected:
-        Cudd* mgr;
         BDD* primed_latch_cube;
         BDD* cinput_cube;
         BDD* uinput_cube;
@@ -98,6 +113,8 @@ class BDDAIG : public AIG {
     public:
         static BDD safeRestrict(BDD, BDD);
         
+        Cudd* mgr;
+        static unsigned primeVar(unsigned lit) { return AIG::stripLit(lit) + 1; }
         BDDAIG(const AIG&, Cudd*);
         BDDAIG(const BDDAIG&, BDD);
         ~BDDAIG();

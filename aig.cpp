@@ -33,6 +33,7 @@
 #include <unordered_map>
 #include <algorithm>
 #include <iterator>
+#include <iostream>
 
 #include "cudd.h"
 #include "cuddObj.hh"
@@ -286,6 +287,9 @@ BDD BDDAIG::safeRestrict(BDD original, BDD rest_region) {
         return original;
 }
 
+unsigned AIG::numLatches(){
+	return latches.size();
+}
 
 BDDAIG::BDDAIG(const AIG &base, Cudd* local_mgr) : AIG(base) {
     this->mgr = local_mgr;
@@ -329,7 +333,7 @@ BDDAIG::BDDAIG(const BDDAIG &base, BDD error) : AIG(base) {
          i != this->c_inputs.end(); i++) {
         if (deps.find((*i)->lit) == deps.end()) {
             c++;
-            continue; // skip latches not in the cone of error
+            continue; // skip cinputs not in the cone of error
         }
         new_vector.push_back(*i);
     }
@@ -342,7 +346,7 @@ BDDAIG::BDDAIG(const BDDAIG &base, BDD error) : AIG(base) {
          i != this->u_inputs.end(); i++) {
         if (deps.find((*i)->lit) == deps.end()) {
             c++;
-            continue; // skip latches not in the cone of error
+            continue; // skip uinputs not in the cone of error
         }
         new_vector.push_back(*i);
     }
@@ -474,18 +478,36 @@ BDD BDDAIG::lit2bdd(unsigned lit, std::unordered_map<unsigned, BDD>* cache=NULL)
     return result;
 }
 
+std::vector<unsigned> AIG::getCInputLits(){
+  std::vector<unsigned> v;
+  std::vector<aiger_symbol*>::iterator it = this->c_inputs.begin();
+  for(; it != this->c_inputs.end(); it++){
+		v.push_back((*it)->lit);
+  }
+  return v;
+}
+std::vector<unsigned> AIG::getUInputLits(){
+  std::vector<unsigned> v;
+  std::vector<aiger_symbol*>::iterator it = this->u_inputs.begin();
+  for(; it != this->u_inputs.end(); it++){
+		v.push_back((*it)->lit);
+  }
+  return v;
+}
 std::vector<BDD> BDDAIG::nextFunComposeVec() {
     if (this->next_fun_compose_vec == NULL) {
         dbgMsg("building and caching next_fun_compose_vec");
         this->next_fun_compose_vec = new std::vector<BDD>();
         // get the right bdd for the next fun of every latch
         std::unordered_map<unsigned, BDD> lit2bdd_map;
+        if (this->short_error){
+          lit2bdd_map[this->error_fake_latch->next] =  *this->short_error;
+        }
         BDD next_fun_bdd;
         for (std::vector<aiger_symbol*>::iterator i = this->latches.begin();
              i != this->latches.end(); i++) {
             next_fun_bdd = this->lit2bdd((*i)->next, &lit2bdd_map);
         }
-
         // fill the vector with singleton bdds except for the latches
         std::vector<aiger_symbol*>::iterator latch_it = this->latches.begin();
         for (unsigned i = 0; ((int) i) < this->mgr->ReadSize(); i++) {
@@ -504,10 +526,6 @@ std::vector<BDD> BDDAIG::nextFunComposeVec() {
                     next_fun = lit2bdd_map[(*latch_it)->next];
                     //dbgMsg("Taking the next function of latch " + std::to_string(i));
                 }
-#ifndef NDEBUG
-                this->dump2dot(next_fun, "next_fun.dot");
-#endif
-                assert(this->isValidBdd(next_fun));
                 this->next_fun_compose_vec->push_back(next_fun);
                 latch_it++;
             } else {
@@ -564,7 +582,9 @@ BDD BDDAIG::transRelBdd() {
 }
 
 std::set<unsigned> BDDAIG::getBddDeps(BDD b) {
+    dbgMsg("Computing dependencies of BDD");
     std::set<unsigned> one_step_deps = this->semanticDeps(b);
+    dbgMsg("Which deps are actually latches?");
     std::vector<unsigned> latch_next_to_explore;
     for (std::set<unsigned>::iterator i = one_step_deps.begin();
          i != one_step_deps.end(); i++) {
@@ -575,6 +595,7 @@ std::set<unsigned> BDDAIG::getBddDeps(BDD b) {
     }
     // once we have all latch deps in one step, we can call getLitDeps (which
     // is completely recursive) and get the full set
+    dbgMsg("Recursing on latches found in dependencies");
     std::set<unsigned> result = one_step_deps;
     for (std::vector<unsigned>::iterator i = latch_next_to_explore.begin();
          i != latch_next_to_explore.end(); i++) {
@@ -583,10 +604,24 @@ std::set<unsigned> BDDAIG::getBddDeps(BDD b) {
     }
     return result;
 }
+std::string stringOfUnsignedSet(std::set<unsigned> s){
+  // print some debug information
+  std::string litstring;
+  for (std::set<unsigned>::iterator i = s.begin(); i != s.end(); i++)
+    litstring += std::to_string(*i) + ", ";
+  return(std::string("the cube deps: ") + litstring);
+}
+
+template<class T>
+bool set_inclusion(std::set<T> a, std::set<T> b){
+  std::set<T> diff;
+  std::set_difference(a.begin(), a.end(), b.begin(), b.end(), inserter(diff, diff.end()));
+  return (diff.size() == 0);
+}
 
 std::vector<BDD> BDDAIG::mergeSomeSignals(BDD cube, std::vector<unsigned>* original) {
     logMsg(std::to_string(original->size()) + " sub-games originally");
-    std::set<unsigned> cube_deps = this->getBddDeps(cube);
+    const std::set<unsigned> cube_deps = this->getBddDeps(cube);
 #ifndef NDEBUG
         // print some debug information
         std::string litstring;
@@ -600,17 +635,19 @@ std::vector<BDD> BDDAIG::mergeSomeSignals(BDD cube, std::vector<unsigned>* origi
 
     for (std::vector<unsigned>::iterator i = original->begin();
          i != original->end(); i++) {
+        dbgMsg("Processing subgame...");
         std::set<unsigned> lit_deps = this->getLitDeps(*i);
         std::set<unsigned> deps;
         deps.insert(cube_deps.begin(), cube_deps.end());
         deps.insert(lit_deps.begin(), lit_deps.end());
-#if false
+#if true
         // print some debug information
         std::string litstring;
-        for (std::set<unsigned>::iterator i = deps.begin(); i != deps.end(); i++)
-            litstring += std::to_string(*i) + ", ";
+        for (std::set<unsigned>::iterator j = deps.begin(); j != deps.end(); j++)
+            litstring += std::to_string(*j) + ", ";
         dbgMsg("the current subgame has in its cone... " + litstring);
 #endif
+        dbgMsg("We will compare with " + std::to_string(dep_vector.size()) + " previous subgames");
         std::vector<std::set<unsigned>>::iterator dep_it = dep_vector.begin();
         std::vector<BDD>::iterator bdd_it = bdd_vector.begin();
         bool found = false;
@@ -631,6 +668,7 @@ std::vector<BDD> BDDAIG::mergeSomeSignals(BDD cube, std::vector<unsigned>* origi
             bdd_it++;
         }
         if (!found) {
+            dbgMsg("Adding new");
             dep_vector.push_back(deps);
             bdd_vector.push_back(this->lit2bdd(*i, &lit2bdd_map));
         }
@@ -645,25 +683,22 @@ std::vector<BDD> BDDAIG::mergeSomeSignals(BDD cube, std::vector<unsigned>* origi
          i != bdd_vector.end(); i++) {
         bdd_vector_with_cube.push_back(~(*i) & cube);
     }
-
-#ifndef NDEBUG
-    // check the assignement was a success
-    std::vector<BDD>::iterator i = bdd_vector.begin();
-    std::vector<BDD>::iterator j = bdd_vector_with_cube.begin();
-    for (; i != bdd_vector.end();) {
-        assert((*j) == (~(*i) & cube));
-        assert((~(*j) | this->lit2bdd(this->error_fake_latch->next)) == this->mgr->bddOne());
-        i++;
-        j++;
-    }
-#endif
-
     return bdd_vector_with_cube;
 }
 
 std::set<unsigned> BDDAIG::semanticDeps(BDD b) {
     std::set<unsigned> result;
+    for (unsigned i = 0; ((int) i) < this->mgr->ReadSize(); i++) {
+        BDD simpler_b = b.ExistAbstract(this->mgr->bddVar(i));
+        if (b != simpler_b) {
+            result.insert(i);
+            b = simpler_b;
+        }
+    }
+#if false // previous code which fails for huge bdds
     std::vector<DdNode*> waiting;
+    unsigned bdd_size = b.nodeCount();
+    dbgMsg("semanticDeps of BDD with node count: " + std::to_string(bdd_size));
     waiting.push_back(b.getRegularNode());
     while (waiting.size() > 0) {
         DdNode* node = waiting.back();
@@ -677,7 +712,9 @@ std::set<unsigned> BDDAIG::semanticDeps(BDD b) {
             if (!Cudd_IsConstant(child))
                 waiting.push_back(child);
         }
+        assert(result.size() <= bdd_size);
     }
+#endif
     return result;
 }
 

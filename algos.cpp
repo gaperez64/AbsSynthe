@@ -24,7 +24,8 @@
 
 #include <assert.h>
 #include <string>
-
+#include <algorithm>
+#include <iostream>
 #include "cuddObj.hh"
 
 #include "abssynthe.h"
@@ -231,17 +232,46 @@ bool solve(AIG* spec_base) {
 }
 
 bool compSolve1(AIG* spec_base) {
+		bool latchless = false;
+    bool cinput_independent = true;
     Cudd mgr(0, 0);
     mgr.AutodynEnable(CUDD_REORDER_SIFT);
     BDDAIG spec(*spec_base, &mgr);
     std::vector<BDDAIG*> subgames = spec.decompose();
     if (subgames.size() == 0) return internalSolve(&mgr, &spec);
-
+#ifndef NDEBUG
+    if(std::all_of(subgames.begin(), subgames.end(), 
+                   [](BDDAIG*sg){ return (sg->numLatches() == 1); })) {
+        latchless = true;
+        errMsg("We are going latchless\n");
+    }
+#endif
+    // Check if subgames are cinput-independent
+    std::set<unsigned> total_cinputs;
+    for (std::vector<BDDAIG*>::iterator i = subgames.begin();
+         i != subgames.end(); i++) {
+      std::vector<unsigned> ic = (*i)->getCInputLits();
+      std::set<unsigned> intersection;
+      set_intersection(ic.begin(), ic.end(), total_cinputs.begin(), 
+            total_cinputs.end(), std::inserter(intersection,intersection.begin()));
+      if (intersection.size() > 0 ){
+        cinput_independent = false;
+        break;
+      } else {
+        total_cinputs.insert(ic.begin(), ic.end());
+      }
+    }   
+    if (cinput_independent){
+      dbgMsg("We are cinput-independent!");
+    }
     // Let us aggregate the losing region
     BDD losing_states = spec.errorStates();
     BDD losing_transitions = ~mgr.bddOne();
+    int gamecount = 0;
+    std::vector<std::pair<BDD,BDD> > subgame_results;
     for (std::vector<BDDAIG*>::iterator i = subgames.begin();
          i != subgames.end(); i++) {
+        gamecount++;
         dbgMsg("Solving a subgame");
         bool includes_init = false;
         unsigned cnt = 0;
@@ -268,13 +298,23 @@ bool compSolve1(AIG* spec_base) {
         }
         else {
             // we aggregate the losing states and transitions
-            losing_states |= error_states;
-            losing_transitions |= bad_transitions;
+            // losing_states |= error_states;
+            // losing_transitions |= bad_transitions;
+            subgame_results.push_back(std::pair<BDD,BDD>(error_states,
+                                                         bad_transitions));
         }
         // we have to release the memory used for the caches and stuff
         delete (*i);
     }
-
+    if (cinput_independent){
+      return true;
+    } else {
+      std::vector<std::pair<BDD,BDD> >::iterator sg = subgame_results.begin();
+      for (; sg != subgame_results.end(); sg++){
+        losing_states |= sg->first;
+        losing_transitions |= sg->second;
+      }
+    }
     // we now solve the aggregated game
     dbgMsg("Solving the aggregated game");
     BDDAIG aggregated_game(spec, losing_transitions);
