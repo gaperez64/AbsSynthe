@@ -294,7 +294,8 @@ BDDAIG::BDDAIG(const BDDAIG &base, BDD error) : AIG(base) {
     std::vector<aiger_symbol*> new_vector;
     unsigned c = 0;
     for (std::vector<aiger_symbol*>::iterator i = this->latches.begin();
-         i != this->latches.end(); i++) {
+        i != this->latches.end(); i++) {
+        
         if ((*i)->lit != this->error_fake_latch->lit &&
             deps.find((*i)->lit) == deps.end()) {
             c++;

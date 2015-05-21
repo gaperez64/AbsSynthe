@@ -102,6 +102,13 @@ bool solve(AIG* spec_base) {
     return internalSolve(&mgr, &spec);
 }
 
+int bdd_pair_compare(std::pair<BDD,BDD> & u, std::pair<BDD,BDD> &v){
+    int u_ = u.second.nodeCount();
+    int v_ = v.second.nodeCount();
+    if (u_ < v_) return -1;
+    else if(u_ == v_) return 0;
+    else return 1;
+}
 bool compSolve1(AIG* spec_base) {
 		bool latchless = false;
     bool cinput_independent = true;
@@ -141,7 +148,8 @@ bool compSolve1(AIG* spec_base) {
     for (std::vector<BDDAIG*>::iterator i = subgames.begin();
          i != subgames.end(); i++) {
         gamecount++;
-        dbgMsg("Solving a subgame");
+				dbgMsg("");
+        dbgMsg("Solving a subgame (" + std::to_string((*i)->numLatches()) + " latches)");
         bool includes_init = false;
         unsigned cnt = 0;
         BDD bad_transitions;
@@ -178,7 +186,9 @@ bool compSolve1(AIG* spec_base) {
       return true;
     } else {
       std::vector<std::pair<BDD,BDD> >::iterator sg = subgame_results.begin();
-      for (; sg != subgame_results.end(); sg++){
+      //std::sort(subgame_results.begin(), subgame_results.end());
+      std::sort(subgame_results.begin(), subgame_results.end(), bdd_pair_compare);
+      for (sg = subgame_results.begin(); sg != subgame_results.end(); sg++){
         losing_states |= sg->first;
         losing_transitions |= sg->second;
       }
