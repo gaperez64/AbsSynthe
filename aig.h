@@ -30,6 +30,7 @@
 #include <set>
 #include <unordered_set>
 #include <unordered_map>
+#include <cassert>
 
 #include "cuddObj.hh"
 
@@ -65,6 +66,17 @@ class AIG {
         void cleanCaches();
         unsigned maxVar();
 				unsigned numLatches();
+        void check(){
+          if (this->c_inputs.size() != 1 ){
+            std::cout << "c_inputs size: " << this->c_inputs.size() << std::endl;
+            std::cout << "u_inputs size: " << this->u_inputs.size() << std::endl;
+          }
+          assert(this->c_inputs.size() == 1);
+          //assert(this->u_inputs.size() == 10);
+          //std::cout << "--\n";
+        }
+        std::vector<unsigned> getCInputLits();
+        std::vector<unsigned> getUInputLits();
     /*
 	return latches.size();
 }
@@ -80,7 +92,6 @@ class AIG {
 
 class BDDAIG : public AIG {
     protected:
-        Cudd* mgr;
         BDD* primed_latch_cube;
         BDD* cinput_cube;
         BDD* uinput_cube;
@@ -92,6 +103,7 @@ class BDDAIG : public AIG {
         std::set<unsigned> semanticDeps(BDD);
 
     public:
+        Cudd* mgr;
         static unsigned primeVar(unsigned lit) { return AIG::stripLit(lit) + 1; }
         BDDAIG(const AIG&, Cudd*);
         BDDAIG(const BDDAIG&, BDD);
