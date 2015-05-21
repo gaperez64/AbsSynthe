@@ -53,9 +53,9 @@ class AIG {
                           std::vector<unsigned>*);
         void getLitDepsRecur(unsigned, std::set<unsigned>&,
                              std::unordered_set<unsigned>*);
-
-    public:
         std::set<unsigned> getLitDeps(unsigned);
+        static unsigned primeVar(unsigned lit) { return AIG::stripLit(lit) + 1; }
+    public:
         static unsigned negateLit(unsigned lit) { return lit ^ 1; }
         static bool litIsNegated(unsigned lit) { return (lit & 1) == 1; }
         static unsigned stripLit(unsigned lit) { return lit & ~1; }
@@ -65,8 +65,14 @@ class AIG {
         ~AIG();
         void cleanCaches();
         unsigned maxVar();
-				unsigned numLatches();
+        void addGate(unsigned, unsigned, unsigned);
+        void input2gate(unsigned, unsigned);
+        void writeToFile(const char*);
+        std::vector<aiger_symbol*> getLatches() { return this->latches; }
+        std::vector<aiger_symbol*> getCInputs() { return this->c_inputs; }
+	    unsigned numLatches();
         void check(){
+#ifndef NDEBUG
           if (this->c_inputs.size() != 1 ){
             std::cout << "c_inputs size: " << this->c_inputs.size() << std::endl;
             std::cout << "u_inputs size: " << this->u_inputs.size() << std::endl;
@@ -74,6 +80,7 @@ class AIG {
           assert(this->c_inputs.size() == 1);
           //assert(this->u_inputs.size() == 10);
           //std::cout << "--\n";
+#endif
         }
         std::vector<unsigned> getCInputLits();
         std::vector<unsigned> getUInputLits();
@@ -101,8 +108,12 @@ class BDDAIG : public AIG {
         BDD lit2bdd(unsigned, std::unordered_map<unsigned, BDD>*);
         std::vector<BDD> mergeSomeSignals(BDD, std::vector<unsigned>*);
         std::set<unsigned> semanticDeps(BDD);
-
+        bool isValidLatchBdd(BDD);
+        bool isValidBdd(BDD);
+				std::unordered_map<DdNode*,std::set<unsigned> > cache_bdd_deps;
     public:
+        static BDD safeRestrict(BDD, BDD);
+        
         Cudd* mgr;
         static unsigned primeVar(unsigned lit) { return AIG::stripLit(lit) + 1; }
         BDDAIG(const AIG&, Cudd*);
@@ -119,9 +130,6 @@ class BDDAIG : public AIG {
         std::set<unsigned> getBddDeps(BDD);
         std::vector<BDD> nextFunComposeVec();
         std::vector<BDDAIG*> decompose();
-        bool isSubGameOf(BDDAIG*);
-        bool isValidLatchBdd(BDD);
-        bool isValidBdd(BDD);
 };
 
 #endif

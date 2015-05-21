@@ -42,17 +42,29 @@
 #include "aig.h"
 #include "logging.h"
 
-static BDD safeRestrict(BDD original, BDD rest_region) {
-    BDD approx = original.Restrict(rest_region);
-    assert((approx & rest_region) == (original & rest_region));
-    if (approx.nodeCount() < original.nodeCount())
-        return approx;
-    else
-        return original;
+// A <= B iff A - B = empty
+static bool setInclusion(std::set<unsigned>* A, std::set<unsigned>* B) {
+    std::set<unsigned> diff;
+    std::set_difference(A->begin(), A->end(), B->begin(), B->end(),
+                        std::inserter(diff, diff.begin()));
+    return diff.size() == 0;
 }
 
 unsigned AIG::maxVar() {
     return this->spec->maxvar;
+}
+
+void AIG::writeToFile(const char* aiger_file_name) {
+    aiger_open_and_write_to_file(this->spec, aiger_file_name);
+}
+
+void AIG::addGate(unsigned res, unsigned rh0, unsigned rh1) {
+    aiger_add_and(this->spec, res, rh0, rh1);
+}
+
+void AIG::input2gate(unsigned input, unsigned rh0) {
+    aiger_redefine_input_as_and(this->spec, input, rh0, rh0);
+    dbgMsg("Gated input " + std::to_string(input));
 }
 
 void AIG::introduceErrorLatch() {
@@ -266,9 +278,19 @@ void AIG::getNInputAnd(unsigned lit, std::vector<unsigned>* A,
     (*this->lit2ninputand_map)[lit] = std::make_pair(*A, *B);
 }
 
+BDD BDDAIG::safeRestrict(BDD original, BDD rest_region) {
+    BDD approx = original.Restrict(rest_region);
+    assert((approx & rest_region) == (original & rest_region));
+    if (approx.nodeCount() < original.nodeCount())
+        return approx;
+    else
+        return original;
+}
+
 unsigned AIG::numLatches(){
 	return latches.size();
 }
+
 BDDAIG::BDDAIG(const AIG &base, Cudd* local_mgr) : AIG(base) {
     this->mgr = local_mgr;
     this->primed_latch_cube = NULL;
@@ -382,7 +404,7 @@ BDD BDDAIG::primeLatchesInBdd(BDD original) {
     for (std::vector<aiger_symbol*>::iterator i = this->latches.begin();
          i != this->latches.end(); i++) {
         latch_bdds.push_back(this->mgr->bddVar((*i)->lit));
-        primed_latch_bdds.push_back(this->mgr->bddVar(BDDAIG::primeVar((*i)->lit)));
+        primed_latch_bdds.push_back(this->mgr->bddVar(AIG::primeVar((*i)->lit)));
     }
     BDD result = original.SwapVariables(latch_bdds, primed_latch_bdds);
     return result;
@@ -393,7 +415,7 @@ BDD BDDAIG::primedLatchCube() {
         BDD result = this->mgr->bddOne();
         for (std::vector<aiger_symbol*>::iterator i = this->latches.begin();
              i != this->latches.end(); i++)
-            result &= this->mgr->bddVar(BDDAIG::primeVar((*i)->lit));
+            result &= this->mgr->bddVar(AIG::primeVar((*i)->lit));
         this->primed_latch_cube = new BDD(result);
     }
     return BDD(*this->primed_latch_cube);
@@ -498,7 +520,8 @@ std::vector<BDD> BDDAIG::nextFunComposeVec() {
                     next_fun = *this->short_error; // lit2bdd_map[(*i)->next] | *this->short_error;
                     //dbgMsg("Latch " + std::to_string(i) + " is the error latch");
                 } else if (this->short_error != NULL) { // simplify functions
-                    next_fun = safeRestrict(lit2bdd_map[(*latch_it)->next], ~(*this->short_error));
+                    next_fun = BDDAIG::safeRestrict(lit2bdd_map[(*latch_it)->next],
+                                                    ~(*this->short_error));
                     //dbgMsg("Restricting next function of latch " + std::to_string(i));
                 } else {
                     next_fun = lit2bdd_map[(*latch_it)->next];
@@ -533,21 +556,21 @@ BDD BDDAIG::transRelBdd() {
             if ((*i)->lit == this->error_fake_latch->lit &&
                 this->short_error != NULL) {
                 BDD error_next_fun = *this->short_error; // lit2bdd_map[(*i)->next] | *this->short_error;
-                result &= (~this->mgr->bddVar(BDDAIG::primeVar((*i)->lit)) |
+                result &= (~this->mgr->bddVar(AIG::primeVar((*i)->lit)) |
                            error_next_fun) &
-                          (this->mgr->bddVar(BDDAIG::primeVar((*i)->lit)) |
+                          (this->mgr->bddVar(AIG::primeVar((*i)->lit)) |
                            ~error_next_fun);
             } else if (this->short_error != NULL) { // simplify functions
-                BDD fun = safeRestrict(lit2bdd_map[(*i)->next],
-                                       ~(*this->short_error));
-                result &= (~this->mgr->bddVar(BDDAIG::primeVar((*i)->lit)) |
+                BDD fun = BDDAIG::safeRestrict(lit2bdd_map[(*i)->next],
+                                               ~(*this->short_error));
+                result &= (~this->mgr->bddVar(AIG::primeVar((*i)->lit)) |
                            fun) &
-                          (this->mgr->bddVar(BDDAIG::primeVar((*i)->lit)) |
+                          (this->mgr->bddVar(AIG::primeVar((*i)->lit)) |
                            ~fun);
             } else {
-                result &= (~this->mgr->bddVar(BDDAIG::primeVar((*i)->lit)) |
+                result &= (~this->mgr->bddVar(AIG::primeVar((*i)->lit)) |
                            lit2bdd_map[(*i)->next]) &
-                          (this->mgr->bddVar(BDDAIG::primeVar((*i)->lit)) |
+                          (this->mgr->bddVar(AIG::primeVar((*i)->lit)) |
                            ~lit2bdd_map[(*i)->next]);
             }
         }
@@ -560,7 +583,16 @@ BDD BDDAIG::transRelBdd() {
 }
 
 std::set<unsigned> BDDAIG::getBddDeps(BDD b) {
+    dbgMsg("Computing dependencies of BDD");
+		std::cout << &b << std::endl;
+		if (cache_bdd_deps.find(b.getNode()) != cache_bdd_deps.end()){
+			std::cout << "Cache hit\n";
+			return cache_bdd_deps[b.getNode()];
+		}
+			std::cout << "Cache miss\n";
+		// std::cout << &b << std::endl;
     std::set<unsigned> one_step_deps = this->semanticDeps(b);
+    dbgMsg("Which deps are actually latches?");
     std::vector<unsigned> latch_next_to_explore;
     for (std::set<unsigned>::iterator i = one_step_deps.begin();
          i != one_step_deps.end(); i++) {
@@ -571,12 +603,14 @@ std::set<unsigned> BDDAIG::getBddDeps(BDD b) {
     }
     // once we have all latch deps in one step, we can call getLitDeps (which
     // is completely recursive) and get the full set
+    dbgMsg("Recursing on latches found in dependencies");
     std::set<unsigned> result = one_step_deps;
     for (std::vector<unsigned>::iterator i = latch_next_to_explore.begin();
          i != latch_next_to_explore.end(); i++) {
         std::set<unsigned> lit_deps = this->getLitDeps(*i);
         result.insert(lit_deps.begin(), lit_deps.end());
     }
+		cache_bdd_deps[b.getNode()] = result;
     return result;
 }
 std::string stringOfUnsignedSet(std::set<unsigned> s){
@@ -595,6 +629,7 @@ bool set_inclusion(std::set<T> a, std::set<T> b){
 }
 
 std::vector<BDD> BDDAIG::mergeSomeSignals(BDD cube, std::vector<unsigned>* original) {
+		
     logMsg(std::to_string(original->size()) + " sub-games originally");
     const std::set<unsigned> cube_deps = this->getBddDeps(cube);
 #ifndef NDEBUG
@@ -627,20 +662,25 @@ std::vector<BDD> BDDAIG::mergeSomeSignals(BDD cube, std::vector<unsigned>* origi
         std::vector<BDD>::iterator bdd_it = bdd_vector.begin();
         bool found = false;
         for (; dep_it != dep_vector.end();) {
-            if (set_inclusion(deps, *dep_it)){
-                std::string litstring;
-                for (std::set<unsigned>::iterator j = dep_it->begin(); j != dep_it->end(); j++)
-                    litstring += std::to_string(*j) + ", ";
-                dbgMsg("subsumed by previous subgame: " + litstring);
+            if (setInclusion(&deps, &(*dep_it))) {
+                //dbgMsg("this subgame is subsumed by some previous subgame");
+								clock_t atime = clock();
                 (*bdd_it) &= this->lit2bdd(*i, &lit2bdd_map);
+								clock_t btime = clock();
+								std::cout << "----------------------------------- took " 
+									<< (btime-atime)/ (double)CLOCKS_PER_SEC << " time\n";
                 found = true;
                 break;
-            } else if (set_inclusion(*dep_it,deps)) {
-                dbgMsg("this new subgame subsumes some previous subgame");
+            } else if (setInclusion(&(*dep_it), &deps)) {
+                //dbgMsg("this new subgame subsumes some previous subgame");
+								clock_t atime = clock();
                 (*bdd_it) &= this->lit2bdd(*i, &lit2bdd_map);
                 assert((*bdd_it) == ((*bdd_it) & this->lit2bdd(*i, &lit2bdd_map)));
                 // we also update the deps because the new one is bigger
                 (*dep_it) = deps;
+								clock_t btime = clock();
+								std::cout << "----------------------------------- took " 
+									<< (btime-atime)/ (double)CLOCKS_PER_SEC << " time\n";
             }
             dep_it++;
             bdd_it++;
@@ -666,7 +706,17 @@ std::vector<BDD> BDDAIG::mergeSomeSignals(BDD cube, std::vector<unsigned>* origi
 
 std::set<unsigned> BDDAIG::semanticDeps(BDD b) {
     std::set<unsigned> result;
+    for (unsigned i = 0; ((int) i) < this->mgr->ReadSize(); i++) {
+        BDD simpler_b = b.ExistAbstract(this->mgr->bddVar(i));
+        if (b != simpler_b) {
+            result.insert(i);
+            //dbgMsg("Depends on var " + std::to_string(i));
+        }
+    }
+#if false // previous code which fails for huge bdds
     std::vector<DdNode*> waiting;
+    unsigned bdd_size = b.nodeCount();
+    dbgMsg("semanticDeps of BDD with node count: " + std::to_string(bdd_size));
     waiting.push_back(b.getRegularNode());
     while (waiting.size() > 0) {
         DdNode* node = waiting.back();
@@ -680,7 +730,9 @@ std::set<unsigned> BDDAIG::semanticDeps(BDD b) {
             if (!Cudd_IsConstant(child))
                 waiting.push_back(child);
         }
+        assert(result.size() <= bdd_size);
     }
+#endif
     return result;
 }
 
@@ -738,14 +790,8 @@ std::vector<BDDAIG*> BDDAIG::decompose() {
     return result;
 }
 
-bool BDDAIG::isSubGameOf(BDDAIG* other) {
-    return (this->mgr == other->mgr &&
-            this->short_error != NULL &&
-            (~(*this->short_error) | 
-               other->lit2bdd(other->error_fake_latch->next)) == this->mgr->bddOne());
-}
-
 bool BDDAIG::isValidLatchBdd(BDD b) {
+#ifndef NDEBUG
     std::set<unsigned> vars_in_cone = this->semanticDeps(b);
     int hits = 0;
     for (std::vector<aiger_symbol*>::iterator i = this->latches.begin();
@@ -778,9 +824,13 @@ bool BDDAIG::isValidLatchBdd(BDD b) {
     } else {
         return true;
     }
+#else
+    return true;
+#endif
 }
 
 bool BDDAIG::isValidBdd(BDD b) {
+#ifndef NDEBUG
     std::set<unsigned> vars_in_cone = this->semanticDeps(b);
     int hits = 0;
     for (std::vector<aiger_symbol*>::iterator i = this->latches.begin();
@@ -830,4 +880,7 @@ bool BDDAIG::isValidBdd(BDD b) {
     } else {
         return true;
     }
+#else
+    return true;
+#endif
 }
