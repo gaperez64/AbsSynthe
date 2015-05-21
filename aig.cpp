@@ -316,7 +316,8 @@ BDDAIG::BDDAIG(const BDDAIG &base, BDD error) : AIG(base) {
     std::vector<aiger_symbol*> new_vector;
     unsigned c = 0;
     for (std::vector<aiger_symbol*>::iterator i = this->latches.begin();
-         i != this->latches.end(); i++) {
+        i != this->latches.end(); i++) {
+        
         if ((*i)->lit != this->error_fake_latch->lit &&
             deps.find((*i)->lit) == deps.end()) {
             c++;
@@ -692,7 +693,7 @@ std::set<unsigned> BDDAIG::semanticDeps(BDD b) {
         BDD simpler_b = b.ExistAbstract(this->mgr->bddVar(i));
         if (b != simpler_b) {
             result.insert(i);
-            b = simpler_b;
+            dbgMsg("Depends on var " + std::to_string(i));
         }
     }
 #if false // previous code which fails for huge bdds

@@ -232,7 +232,7 @@ bool solve(AIG* spec_base) {
 }
 
 bool compSolve1(AIG* spec_base) {
-		bool latchless = false;
+        bool latchless = false;
     bool cinput_independent = true;
     Cudd mgr(0, 0);
     mgr.AutodynEnable(CUDD_REORDER_SIFT);
@@ -272,7 +272,8 @@ bool compSolve1(AIG* spec_base) {
     for (std::vector<BDDAIG*>::iterator i = subgames.begin();
          i != subgames.end(); i++) {
         gamecount++;
-        dbgMsg("Solving a subgame");
+        dbgMsg("");
+        dbgMsg("Solving a subgame (" + std::to_string((*i)->numLatches()) + " latches)");
         bool includes_init = false;
         unsigned cnt = 0;
         BDD bad_transitions;
@@ -310,7 +311,8 @@ bool compSolve1(AIG* spec_base) {
       return true;
     } else {
       std::vector<std::pair<BDD,BDD> >::iterator sg = subgame_results.begin();
-      for (; sg != subgame_results.end(); sg++){
+
+      for (sg = subgame_results.begin(); sg != subgame_results.end(); sg++){
         losing_states |= sg->first;
         losing_transitions |= sg->second;
       }
