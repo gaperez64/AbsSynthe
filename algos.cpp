@@ -102,13 +102,14 @@ bool solve(AIG* spec_base) {
     return internalSolve(&mgr, &spec);
 }
 
-int bdd_pair_compare(std::pair<BDD,BDD> & u, std::pair<BDD,BDD> &v){
+
+struct bdd_pair_compare{
+  bool operator()(std::pair<BDD,BDD> & u, std::pair<BDD,BDD> &v){
     int u_ = u.second.nodeCount();
     int v_ = v.second.nodeCount();
-    if (u_ < v_) return -1;
-    else if(u_ == v_) return 0;
-    else return 1;
-}
+    return u_ < v_;
+  }
+}bdd_pair_cmp;
 bool compSolve1(AIG* spec_base) {
 		bool latchless = false;
     bool cinput_independent = true;
@@ -187,7 +188,7 @@ bool compSolve1(AIG* spec_base) {
     } else {
       std::vector<std::pair<BDD,BDD> >::iterator sg = subgame_results.begin();
       //std::sort(subgame_results.begin(), subgame_results.end());
-      std::sort(subgame_results.begin(), subgame_results.end(), bdd_pair_compare);
+      std::sort(subgame_results.begin(), subgame_results.end(), bdd_pair_cmp);
       for (sg = subgame_results.begin(); sg != subgame_results.end(); sg++){
         losing_states |= sg->first;
         losing_transitions |= sg->second;
