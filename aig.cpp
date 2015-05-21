@@ -41,6 +41,14 @@
 #include "aig.h"
 #include "logging.h"
 
+// A <= B iff A - B = empty
+static bool setInclusion(std::set<unsigned>* A, std::set<unsigned>* B) {
+    std::set<unsigned> diff;
+    std::set_difference(A->begin(), A->end(), B->begin(), B->end(),
+                        std::inserter(diff, diff.begin()));
+    return diff.size() == 0;
+}
+
 unsigned AIG::maxVar() {
     return this->spec->maxvar;
 }
@@ -607,12 +615,12 @@ std::vector<BDD> BDDAIG::mergeSomeSignals(BDD cube, std::vector<unsigned>* origi
         std::vector<BDD>::iterator bdd_it = bdd_vector.begin();
         bool found = false;
         for (; dep_it != dep_vector.end();) {
-            if ((*dep_it) >= deps) {
+            if (setInclusion(&deps, &(*dep_it))) {
                 //dbgMsg("this subgame is subsumed by some previous subgame");
                 (*bdd_it) &= this->lit2bdd(*i, &lit2bdd_map);
                 found = true;
                 break;
-            } else if ((*dep_it) <= deps) {
+            } else if (setInclusion(&(*dep_it), &deps)) {
                 //dbgMsg("this new subgame subsumes some previous subgame");
                 (*bdd_it) &= this->lit2bdd(*i, &lit2bdd_map);
                 assert((*bdd_it) == ((*bdd_it) & this->lit2bdd(*i, &lit2bdd_map)));
