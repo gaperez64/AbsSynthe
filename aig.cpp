@@ -495,7 +495,7 @@ std::vector<unsigned> AIG::getUInputLits(){
   }
   return v;
 }
-std::vector<BDD> BDDAIG::nextFunComposeVec() {
+std::vector<BDD> BDDAIG::nextFunComposeVec(BDD* care_region=NULL) {
     if (this->next_fun_compose_vec == NULL) {
         dbgMsg("building and caching next_fun_compose_vec");
         this->next_fun_compose_vec = new std::vector<BDD>();
@@ -535,7 +535,21 @@ std::vector<BDD> BDDAIG::nextFunComposeVec() {
         }
         dbgMsg("done with the next_fun_compose_vec");
     }
-    return *this->next_fun_compose_vec;
+
+    std::vector<BDD> result = *this->next_fun_compose_vec;
+    // We restrict if required
+    if (care_region != NULL) {
+        std::vector<aiger_symbol*>::iterator latch_it = this->latches.begin();
+        unsigned i = 0;
+        for (std::vector<BDD>::iterator bdd_it = result.begin();
+             bdd_it != result.end(); bdd_it++) {
+            if (latch_it != this->latches.end() && i == (*latch_it)->lit) {
+                (*bdd_it) = BDDAIG::safeRestrict(*bdd_it, *care_region);
+            }
+            i++;
+        }
+    }
+    return result;
 }
 
 BDD BDDAIG::transRelBdd() {
