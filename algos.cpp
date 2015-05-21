@@ -253,16 +253,17 @@ bool compSolve1(AIG* spec_base) {
     std::set<unsigned> total_cinputs;
     for (std::vector<BDDAIG*>::iterator i = subgames.begin();
          i != subgames.end(); i++) {
-      std::vector<unsigned> ic = (*i)->getCInputLits();
-      std::set<unsigned> intersection;
-      set_intersection(ic.begin(), ic.end(), total_cinputs.begin(), 
-            total_cinputs.end(), std::inserter(intersection,intersection.begin()));
-      if (intersection.size() > 0 ){
-        cinput_independent = false;
-        break;
-      } else {
-        total_cinputs.insert(ic.begin(), ic.end());
-      }
+        std::vector<unsigned> ic = (*i)->getCInputLits();
+        std::set<unsigned> intersection;
+        set_intersection(ic.begin(), ic.end(), total_cinputs.begin(), 
+                         total_cinputs.end(), 
+                         std::inserter(intersection,intersection.begin()));
+        if (intersection.size() > 0 ) {
+            cinput_independent = false;
+            break;
+        } else {
+            total_cinputs.insert(ic.begin(), ic.end());
+        }
     }   
     dbgMsg("Are we cinput-independent? " + std::to_string(cinput_independent));
     // Let us aggregate the losing region
@@ -273,9 +274,8 @@ bool compSolve1(AIG* spec_base) {
     for (std::vector<BDDAIG*>::iterator i = subgames.begin();
          i != subgames.end(); i++) {
         gamecount++;
-        dbgMsg("");
-        dbgMsg("Solving a subgame (" + std::to_string((*i)->numLatches()) +
-               " latches)");
+        dbgMsg("Solving subgame " + std::to_string(gamecount) + " (" +
+               std::to_string((*i)->numLatches()) + " latches)");
         bool includes_init = false;
         unsigned cnt = 0;
         BDD bad_transitions;
