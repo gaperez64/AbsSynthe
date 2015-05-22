@@ -26,6 +26,7 @@
 #include <string>
 #include <algorithm>
 #include <iostream>
+#include <ctime>
 #include "cuddObj.hh"
 
 #include "abssynthe.h"
@@ -241,14 +242,13 @@ bool compSolve1(AIG* spec_base) {
     mgr.AutodynEnable(CUDD_REORDER_SIFT);
     BDDAIG spec(*spec_base, &mgr);
     std::vector<BDDAIG*> subgames = spec.decompose();
+    return true;
     if (subgames.size() == 0) return internalSolve(&mgr, &spec);
-#ifndef NDEBUG
     if(std::all_of(subgames.begin(), subgames.end(), 
                    [](BDDAIG*sg){ return (sg->numLatches() == 1); })) {
         latchless = true;
         errMsg("We are going latchless");
     }
-#endif
     // Check if subgames are cinput-independent
     std::set<unsigned> total_cinputs;
     for (std::vector<BDDAIG*>::iterator i = subgames.begin();
@@ -290,7 +290,8 @@ bool compSolve1(AIG* spec_base) {
             cnt++;
         }
         
-        dbgMsg("Early exit? " + std::to_string(includes_init) + 
+        dbgMsg("Early exit at game " + std::to_string(gamecount) + "? " +
+               std::to_string(includes_init) + 
                ", after " + std::to_string(cnt) + " iterations.");
         if (includes_init) {
 #ifndef NDEBUG
@@ -312,7 +313,7 @@ bool compSolve1(AIG* spec_base) {
 
     BDD bad_transitions;
     bool includes_init = false;
-    if (!cinput_independent){ // we still have one game to solve
+    if (!cinput_independent || !latchless){ // we still have one game to solve
         std::vector<std::pair<BDD,BDD> >::iterator sg = subgame_results.begin();
         for (sg = subgame_results.begin(); sg != subgame_results.end(); sg++){
             losing_states |= sg->first;

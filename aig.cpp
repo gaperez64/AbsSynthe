@@ -597,7 +597,6 @@ std::set<unsigned> BDDAIG::getBddDeps(BDD b) {
         dbgMsg("bdd deps cache hit");
         return (*this->bdd2deps_map)[key];
     }
-
     dbgMsg("bdd deps cache miss");
 
     std::set<unsigned> one_step_deps = this->semanticDeps(b);
@@ -635,12 +634,12 @@ std::vector<BDD> BDDAIG::mergeSomeSignals(BDD cube, std::vector<unsigned>* origi
     logMsg(std::to_string(original->size()) + " sub-games originally");
     const std::set<unsigned> cube_deps = this->getBddDeps(cube);
 #if false
-        // print some debug information
-        std::string litstring;
-        for (std::set<unsigned>::iterator i = cube_deps.begin();
-             i != cube_deps.end(); i++)
-            litstring += std::to_string(*i) + ", ";
-        dbgMsg("the cube deps: " + litstring);
+    // print some debug information
+    std::string litstring;
+    for (std::set<unsigned>::iterator i = cube_deps.begin();
+         i != cube_deps.end(); i++)
+        litstring += std::to_string(*i) + ", ";
+    dbgMsg("the cube deps: " + litstring);
 #endif
     std::vector<std::set<unsigned>> dep_vector;
     std::vector<BDD> bdd_vector;
