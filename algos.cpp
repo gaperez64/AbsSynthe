@@ -27,6 +27,10 @@
 #include <algorithm>
 #include <iostream>
 #include <ctime>
+#include <list>
+#include <set>
+#include <tuple>
+#include <cfloat>
 #include "cuddObj.hh"
 
 #include "abssynthe.h"
@@ -227,13 +231,19 @@ static BDD upre(BDDAIG* spec, BDD dst, BDD &trans_bdd) {
     return temp_bdd.ExistAbstract(uinput_cube);
 }
 
-static bool internalSolve(Cudd* mgr, BDDAIG* spec) {
+static bool internalSolve(Cudd* mgr, BDDAIG* spec, const BDD * upre_init, 
+			BDD * losing_region, BDD * losing_transitions) {
     dbgMsg("Computing fixpoint of UPRE.");
     bool includes_init = false;
     unsigned cnt = 0;
     BDD bad_transitions;
     BDD init_state = spec->initState();
-    BDD error_states = spec->errorStates();
+		BDD error_states;
+		if (upre_init){
+			error_states = *upre_init;
+		} else {
+    	error_states = spec->errorStates();
+		}
     BDD prev_error = ~mgr->bddOne();
     includes_init = ((init_state & error_states) != ~mgr->bddOne());
     while (!includes_init && error_states != prev_error) {
@@ -249,7 +259,12 @@ static bool internalSolve(Cudd* mgr, BDDAIG* spec) {
 #ifndef NDEBUG
     spec->dump2dot(error_states & init_state, "uprestar_and_init.dot");
 #endif
-
+		if (losing_region){
+			*losing_region = error_states;
+		}
+		if (losing_transitions){
+			*losing_transitions = bad_transitions;
+		}
     // if !includes_init == true, then ~bad_transitions is the set of all
     // good transitions for controller (Eve)
     if (!includes_init && settings.out_file != NULL)
@@ -262,7 +277,7 @@ bool solve(AIG* spec_base) {
     Cudd mgr(0, 0);
     mgr.AutodynEnable(CUDD_REORDER_SIFT);
     BDDAIG spec(*spec_base, &mgr);
-    return internalSolve(&mgr, &spec);
+    return internalSolve(&mgr, &spec, NULL, NULL, NULL);
 }
 
 struct {
@@ -278,9 +293,8 @@ bool compSolve1(AIG* spec_base) {
     mgr.AutodynEnable(CUDD_REORDER_SIFT);
     BDDAIG spec(*spec_base, &mgr);
     std::vector<BDDAIG*> subgames = spec.decompose();
-    if (subgames.size() == 0) return internalSolve(&mgr, &spec);
-
     unsigned gamecount = 0;
+    if (subgames.size() == 0) return internalSolve(&mgr, &spec, NULL, NULL, NULL);
     std::vector<std::pair<BDD,BDD> > subgame_results;
     for (std::vector<BDDAIG*>::iterator i = subgames.begin();
          i != subgames.end(); i++) {
@@ -353,14 +367,15 @@ bool compSolve1(AIG* spec_base) {
         BDDAIG aggregated_game(spec, losing_transitions);
         dbgMsg("Computing fixpoint of UPRE.");
         unsigned cnt = 0;
-        BDD init_state = aggregated_game.initState();
-        BDD error_states = aggregated_game.errorStates();
+        BDD init_state = spec.initState();
+        BDD error_states = losing_states;
         BDD prev_error = ~mgr.bddOne();
         includes_init = ((init_state & error_states) != ~mgr.bddOne());
         while (!includes_init && error_states != prev_error) {
             prev_error = error_states;
-            error_states = prev_error | upre(&aggregated_game, prev_error,
-                                             bad_transitions);
+            //error_states = prev_error | upre(&aggregated_game, prev_error,
+            //                                 bad_transitions);
+            error_states = prev_error | upre(&spec, prev_error, bad_transitions);
             includes_init = ((init_state & error_states) != ~mgr.bddOne());
             cnt++;
         }
@@ -409,4 +424,90 @@ bool compSolve1(AIG* spec_base) {
         delete *i;
 
     return !includes_init;
+}
+
+using namespace std;
+// subgame, error bdd size, and cinputs
+// typedef std::tuple<BDD, unsigned, set<unsigned> > subgame_info;
+typedef pair<BDD, set<unsigned>> subgame_info;
+bool compSolve2(AIG* spec_base) {
+    Cudd mgr(0, 0);
+    mgr.AutodynEnable(CUDD_REORDER_SIFT);
+    BDDAIG spec(*spec_base, &mgr);
+    std::vector<BDDAIG*> subgames = spec.decompose();
+    if (subgames.size() == 0) return internalSolve(&mgr, &spec, NULL, NULL, NULL);
+
+		// Solving now the subgames
+		BDD losing_transitions;
+    int gamecount = 0;
+		list<subgame_info> subgame_results;
+		int total_bdd_size = 0;
+		int total_cinp_size = 0;
+    for (std::vector<BDDAIG*>::iterator i = subgames.begin();
+         i != subgames.end(); i++) {
+        gamecount++;
+        dbgMsg("Solving subgame " + std::to_string(gamecount) + " (" +
+               std::to_string((*i)->numLatches()) + " latches)");
+				if (!internalSolve(&mgr, *i, NULL, NULL, &losing_transitions)){
+            return false;
+        }
+				vector<unsigned> cinput_vect = (*i)->getCInputLits();
+				set<unsigned> cinput_set(cinput_vect.begin(), cinput_vect.end());
+				subgame_results.push_back(subgame_info(losing_transitions, cinput_set));
+				total_bdd_size += losing_transitions.nodeCount();
+				total_cinp_size += cinput_set.size();
+        // we have to release the memory used for the caches and stuff
+        delete (*i);
+    }
+		double mean_bdd_size = total_bdd_size / subgame_results.size();
+		double mean_cinp_size = total_cinp_size / subgame_results.size();
+		double cinp_factor = 0.5 * mean_bdd_size / mean_cinp_size;
+		// TODO We should now check for cinput-independence and latchless
+		bool final_iteration = false;
+		while (subgame_results.size() >= 2){
+			final_iteration = (subgame_results.size() == 2);
+			// Get the pair min_i,min_j that minimizes the score
+			// The score is defined as 
+			// 					b.countNode() + cinp_factor * cinp_union.size()
+			// where b is the disjunction of the error functions, and cinp_union
+			// is the union of the cinputs of the subgames.
+			int min_i, min_j;														 // the indices of the selected games
+			list<subgame_info>::iterator min_it, min_jt; // iterators to selected games
+			double best_score = DBL_MAX; 								 // the score of the selected pair
+			BDD joint_err; 															 // the disjunction of the error function of the pair
+			set<unsigned> joint_cinp;										 // union of the cinp dependencies
+
+			list<subgame_info>::iterator it, jt;
+			int i,j;
+			for (i=0, it = subgame_results.begin(); 
+						it != subgame_results.end(); i++, it++){
+				jt = it; jt++;
+				j = i + 1;
+				for (; jt != subgame_results.end(); j++, jt++){
+					BDD b = it->first | jt->first;
+					set<unsigned> cinp_union;
+					set_union(it->second.begin(), it->second.end(), 
+								jt->second.begin(), jt->second.end(), inserter(cinp_union,cinp_union.begin()));
+					double score = b.nodeCount() + cinp_factor * cinp_union.size();
+					if (score < best_score){
+						min_i = i;
+						min_j = j;
+						min_it = it;
+						min_jt = jt;
+						joint_err = b;
+						joint_cinp = cinp_union;
+						best_score = score;
+					}
+				}
+			}
+		  dbgMsg("Selected subgames " + to_string(min_i) + " and " + to_string(min_j));
+			BDDAIG subgame(spec, joint_err);
+			BDD losing_transitions;
+			bool sub_realizable = internalSolve(&mgr, &subgame, NULL, NULL, &losing_transitions);
+			if (!sub_realizable) return false;
+			subgame_results.erase(min_it);
+			subgame_results.erase(min_jt);
+			subgame_results.push_back(subgame_info(losing_transitions, joint_cinp));
+		}
+		return true;
 }
