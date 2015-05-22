@@ -37,9 +37,10 @@
 #include "aiger.h"
 
 class AIG {
+    private:
+        bool must_clean;
     protected:
         aiger* spec;
-        bool must_clean;
         std::vector<aiger_symbol*> latches;
         std::vector<aiger_symbol*> c_inputs;
         std::vector<aiger_symbol*> u_inputs;
@@ -78,34 +79,25 @@ class AIG {
             std::cout << "u_inputs size: " << this->u_inputs.size() << std::endl;
           }
           assert(this->c_inputs.size() == 1);
-          //assert(this->u_inputs.size() == 10);
-          //std::cout << "--\n";
 #endif
         }
         std::vector<unsigned> getCInputLits();
         std::vector<unsigned> getUInputLits();
-    /*
-	return latches.size();
-}
-    void input2and(aiger_symbol*, aiger_symbol*);
-    void writeSpec();
-    aiger_symbol* const getErrSymbol();
-    aiger_symbol* const addGate(long, aiger_symbol*, aiger_symbol*);
-    aiger_symbol* const addOutput(long, char*);
-    void removeOutputs();
-    aiger_symbol* newSymbol();
-*/
 };
 
 class BDDAIG : public AIG {
+    private:
+        bool must_clean;
     protected:
         BDD* primed_latch_cube;
         BDD* cinput_cube;
         BDD* uinput_cube;
         BDD* trans_rel;
         BDD* short_error;
+        std::unordered_map<unsigned, BDD>* lit2bdd_map;
+        std::unordered_map<unsigned long, std::set<unsigned>>* bdd2deps_map;
         std::vector<BDD>* next_fun_compose_vec;
-        BDD lit2bdd(unsigned, std::unordered_map<unsigned, BDD>*);
+        BDD lit2bdd(unsigned);
         std::vector<BDD> mergeSomeSignals(BDD, std::vector<unsigned>*);
         std::set<unsigned> semanticDeps(BDD);
         bool isValidLatchBdd(BDD);
@@ -128,7 +120,7 @@ class BDDAIG : public AIG {
         BDD uinputCube();
         BDD transRelBdd();
         std::set<unsigned> getBddDeps(BDD);
-        std::vector<BDD> nextFunComposeVec();
+        std::vector<BDD> nextFunComposeVec(BDD*);
         std::vector<BDDAIG*> decompose();
 };
 

@@ -160,16 +160,18 @@ static void synthAlgo(Cudd* mgr, BDDAIG* spec, BDD non_det_strategy,
     spec->writeToFile(settings.out_file);
 }
 
-static BDD substituteLatchesNext(BDDAIG* spec, BDD dst) {
+static BDD substituteLatchesNext(BDDAIG* spec, BDD dst, BDD* care_region=NULL) {
     BDD result;
     if (settings.use_trans) {
         BDD trans_rel_bdd = spec->transRelBdd();
+        if (care_region != NULL)
+            trans_rel_bdd = BDDAIG::safeRestrict(trans_rel_bdd, *care_region);
         BDD primed_dst = spec->primeLatchesInBdd(dst);
         BDD primed_latch_cube = spec->primedLatchCube();
         result = trans_rel_bdd.AndAbstract(primed_dst,
                                            primed_latch_cube);
     } else {
-        std::vector<BDD> next_funs = spec->nextFunComposeVec();
+        std::vector<BDD> next_funs = spec->nextFunComposeVec(care_region);
         result = dst.VectorCompose(next_funs);
 #if false       
         BDD trans_rel_bdd = spec->transRelBdd();
@@ -188,7 +190,8 @@ static BDD substituteLatchesNext(BDDAIG* spec, BDD dst) {
 // NOTE: trans_bdd contains the set of all transitions going into bad
 // states after the upre step (the complement of all good transitions)
 static BDD upre(BDDAIG* spec, BDD dst, BDD &trans_bdd) {
-    trans_bdd = substituteLatchesNext(spec, dst);
+    BDD not_dst = ~dst;
+    trans_bdd = substituteLatchesNext(spec, dst, &not_dst);
     BDD cinput_cube = spec->cinputCube();
     BDD uinput_cube = spec->uinputCube();
     BDD temp_bdd = trans_bdd.UnivAbstract(cinput_cube);
@@ -257,20 +260,19 @@ bool compSolve1(AIG* spec_base) {
     std::set<unsigned> total_cinputs;
     for (std::vector<BDDAIG*>::iterator i = subgames.begin();
          i != subgames.end(); i++) {
-      std::vector<unsigned> ic = (*i)->getCInputLits();
-      std::set<unsigned> intersection;
-      set_intersection(ic.begin(), ic.end(), total_cinputs.begin(), 
-            total_cinputs.end(), std::inserter(intersection,intersection.begin()));
-      if (intersection.size() > 0 ){
-        cinput_independent = false;
-        break;
-      } else {
-        total_cinputs.insert(ic.begin(), ic.end());
-      }
+        std::vector<unsigned> ic = (*i)->getCInputLits();
+        std::set<unsigned> intersection;
+        set_intersection(ic.begin(), ic.end(), total_cinputs.begin(), 
+                         total_cinputs.end(), 
+                         std::inserter(intersection,intersection.begin()));
+        if (intersection.size() > 0 ) {
+            cinput_independent = false;
+            break;
+        } else {
+            total_cinputs.insert(ic.begin(), ic.end());
+        }
     }   
-    if (cinput_independent){
-      dbgMsg("We are cinput-independent!");
-    }
+    dbgMsg("Are we cinput-independent? " + std::to_string(cinput_independent));
     // Let us aggregate the losing region
     BDD losing_states = spec.errorStates();
     BDD losing_transitions = ~mgr.bddOne();
@@ -279,8 +281,8 @@ bool compSolve1(AIG* spec_base) {
     for (std::vector<BDDAIG*>::iterator i = subgames.begin();
          i != subgames.end(); i++) {
         gamecount++;
-        dbgMsg("");
-        dbgMsg("Solving a subgame (" + std::to_string((*i)->numLatches()) + " latches)");
+        dbgMsg("Solving subgame " + std::to_string(gamecount) + " (" +
+               std::to_string((*i)->numLatches()) + " latches)");
         bool includes_init = false;
         unsigned cnt = 0;
         BDD bad_transitions;
@@ -332,20 +334,40 @@ bool compSolve1(AIG* spec_base) {
     bool includes_init = false;
     unsigned cnt = 0;
     BDD bad_transitions;
-    BDD init_state = aggregated_game.initState();
-    BDD error_states = aggregated_game.errorStates();
-    BDD prev_error = ~mgr.bddOne();
-    includes_init = ((init_state & error_states) != ~mgr.bddOne());
-    while (!includes_init && error_states != prev_error) {
-        prev_error = error_states;
-        error_states = prev_error | upre(&aggregated_game, prev_error,
-                                         bad_transitions);
+    bool includes_init = false;
+    if (!cinput_independent){ // we still have one game to solve
+        std::vector<std::pair<BDD,BDD> >::iterator sg = subgame_results.begin();
+        for (sg = subgame_results.begin(); sg != subgame_results.end(); sg++){
+            losing_states |= sg->first;
+            losing_transitions |= sg->second;
+        }
+        // we now solve the aggregated game
+        dbgMsg("Solving the aggregated game");
+        BDDAIG aggregated_game(spec, losing_transitions);
+        dbgMsg("Computing fixpoint of UPRE.");
+        unsigned cnt = 0;
+        BDD init_state = aggregated_game.initState();
+        BDD error_states = aggregated_game.errorStates();
+        BDD prev_error = ~mgr.bddOne();
         includes_init = ((init_state & error_states) != ~mgr.bddOne());
-        cnt++;
+        while (!includes_init && error_states != prev_error) {
+            prev_error = error_states;
+            error_states = prev_error | upre(&aggregated_game, prev_error,
+                                             bad_transitions);
+            includes_init = ((init_state & error_states) != ~mgr.bddOne());
+            cnt++;
+        }
+        
+        dbgMsg("Early exit? " + std::to_string(includes_init) + 
+               ", after " + std::to_string(cnt) + " iterations.");
+    } else if (settings.out_file != NULL) {
+        // we have to output a strategy so we should aggregate the good
+        // transitions
+        bad_transitions = ~mgr.bddOne();
+        std::vector<std::pair<BDD,BDD> >::iterator sg = subgame_results.begin();
+        for (sg = subgame_results.begin(); sg != subgame_results.end(); sg++)
+            bad_transitions |= sg->second;
     }
-    
-    dbgMsg("Early exit? " + std::to_string(includes_init) + 
-           ", after " + std::to_string(cnt) + " iterations.");
 
     // if !includes_init == true, then ~bad_transitions is the set of all
     // good transitions for controller (Eve)
