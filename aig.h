@@ -99,11 +99,11 @@ class BDDAIG : public AIG {
         std::vector<BDD>* next_fun_compose_vec;
         BDD lit2bdd(unsigned);
         std::vector<BDD> mergeSomeSignals(BDD, std::vector<unsigned>*);
-        std::set<unsigned> semanticDeps(BDD);
         bool isValidLatchBdd(BDD);
         bool isValidBdd(BDD);
     public:
         static BDD safeRestrict(BDD, BDD);
+        std::set<unsigned> semanticDeps(BDD);
         
         Cudd* mgr;
         static unsigned primeVar(unsigned lit) { return AIG::stripLit(lit) + 1; }
