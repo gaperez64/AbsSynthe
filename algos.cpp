@@ -299,30 +299,11 @@ bool compSolve1(AIG* spec_base) {
     for (std::vector<BDDAIG*>::iterator i = subgames.begin();
          i != subgames.end(); i++) {
         gamecount++;
+        BDD error_states;
+        BDD bad_transitions;
         dbgMsg("Solving subgame " + std::to_string(gamecount) + " (" +
                std::to_string((*i)->numLatches()) + " latches)");
-        bool includes_init = false;
-        unsigned cnt = 0;
-        BDD bad_transitions;
-        BDD init_state = (*i)->initState();
-        BDD error_states = (*i)->errorStates();
-        BDD prev_error = ~mgr.bddOne();
-        includes_init = ((init_state & error_states) != ~mgr.bddOne());
-        while (!includes_init && error_states != prev_error) {
-            prev_error = error_states;
-            error_states = prev_error | upre(*i, prev_error, bad_transitions);
-            includes_init = ((init_state & error_states) != ~mgr.bddOne());
-            cnt++;
-        }
-        
-        dbgMsg("Early exit at game " + std::to_string(gamecount) + "? " +
-               std::to_string(includes_init) + 
-               ", after " + std::to_string(cnt) + " iterations.");
-        if (includes_init) {
-#ifndef NDEBUG
-            (*i)->dump2dot(init_state, "local_init.dot");
-            (*i)->dump2dot(error_states & init_state, "uprestar_and_init.dot");
-#endif
+        if (!internalSolve(&mgr, *i, NULL, &error_states, &bad_transitions)) {
             return false;
         } else {
             subgame_results.push_back(std::pair<BDD,BDD>(error_states,
@@ -361,27 +342,12 @@ bool compSolve1(AIG* spec_base) {
             losing_states |= sg->first;
             losing_transitions |= sg->second;
         }
-        // we now solve the aggregated game
         dbgMsg("Solving the aggregated game");
         // TODO: try out using losing_states instead of losing_transition here
         BDDAIG aggregated_game(spec, losing_transitions);
-        dbgMsg("Computing fixpoint of UPRE.");
-        unsigned cnt = 0;
-        BDD init_state = spec.initState();
-        BDD error_states = losing_states;
-        BDD prev_error = ~mgr.bddOne();
-        includes_init = ((init_state & error_states) != ~mgr.bddOne());
-        while (!includes_init && error_states != prev_error) {
-            prev_error = error_states;
-            //error_states = prev_error | upre(&aggregated_game, prev_error,
-            //                                 bad_transitions);
-            error_states = prev_error | upre(&spec, prev_error, bad_transitions);
-            includes_init = ((init_state & error_states) != ~mgr.bddOne());
-            cnt++;
-        }
-        
-        dbgMsg("Early exit? " + std::to_string(includes_init) + 
-               ", after " + std::to_string(cnt) + " iterations.");
+        BDD error_states;
+        includes_init = !internalSolve(&mgr, &aggregated_game, &losing_states,
+                                       &error_states, &bad_transitions);
 
         // if !includes_init == true, then ~bad_transitions is the set of all
         // good transitions for controller (Eve)
