@@ -36,5 +36,8 @@ void dbgMsg(std::string);
 void wrnMsg(std::string);
 void logMsg(std::string);
 void errMsg(std::string);
+void resetTimer(std::string);
+void addTime(std::string);
+clock_t getAccTime(std::string);
 
 #endif

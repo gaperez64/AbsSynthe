@@ -96,42 +96,61 @@ static unsigned bdd2aig(Cudd* mgr, BDDAIG* spec, BDD a_bdd,
     return res;
 }
 
-static void synthAlgo(Cudd* mgr, BDDAIG* spec, BDD non_det_strategy,
-                      BDD* ext_care_set=NULL) {
-    BDD care_set;
-    if (ext_care_set == NULL)
-        care_set = mgr->bddOne();
-    else
-        care_set = *ext_care_set;
-
+static std::vector<std::pair<unsigned, BDD>> synthAlgo(Cudd* mgr,
+                                                       BDDAIG* spec,
+                                                       BDD non_det_strategy,
+                                                       BDD care_set) {
     BDD strategy = non_det_strategy;
     std::vector<aiger_symbol*> c_inputs = spec->getCInputs();
     std::vector<unsigned> c_input_lits;
     std::vector<BDD> c_input_funs;
+
+    dbgMsg("non-det strategy BDD size: " +
+           std::to_string(non_det_strategy.nodeCount()));
 
     // as a first step, we compute a single bdd per controllable input
     for (std::vector<aiger_symbol*>::iterator i = c_inputs.begin();
          i != c_inputs.end(); i++) {
         BDD c = mgr->bddVar((*i)->lit);
         BDD others_cube = mgr->bddOne();
+        unsigned others_count = 0;
         for (std::vector<aiger_symbol*>::iterator j = c_inputs.begin();
              j != c_inputs.end(); j++) {
+            dbgMsg("CInput " + std::to_string((*j)->lit));
             if ((*i)->lit == (*j)->lit)
                 continue;
             others_cube &= mgr->bddVar((*j)->lit);
+            dbgMsg("Other cube has lit " + std::to_string((*j)->lit));
+            others_count++;
         }
-        BDD c_arena = strategy.ExistAbstract(others_cube);
+        BDD c_arena;
+        if (others_count > 0)
+            c_arena = strategy.ExistAbstract(others_cube);
+        else {
+            dbgMsg("No need to abstract other cinputs");
+            c_arena = strategy;
+        }
+#ifndef NDEBUG
+        spec->dump2dot(c_arena, "c_arena.dot");
+        spec->dump2dot(c_arena.Cofactor(c), "c_arena_true.dot");
+#endif
         // pairs (x,u) in which c can be true
         BDD can_be_true = c_arena.Cofactor(c);
+        dbgMsg("Can be true BDD size: " + std::to_string(can_be_true.nodeCount()));
         // pairs (x,u) in which c can be false
         BDD can_be_false = c_arena.Cofactor(~c);
+        dbgMsg("Can be false BDD size: " + std::to_string(can_be_false.nodeCount()));
         BDD must_be_true = (~can_be_false) & can_be_true;
+        dbgMsg("Must be true BDD size: " + std::to_string(must_be_true.nodeCount()));
         BDD must_be_false = (~can_be_true) & can_be_false;
+        dbgMsg("Must be false BDD size: " + std::to_string(must_be_false.nodeCount()));
         BDD local_care_set = care_set & (must_be_true | must_be_false);
         // on care set: must_be_true.restrict(care_set) <-> must_be_true
         // or         ~(must_be_false).restrict(care_set) <-> ~must_be_false
         BDD opt1 = BDDAIG::safeRestrict(must_be_true, local_care_set);
+        dbgMsg("opt1 BDD size: " + std::to_string(opt1.nodeCount()));
         BDD opt2 = BDDAIG::safeRestrict(~must_be_false, local_care_set);
+        dbgMsg("opt2 BDD size: " + std::to_string(opt2.nodeCount()));
         BDD res;
         if (opt1.nodeCount() < opt2.nodeCount())
             res = opt1;
@@ -143,19 +162,29 @@ static void synthAlgo(Cudd* mgr, BDDAIG* spec, BDD non_det_strategy,
         c_input_funs.push_back(res);
         c_input_lits.push_back((*i)->lit);
     }
-    
+
+    std::vector<std::pair<unsigned, BDD>> result;
+    std::vector<unsigned>::iterator i = c_input_lits.begin();
+    std::vector<BDD>::iterator j = c_input_funs.begin();
+    for (; i != c_input_lits.end();) {
+        result.push_back(std::make_pair(*i, *j));
+        i++;
+        j++;
+    }
+
+    return result;
+}
+
+void finalizeSynth(Cudd* mgr, BDDAIG* spec, 
+                   std::vector<std::pair<unsigned, BDD>> result) {
     // we now get rid of all controllable inputs in the aig spec by replacing
     // each one with an and computed using bdd2aig...
     // NOTE: because of the way bdd2aig is implemented, we must ensure that BDDs are
     // no longer operated on after this point!
     std::unordered_map<unsigned long, unsigned> cache;
-    std::vector<unsigned>::iterator i = c_input_lits.begin();
-    std::vector<BDD>::iterator j = c_input_funs.begin();
-    for (; i != c_input_lits.end();) {
-        spec->input2gate(*i, bdd2aig(mgr, spec, *j, &cache));
-        i++;
-        j++;
-    }
+    for (std::vector<std::pair<unsigned, BDD>>::iterator i = result.begin();
+         i != result.end(); i++)
+        spec->input2gate(i->first, bdd2aig(mgr, spec, i->second, &cache));
     // Finally, we write the modified spec to file
     spec->writeToFile(settings.out_file);
 }
@@ -173,7 +202,7 @@ static BDD substituteLatchesNext(BDDAIG* spec, BDD dst, BDD* care_region=NULL) {
     } else {
         std::vector<BDD> next_funs = spec->nextFunComposeVec(care_region);
         result = dst.VectorCompose(next_funs);
-#if false       
+#if false
         BDD trans_rel_bdd = spec->transRelBdd();
         BDD primed_dst = spec->primeLatchesInBdd(dst);
         BDD primed_latch_cube = spec->primedLatchCube();
@@ -224,7 +253,8 @@ static bool internalSolve(Cudd* mgr, BDDAIG* spec) {
     // if !includes_init == true, then ~bad_transitions is the set of all
     // good transitions for controller (Eve)
     if (!includes_init && settings.out_file != NULL)
-        synthAlgo(mgr, spec, ~bad_transitions);
+        finalizeSynth(mgr, spec, 
+                      synthAlgo(mgr, spec, ~bad_transitions, ~error_states));
     return !includes_init;
 }
 
@@ -235,41 +265,22 @@ bool solve(AIG* spec_base) {
     return internalSolve(&mgr, &spec);
 }
 
+struct {
+    bool operator()(std::pair<BDD, BDD> &u, std::pair<BDD, BDD> &v){
+        int u_ = u.second.nodeCount();
+        int v_ = v.second.nodeCount();
+        return u_ < v_;
+    }
+} bddPairCompare;
+
 bool compSolve1(AIG* spec_base) {
-    bool latchless = false;
-    bool cinput_independent = true;
     Cudd mgr(0, 0);
     mgr.AutodynEnable(CUDD_REORDER_SIFT);
     BDDAIG spec(*spec_base, &mgr);
     std::vector<BDDAIG*> subgames = spec.decompose();
-    return true;
     if (subgames.size() == 0) return internalSolve(&mgr, &spec);
-    if(std::all_of(subgames.begin(), subgames.end(), 
-                   [](BDDAIG*sg){ return (sg->numLatches() == 1); })) {
-        latchless = true;
-        errMsg("We are going latchless");
-    }
-    // Check if subgames are cinput-independent
-    std::set<unsigned> total_cinputs;
-    for (std::vector<BDDAIG*>::iterator i = subgames.begin();
-         i != subgames.end(); i++) {
-        std::vector<unsigned> ic = (*i)->getCInputLits();
-        std::set<unsigned> intersection;
-        set_intersection(ic.begin(), ic.end(), total_cinputs.begin(), 
-                         total_cinputs.end(), 
-                         std::inserter(intersection,intersection.begin()));
-        if (intersection.size() > 0 ) {
-            cinput_independent = false;
-            break;
-        } else {
-            total_cinputs.insert(ic.begin(), ic.end());
-        }
-    }   
-    dbgMsg("Are we cinput-independent? " + std::to_string(cinput_independent));
-    // Let us aggregate the losing region
-    BDD losing_states = spec.errorStates();
-    BDD losing_transitions = ~mgr.bddOne();
-    int gamecount = 0;
+
+    unsigned gamecount = 0;
     std::vector<std::pair<BDD,BDD> > subgame_results;
     for (std::vector<BDDAIG*>::iterator i = subgames.begin();
          i != subgames.end(); i++) {
@@ -299,28 +310,46 @@ bool compSolve1(AIG* spec_base) {
             (*i)->dump2dot(error_states & init_state, "uprestar_and_init.dot");
 #endif
             return false;
-        }
-        else {
-            // we aggregate the losing states and transitions
-            // losing_states |= error_states;
-            // losing_transitions |= bad_transitions;
+        } else {
             subgame_results.push_back(std::pair<BDD,BDD>(error_states,
                                                          bad_transitions));
         }
-        // we have to release the memory used for the caches and stuff
-        delete (*i);
     }
 
-    BDD bad_transitions;
     bool includes_init = false;
-    if (!cinput_independent || !latchless){ // we still have one game to solve
-        std::vector<std::pair<BDD,BDD> >::iterator sg = subgame_results.begin();
+    BDD bad_transitions;
+
+    // Check if subgames are cinput-independent
+    bool cinput_independent = true;
+    std::set<unsigned> total_cinputs;
+    for (std::vector<BDDAIG*>::iterator i = subgames.begin();
+         i != subgames.end(); i++) {
+        std::vector<unsigned> ic = (*i)->getCInputLits();
+        std::set<unsigned> intersection;
+        set_intersection(ic.begin(), ic.end(), total_cinputs.begin(), 
+                         total_cinputs.end(), 
+                         std::inserter(intersection,intersection.begin()));
+        if (intersection.size() > 0 ) {
+            cinput_independent = false;
+            break;
+        } else {
+            total_cinputs.insert(ic.begin(), ic.end());
+        }
+    }   
+    dbgMsg("Are we cinput-independent? " + std::to_string(cinput_independent));
+
+    if (!cinput_independent) { // we still have one game to solve
+        BDD losing_states = spec.errorStates();
+        BDD losing_transitions = ~mgr.bddOne();
+        std::vector<std::pair<BDD, BDD> >::iterator sg = subgame_results.begin();
+        std::sort(subgame_results.begin(), subgame_results.end(), bddPairCompare);
         for (sg = subgame_results.begin(); sg != subgame_results.end(); sg++){
             losing_states |= sg->first;
             losing_transitions |= sg->second;
         }
         // we now solve the aggregated game
         dbgMsg("Solving the aggregated game");
+        // TODO: try out using losing_states instead of losing_transition here
         BDDAIG aggregated_game(spec, losing_transitions);
         dbgMsg("Computing fixpoint of UPRE.");
         unsigned cnt = 0;
@@ -338,18 +367,46 @@ bool compSolve1(AIG* spec_base) {
         
         dbgMsg("Early exit? " + std::to_string(includes_init) + 
                ", after " + std::to_string(cnt) + " iterations.");
+
+        // if !includes_init == true, then ~bad_transitions is the set of all
+        // good transitions for controller (Eve)
+        if (!includes_init && settings.out_file != NULL)
+        finalizeSynth(&mgr, &spec, 
+                      synthAlgo(&mgr, &spec, ~bad_transitions, ~error_states));
+
     } else if (settings.out_file != NULL) {
-        // we have to output a strategy so we should aggregate the good
-        // transitions
-        bad_transitions = ~mgr.bddOne();
-        std::vector<std::pair<BDD,BDD> >::iterator sg = subgame_results.begin();
-        for (sg = subgame_results.begin(); sg != subgame_results.end(); sg++)
-            bad_transitions |= sg->second;
+        // we have to output a strategy from the local non-deterministic
+        // strategies...
+#if true
+        std::vector<std::pair<unsigned, BDD>> all_cinput_strats;
+        std::vector<std::pair<BDD, BDD> >::iterator sg = subgame_results.begin();
+        for (std::vector<BDDAIG*>::iterator i = subgames.begin();
+             i != subgames.end(); i++) {
+            std::vector<std::pair<unsigned, BDD>> temp;
+            temp = synthAlgo(&mgr, *i, ~sg->second, ~sg->first);
+            all_cinput_strats.insert(all_cinput_strats.end(), 
+                                     temp.begin(), temp.end());
+        }
+        finalizeSynth(&mgr, &spec, all_cinput_strats);
+#endif
+#if false
+        BDD losing_states = spec.errorStates();
+        BDD losing_transitions = ~mgr.bddOne();
+        std::vector<std::pair<BDD, BDD> >::iterator sg = subgame_results.begin();
+        std::sort(subgame_results.begin(), subgame_results.end(), bddPairCompare);
+        for (sg = subgame_results.begin(); sg != subgame_results.end(); sg++){
+            losing_states |= sg->first;
+            losing_transitions |= sg->second;
+        }
+        finalizeSynth(&mgr, &spec, 
+                      synthAlgo(&mgr, &spec, ~losing_transitions, ~losing_states));
+#endif
     }
 
-    // if !includes_init == true, then ~bad_transitions is the set of all
-    // good transitions for controller (Eve)
-    if (!includes_init && settings.out_file != NULL)
-        synthAlgo(&mgr, &spec, ~bad_transitions);
+    // release cache memory and other stuff used in BDDAIG instances
+    for (std::vector<BDDAIG*>::iterator i = subgames.begin();
+         i != subgames.end(); i++)
+        delete *i;
+
     return !includes_init;
 }

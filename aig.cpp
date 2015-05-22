@@ -34,13 +34,14 @@
 #include <algorithm>
 #include <iterator>
 #include <iostream>
-
+#include <ctime>
 #include "cudd.h"
 #include "cuddObj.hh"
 
 #include "aiger.h"
 #include "aig.h"
 #include "logging.h"
+
 
 // A <= B iff A - B = empty
 static bool setInclusion(std::set<unsigned>* A, std::set<unsigned>* B) {
@@ -64,7 +65,8 @@ void AIG::addGate(unsigned res, unsigned rh0, unsigned rh1) {
 
 void AIG::input2gate(unsigned input, unsigned rh0) {
     aiger_redefine_input_as_and(this->spec, input, rh0, rh0);
-    dbgMsg("Gated input " + std::to_string(input));
+    dbgMsg("Gated input " + std::to_string(input) + " with val = " +
+           std::to_string(rh0));
 }
 
 void AIG::introduceErrorLatch() {
@@ -453,12 +455,14 @@ BDD BDDAIG::uinputCube() {
     return BDD(*this->uinput_cube);
 }
 
+
 BDD BDDAIG::lit2bdd(unsigned lit) {
     BDD result;
     // we first check the cache
     std::unordered_map<unsigned, BDD>* cache = this->lit2bdd_map;
-    if (cache->find(lit) != cache->end())
+    if (cache->find(lit) != cache->end()){
         return (*cache)[lit];
+    }
     unsigned stripped_lit = AIG::stripLit(lit);
     if (stripped_lit == 0) { // return the true/false BDD
         result = ~this->mgr->bddOne();
@@ -466,8 +470,9 @@ BDD BDDAIG::lit2bdd(unsigned lit) {
         aiger_and* and_gate = aiger_is_and(this->spec, stripped_lit);
         // is it a gate? then recurse
         if (and_gate) {
-            result = (this->lit2bdd(and_gate->rhs0) &
-                      this->lit2bdd(and_gate->rhs1));
+            //result = (this->lit2bdd_(and_gate->rhs0) &
+            //          this->lit2bdd_(and_gate->rhs1));
+            result = (this->lit2bdd(and_gate->rhs0) & this->lit2bdd(and_gate->rhs1));
         } else if (stripped_lit == this->error_fake_latch->lit) {
             result = this->mgr->bddVar(stripped_lit);
         } else {
@@ -695,6 +700,13 @@ std::vector<BDD> BDDAIG::mergeSomeSignals(BDD cube, std::vector<unsigned>* origi
          i != bdd_vector.end(); i++) {
         bdd_vector_with_cube.push_back(~(*i) & cube);
     }
+    /*
+    dbgMsg("- Summary of Execution Times -");
+    std::cout << "lit2bdd: " << (getAccTime("lit2bdd") / (double)CLOCKS_PER_SEC) << "\n";
+    std::cout << "getLitDeps: " << (getAccTime("getLitDeps") / (double)CLOCKS_PER_SEC) << "\n";
+    std::cout << "getBddDeps: " << (getAccTime("getBddDeps") / (double)CLOCKS_PER_SEC) << "\n";
+    std::cout << "intersect: " << (getAccTime("intersect") / (double)CLOCKS_PER_SEC) << "\n";
+    */
     return bdd_vector_with_cube;
 }
 

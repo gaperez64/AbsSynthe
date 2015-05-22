@@ -2,7 +2,7 @@ CXX=clang++
 CXXFLAGS=-Wall -std=c++11 -g
 HEADERS=abssynthe.h logging.h aig.h aiger.h
 SOURCES=abssynthe.cpp logging.cpp aig.cpp aiger.c algos.cpp
-CUDD_PATH=../swiss-abssynthe/cudd-2.5.1
+CUDD_PATH=cudd-2.5.1
 CUDD_HDRS=$(CUDD_PATH)/include
 CUDD_LIBS=$(CUDD_PATH)/obj/libobj.a \
 	  $(CUDD_PATH)/cudd/libcudd.a \
