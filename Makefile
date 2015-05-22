@@ -1,7 +1,6 @@
 CXX=clang++
 #CXXFLAGS=-Wall -std=c++11 -g -D NDEBUG
 CXXFLAGS=-Wall -std=c++11 -g
->>>>>>> swiss-guillermo/native-dev
 HEADERS=abssynthe.h logging.h aig.h aiger.h
 SOURCES=abssynthe.cpp logging.cpp aig.cpp aiger.c algos.cpp
 CUDD_PATH=../swiss-abssynthe/cudd-2.5.1

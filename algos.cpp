@@ -242,14 +242,17 @@ struct bdd_pair_compare{
     return u_ < v_;
   }
 }bdd_pair_cmp;
+
 bool compSolve1(AIG* spec_base) {
+		// whether we use the locally winning max. strategies to define the
+		// aggregate game
+		bool use_strat = false;
     bool latchless = false;
     bool cinput_independent = true;
     Cudd mgr(0, 0);
     mgr.AutodynEnable(CUDD_REORDER_SIFT);
     BDDAIG spec(*spec_base, &mgr);
     std::vector<BDDAIG*> subgames = spec.decompose();
-    return true;
     if (subgames.size() == 0) return internalSolve(&mgr, &spec);
     if(std::all_of(subgames.begin(), subgames.end(), 
                    [](BDDAIG*sg){ return (sg->numLatches() == 1); })) {
@@ -317,11 +320,14 @@ bool compSolve1(AIG* spec_base) {
         delete (*i);
     }
     if (latchless && cinput_independent){
+			// TODO Implement a synthesis procedure in this case
       return true;
     } else {
+			// TODO In the Python version not intersecting losing_transitions
+			// but rather defining the aggregate game with the error function 
+			// ferror | losing_states was more efficient. Do this here.
       std::vector<std::pair<BDD,BDD> >::iterator sg = subgame_results.begin();
-      //std::sort(subgame_results.begin(), subgame_results.end());
-      //std::sort(subgame_results.begin(), subgame_results.end(), bdd_pair_cmp);
+      std::sort(subgame_results.begin(), subgame_results.end(), bdd_pair_cmp);
       for (sg = subgame_results.begin(); sg != subgame_results.end(); sg++){
         losing_states |= sg->first;
         losing_transitions |= sg->second;
@@ -332,9 +338,7 @@ bool compSolve1(AIG* spec_base) {
     BDDAIG aggregated_game(spec, losing_transitions);
     dbgMsg("Computing fixpoint of UPRE.");
     bool includes_init = false;
-    unsigned cnt = 0;
     BDD bad_transitions;
-    bool includes_init = false;
     if (!cinput_independent){ // we still have one game to solve
         std::vector<std::pair<BDD,BDD> >::iterator sg = subgame_results.begin();
         for (sg = subgame_results.begin(); sg != subgame_results.end(); sg++){

@@ -23,7 +23,7 @@
  *************************************************************************/
 
 #include <iostream>
-
+#include <map>
 #include "logging.h"
 
 using namespace std;
@@ -70,4 +70,19 @@ void logMsg(string message) {
 
 void errMsg(string message) {
     cerr << "[ERR] " << message << endl;
+}
+
+clock_t lit2bdd_t;
+clock_t bddDeps_t;
+clock_t litDeps_t;
+map<string, clock_t> timers;
+map<string, clock_t> accTimes;
+void resetTimer(string key){
+	timers[key] = clock();
+}
+void addTime(string key){
+	accTimes[key] = accTimes[key] + (clock() - timers[key]);
+}
+clock_t getAccTime(string key){
+	return accTimes[key];
 }
