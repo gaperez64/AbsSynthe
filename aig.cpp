@@ -67,7 +67,6 @@ void AIG::input2gate(unsigned input, unsigned rh0) {
     aiger_redefine_input_as_and(this->spec, input, rh0, rh0);
     dbgMsg("Gated input " + std::to_string(input));
 }
-
 void AIG::introduceErrorLatch() {
     if (this->error_fake_latch != NULL)
         return;
@@ -453,6 +452,13 @@ BDD BDDAIG::uinputCube() {
     }
     return BDD(*this->uinput_cube);
 }
+BDD BDDAIG::toCube(std::set<unsigned> &vars) {
+    BDD result = this->mgr->bddOne();
+    for (std::set<unsigned>::iterator i = vars.begin();
+         i != vars.end(); i++)
+        result &= this->mgr->bddVar((*i));
+    return result;
+}
 
 
 BDD BDDAIG::lit2bdd(unsigned lit) {
@@ -506,6 +512,14 @@ std::vector<unsigned> AIG::getUInputLits(){
   std::vector<unsigned> v;
   std::vector<aiger_symbol*>::iterator it = this->u_inputs.begin();
   for(; it != this->u_inputs.end(); it++){
+		v.push_back((*it)->lit);
+  }
+  return v;
+}
+std::vector<unsigned> AIG::getLatchLits(){
+  std::vector<unsigned> v;
+  std::vector<aiger_symbol*>::iterator it = this->latches.begin();
+  for(; it != this->latches.end(); it++){
 		v.push_back((*it)->lit);
   }
   return v;
@@ -625,6 +639,15 @@ std::set<unsigned> BDDAIG::getBddDeps(BDD b) {
     // cache the result
     (*this->bdd2deps_map)[key] = result;
     return result;
+}
+std::set<unsigned> BDDAIG::getBddLatchDeps(BDD b) {
+  using namespace std;
+  set<unsigned> deps = this->getBddDeps(b);
+  vector<unsigned> latches = this->getLatchLits();
+  set<unsigned> depLatches;
+  set_intersection(deps.begin(), deps.end(), latches.begin(), latches.end(),
+      inserter(depLatches, depLatches.begin()));
+  return depLatches;
 }
 
 std::string stringOfUnsignedSet(std::set<unsigned> s){

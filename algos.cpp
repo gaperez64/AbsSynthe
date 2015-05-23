@@ -390,10 +390,8 @@ bool compSolve1(AIG* spec_base) {
 }
 
 using namespace std;
-// subgame, error bdd size, and cinputs
-// typedef std::tuple<BDD, unsigned, set<unsigned> > subgame_info;
-typedef pair<BDD, set<unsigned> > subgame_info;
 bool compSolve2(AIG* spec_base) {
+    typedef pair<BDD, set<unsigned> > subgame_info;
     Cudd mgr(0, 0);
     mgr.AutodynEnable(CUDD_REORDER_SIFT);
     BDDAIG spec(*spec_base, &mgr);
@@ -426,9 +424,9 @@ bool compSolve2(AIG* spec_base) {
 		double mean_cinp_size = total_cinp_size / subgame_results.size();
 		double cinp_factor = 0.5 * mean_bdd_size / mean_cinp_size;
 		// TODO We should now check for cinput-independence and latchless
-		bool final_iteration = false;
+		// bool final_iteration = false;
 		while (subgame_results.size() >= 2){
-			final_iteration = (subgame_results.size() == 2);
+			// final_iteration = (subgame_results.size() == 2);
 			// Get the pair min_i,min_j that minimizes the score
 			// The score is defined as 
 			// 					b.countNode() + cinp_factor * cinp_union.size()
@@ -466,11 +464,86 @@ bool compSolve2(AIG* spec_base) {
 		  dbgMsg("Selected subgames " + to_string(min_i) + " and " + to_string(min_j));
 			BDDAIG subgame(spec, joint_err);
 			BDD losing_transitions;
-			bool sub_realizable = internalSolve(&mgr, &subgame, NULL, NULL, &losing_transitions);
+      set<unsigned> intersection;
+      set_intersection(min_it->second.begin(), min_it->second.end(),
+                 min_jt->second.begin(), min_jt->second.end(), 
+                 inserter(intersection, intersection.begin()));
+      bool sub_realizable;
+      if (intersection.size() == 0){
+           // TODO Is it correct if we don't compute upre here?
+           // Check with Guillermo
+      }
+      sub_realizable = internalSolve(&mgr, &subgame, NULL, NULL, &losing_transitions);
 			if (!sub_realizable) return false;
 			subgame_results.erase(min_it);
 			subgame_results.erase(min_jt);
 			subgame_results.push_back(subgame_info(losing_transitions, joint_cinp));
 		}
 		return true;
+}
+
+bool compSolve3(AIG* spec_base) {
+    typedef pair<BDD, BDD> subgame_info;
+    Cudd mgr(0, 0);
+    mgr.AutodynEnable(CUDD_REORDER_SIFT);
+    BDDAIG spec(*spec_base, &mgr);
+    std::vector<BDDAIG*> subgames = spec.decompose();
+    cout << "Decomposition ended with " << subgames.size() << " subgames\n";
+    if (subgames.size() == 0) return internalSolve(&mgr, &spec, NULL, NULL, NULL);
+		// Solving now the subgames
+		BDD losing_transitions;
+    BDD losing_region;
+    BDD global_lose = mgr.bddZero();
+		vector<subgame_info> subgame_results;
+    for (int i = 0; i < subgames.size(); i++) {
+        dbgMsg("Solving subgame " + std::to_string(i) + " (" +
+               std::to_string(subgames[i]->numLatches()) + " latches)");
+				if (!internalSolve(&mgr, subgames[i], NULL, &losing_region, &losing_transitions)){
+            return false;
+        }
+				subgame_results.push_back(subgame_info(~losing_region, ~losing_transitions));
+        global_lose |= losing_region;
+        //BDDAIG * old_sg = subgames[i];
+        //subgames[i] = new BDDAIG(*subgames[i], losing_transitions);
+        //delete(old_sg);
+    }
+    dbgMsg("");
+    dbgMsg("Now refining the aggregate game");
+    BDD prev_lose = mgr.bddOne();
+    BDD tmp_lose;
+    BDD tmp_losing_trans;
+    int count = 1;
+    while(prev_lose != global_lose){
+      dbgMsg("Refinement iterate: " + to_string(count++));
+      prev_lose = global_lose;
+      for (int i = 0; i < subgames.size(); i++){
+          BDDAIG * subgame = subgames[i];
+          subgame_info & sg_info = subgame_results[i];
+          set<unsigned> latches_u = spec.getBddLatchDeps(global_lose);
+          set<unsigned> latches_sg = spec.getBddLatchDeps(sg_info.second);
+          set<unsigned> rem_latches;
+          set_difference(latches_u.begin(), latches_u.end(), 
+              latches_sg.begin(), latches_sg.end(), 
+              inserter(rem_latches, rem_latches.begin()));
+          BDD local_lose = global_lose.UnivAbstract(spec.toCube(rem_latches));
+          BDD & local_win_over = sg_info.first;
+          // if local_lose intersects local_win_over
+          if ( ~(local_lose & local_win_over) != mgr.bddOne() ){
+            if (!internalSolve(&mgr, subgame, &local_lose, 
+                &tmp_lose, &tmp_losing_trans)){
+                  return false;
+            }
+            //subgames[i] = new BDDAIG(*subgame, tmp_losing_trans);
+            //delete(subgame);
+            sg_info.first = ~tmp_lose;
+            sg_info.second = ~tmp_losing_trans;
+            global_lose |= tmp_lose;
+          }
+      }
+      if (global_lose == prev_lose){
+        BDD dummy;
+        global_lose = global_lose | upre(&spec, global_lose, dummy);
+      }
+    }
+    return true;
 }

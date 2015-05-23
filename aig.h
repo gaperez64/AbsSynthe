@@ -71,18 +71,10 @@ class AIG {
         void writeToFile(const char*);
         std::vector<aiger_symbol*> getLatches() { return this->latches; }
         std::vector<aiger_symbol*> getCInputs() { return this->c_inputs; }
-	    unsigned numLatches();
-        void check(){
-#ifndef NDEBUG
-          if (this->c_inputs.size() != 1 ){
-            std::cout << "c_inputs size: " << this->c_inputs.size() << std::endl;
-            std::cout << "u_inputs size: " << this->u_inputs.size() << std::endl;
-          }
-          assert(this->c_inputs.size() == 1);
-#endif
-        }
+        unsigned numLatches();
         std::vector<unsigned> getCInputLits();
         std::vector<unsigned> getUInputLits();
+        std::vector<unsigned> getLatchLits();
 };
 
 class BDDAIG : public AIG {
@@ -119,7 +111,9 @@ class BDDAIG : public AIG {
         BDD cinputCube();
         BDD uinputCube();
         BDD transRelBdd();
+        BDD toCube(std::set<unsigned>&);
         std::set<unsigned> getBddDeps(BDD);
+        std::set<unsigned> getBddLatchDeps(BDD);
         std::vector<BDD> nextFunComposeVec(BDD*);
         std::vector<BDDAIG*> decompose();
 };

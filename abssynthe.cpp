@@ -143,7 +143,9 @@ int main (int argc, char** argv) {
         result = compSolve1(&aig);
     } else if (settings.comp_algo == 2){
         result = compSolve2(&aig);
-    }else if (settings.comp_algo != 0) {
+    } else if (settings.comp_algo == 3){
+        result = compSolve3(&aig);
+    } else if (settings.comp_algo != 0) {
         // not implemented for the moment
         // TODO: remove this error here
         exit(1);
