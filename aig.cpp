@@ -77,6 +77,7 @@ void AIG::introduceErrorLatch() {
     this->error_fake_latch->next = this->spec->outputs[0].lit;
     dbgMsg(std::string("Error fake latch = ") + 
            std::to_string(this->error_fake_latch->lit));
+    this->spec->maxvar++;
 }
 
 AIG::AIG(const char* aiger_file_name, bool intro_error_latch) {
@@ -612,11 +613,8 @@ BDD BDDAIG::transRelBdd() {
 std::set<unsigned> BDDAIG::getBddDeps(BDD b) {
     unsigned long key = (unsigned long) b.getRegularNode();
     if (this->bdd2deps_map->find(key) != this->bdd2deps_map->end()) {
-        dbgMsg("bdd deps cache hit");
         return (*this->bdd2deps_map)[key];
     }
-
-    dbgMsg("bdd deps cache miss");
 
     std::set<unsigned> one_step_deps = this->semanticDeps(b);
     std::vector<unsigned> latch_next_to_explore;

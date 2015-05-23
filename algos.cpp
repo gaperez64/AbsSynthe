@@ -503,9 +503,9 @@ bool compSolve3(AIG* spec_base) {
         }
 				subgame_results.push_back(subgame_info(~losing_region, ~losing_transitions));
         global_lose |= losing_region;
-        //BDDAIG * old_sg = subgames[i];
-        //subgames[i] = new BDDAIG(*subgames[i], losing_transitions);
-        //delete(old_sg);
+        BDDAIG * old_sg = subgames[i];
+        subgames[i] = new BDDAIG(*subgames[i], losing_transitions);
+        delete(old_sg);
     }
     dbgMsg("");
     dbgMsg("Now refining the aggregate game");
@@ -519,7 +519,7 @@ bool compSolve3(AIG* spec_base) {
       for (int i = 0; i < subgames.size(); i++){
           BDDAIG * subgame = subgames[i];
           subgame_info & sg_info = subgame_results[i];
-          set<unsigned> latches_u = spec.getBddLatchDeps(global_lose);
+          vector<unsigned> latches_u = spec.getLatchLits();
           set<unsigned> latches_sg = spec.getBddLatchDeps(sg_info.second);
           set<unsigned> rem_latches;
           set_difference(latches_u.begin(), latches_u.end(), 
@@ -533,8 +533,8 @@ bool compSolve3(AIG* spec_base) {
                 &tmp_lose, &tmp_losing_trans)){
                   return false;
             }
-            //subgames[i] = new BDDAIG(*subgame, tmp_losing_trans);
-            //delete(subgame);
+            subgames[i] = new BDDAIG(*subgame, tmp_losing_trans);
+            delete(subgame);
             sg_info.first = ~tmp_lose;
             sg_info.second = ~tmp_losing_trans;
             global_lose |= tmp_lose;

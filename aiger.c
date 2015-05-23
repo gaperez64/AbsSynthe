@@ -29,7 +29,7 @@ IN THE SOFTWARE.
 #include <assert.h>
 #include <ctype.h>
 #include <unistd.h>
-
+#include <stdio.h>
 /*------------------------------------------------------------------------*/
 
 // TODO move this to seperate file_and sync it with git hash
@@ -2657,6 +2657,12 @@ aiger_lit2type (aiger * _public, unsigned lit)
 
   assert (!aiger_sign (lit));
   var = aiger_lit2var (lit);
+#ifndef NDEBUG
+  if ( var > _public->maxvar){
+     fprintf(stderr, "[ERR] aiger_lit2type. Variable too large. Got %d but maxvar is %d\n",
+         var, _public->maxvar);
+  }
+#endif
   assert (var <= _public->maxvar);
   type = _private->types + var;
 
