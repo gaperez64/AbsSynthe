@@ -515,9 +515,9 @@ bool compSolve3(AIG* spec_base) {
     BDD tmp_losing_trans;
     int count = 1;
     while(prev_lose != global_lose){
+      prev_lose = global_lose;
       dbgMsg("Refinement iterate: " + to_string(count++));
       resetTimer("localstep");
-      prev_lose = global_lose;
       for (int i = 0; i < subgames.size(); i++){
           BDDAIG * subgame = subgames[i];
           subgame_info & sg_info = subgame_results[i];
@@ -531,6 +531,7 @@ bool compSolve3(AIG* spec_base) {
           BDD & local_win_over = sg_info.first;
           // if local_lose intersects local_win_over
           if ( ~(local_lose & local_win_over) != mgr.bddOne() ){
+            dbgMsg("\tActually refining subgame " + to_string(i));
             if (!internalSolve(&mgr, subgame, &local_lose, 
                 &tmp_lose, &tmp_losing_trans)){
                   return false;
@@ -540,6 +541,11 @@ bool compSolve3(AIG* spec_base) {
             sg_info.first = ~tmp_lose;
             sg_info.second = ~tmp_losing_trans;
             global_lose |= tmp_lose;
+            if (global_lose == prev_lose){
+              dbgMsg("\tLocal losing region didn't change");
+            } else {
+              dbgMsg("\n\tLocal losing region *DID* change");
+            }
           }
       }
       addTime("localstep");
@@ -550,7 +556,7 @@ bool compSolve3(AIG* spec_base) {
         global_lose = global_lose | upre(&spec, global_lose, dummy);
         addTime("globalstep");
       } else {
-        dbgMsg("Local Upre");
+        dbgMsg("Skipping global Upre");
       }
     }
     return true;
