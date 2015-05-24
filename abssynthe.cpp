@@ -145,12 +145,16 @@ int main (int argc, char** argv) {
         result = compSolve2(&aig);
     } else if (settings.comp_algo == 3){
         result = compSolve3(&aig);
-    } else if (settings.comp_algo != 0) {
-        // not implemented for the moment
-        // TODO: remove this error here
-        exit(1);
-    } else {
-        // traditional fixpoint computation
+#ifndef NDEBUG
+				dbgMsg("Decomposition took: " + 
+						std::to_string(getAccTime("decompose")/(double)CLOCKS_PER_SEC));
+				dbgMsg("Local steps took: " + 
+						std::to_string(getAccTime("localstep")/(double)CLOCKS_PER_SEC));
+				dbgMsg("Global steps took: " + 
+						std::to_string(getAccTime("globalstep")/(double)CLOCKS_PER_SEC));
+#endif
+    } else{
+				// traditional fixpoint computation
         result = solve(&aig);
     }
     // return the realizability test result

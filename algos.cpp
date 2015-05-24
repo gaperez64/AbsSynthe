@@ -424,7 +424,6 @@ bool compSolve2(AIG* spec_base) {
 		double mean_cinp_size = total_cinp_size / subgame_results.size();
 		double cinp_factor = 0.5 * mean_bdd_size / mean_cinp_size;
 		// TODO We should now check for cinput-independence and latchless
-		// bool final_iteration = false;
 		while (subgame_results.size() >= 2){
 			// final_iteration = (subgame_results.size() == 2);
 			// Get the pair min_i,min_j that minimizes the score
@@ -487,6 +486,7 @@ bool compSolve3(AIG* spec_base) {
     Cudd mgr(0, 0);
     mgr.AutodynEnable(CUDD_REORDER_SIFT);
     BDDAIG spec(*spec_base, &mgr);
+    resetTimer("decompose");
     std::vector<BDDAIG*> subgames = spec.decompose();
     cout << "Decomposition ended with " << subgames.size() << " subgames\n";
     if (subgames.size() == 0) return internalSolve(&mgr, &spec, NULL, NULL, NULL);
@@ -507,6 +507,7 @@ bool compSolve3(AIG* spec_base) {
         subgames[i] = new BDDAIG(*subgames[i], losing_transitions);
         delete(old_sg);
     }
+    addTime("decompose");
     dbgMsg("");
     dbgMsg("Now refining the aggregate game");
     BDD prev_lose = mgr.bddOne();
@@ -515,6 +516,7 @@ bool compSolve3(AIG* spec_base) {
     int count = 1;
     while(prev_lose != global_lose){
       dbgMsg("Refinement iterate: " + to_string(count++));
+      resetTimer("localstep");
       prev_lose = global_lose;
       for (int i = 0; i < subgames.size(); i++){
           BDDAIG * subgame = subgames[i];
@@ -533,16 +535,22 @@ bool compSolve3(AIG* spec_base) {
                 &tmp_lose, &tmp_losing_trans)){
                   return false;
             }
-            subgames[i] = new BDDAIG(*subgame, tmp_losing_trans);
-            delete(subgame);
+            // subgames[i] = new BDDAIG(*subgame, tmp_losing_trans);
+            // delete(subgame);
             sg_info.first = ~tmp_lose;
             sg_info.second = ~tmp_losing_trans;
             global_lose |= tmp_lose;
           }
       }
+      addTime("localstep");
       if (global_lose == prev_lose){
+        dbgMsg("Global Upre");
         BDD dummy;
+        resetTimer("globalstep");
         global_lose = global_lose | upre(&spec, global_lose, dummy);
+        addTime("globalstep");
+      } else {
+        dbgMsg("Local Upre");
       }
     }
     return true;
