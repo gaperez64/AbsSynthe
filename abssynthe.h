@@ -29,14 +29,18 @@
 
 struct settings_struct {
     bool use_trans;
+    bool parallel;
     int comp_algo;
     const char* spec_file;
     const char* out_file;
 };
+
 extern struct settings_struct settings;
 
 bool solve(AIG*);
 bool compSolve1(AIG*);
 bool compSolve2(AIG*);
+bool compSolve3(AIG*);
+bool solveParallel(AIG*);
 
 #endif

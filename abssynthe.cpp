@@ -40,6 +40,7 @@ struct settings_struct settings;
 static struct option long_options[] = {
     {"verbosity", required_argument, NULL, 'v'},
     {"use_trans", no_argument, NULL, 't'},
+    {"parallel", no_argument, NULL, 'p'},
     {"help", no_argument, NULL, 'h'},
     {"comp_algo", required_argument, NULL, 'c'},
     {"out_file", required_argument, NULL, 'o'},
@@ -49,7 +50,7 @@ static struct option long_options[] = {
 void usage() {
     std::cout << ABSSYNTHE_VERSION << std::endl
 << "usage:" << std::endl
-<<"./abssynthe [-h] [-t] [-ca {1,2,3}] [-v VERBOSE_LEVEL] [-o OUT_FILE] spec"
+<<"./abssynthe [-h] [-t] [-p] [-ca {1,2,3}] [-v VERBOSE_LEVEL] [-o OUT_FILE] spec"
 << std::endl
 << "positional arguments:" << std::endl
 << "spec                               input specification in extended AIGER format"
@@ -58,6 +59,8 @@ void usage() {
 << "-h, --help                         show this help message and exit"
 << std::endl
 << "-t, --use_trans                    compute a transition relation"
+<< std::endl
+<< "-p, --parallel                     launch all solvers in parallel"
 << std::endl
 << "-ca {1,2,3}, --comp_algo {1,2,3}   choice of compositional algorithm"
 << std::endl
@@ -80,6 +83,7 @@ void parse_arguments(int argc, char** argv) {
     // default values
     settings.comp_algo = 0;
     settings.use_trans = false;
+    settings.parallel = false;
     settings.out_file = NULL;
     settings.spec_file = NULL;
 
@@ -87,7 +91,7 @@ void parse_arguments(int argc, char** argv) {
     int opt_key;
     int opt_index;
     while (true) {
-        opt_key = getopt_long(argc, argv, "v:tc:o:", long_options,
+        opt_key = getopt_long(argc, argv, "v:tpc:o:", long_options,
                               &opt_index);
         if (opt_key == -1)
             break;
@@ -103,6 +107,10 @@ void parse_arguments(int argc, char** argv) {
             case 't':
                 logMsg("Using transition relation.");
                 settings.use_trans = true;
+                break;
+            case 'p':
+                logMsg("Using parallel solvers.");
+                settings.parallel = true;
                 break;
             case 'c':
                 settings.comp_algo = atoi(optarg);
@@ -126,9 +134,11 @@ void parse_arguments(int argc, char** argv) {
     if (argc > 1) {
         errMsg("Too many arguments");
         usage();
+        exit(1);
     } else if (argc != 1) {
         errMsg("Too few arguments");
         usage();
+        exit(1);
     }
     settings.spec_file = argv[0];
 }
@@ -139,16 +149,23 @@ int main (int argc, char** argv) {
     AIG aig(settings.spec_file);
     // solve the synthesis problem
     bool result;
-    if (settings.comp_algo == 1) {
+    if (settings.parallel) {
+        result = solveParallel(&aig);
+    } else if (settings.comp_algo == 1) {
         result = compSolve1(&aig);
     } else if (settings.comp_algo == 2){
         result = compSolve2(&aig);
-    }else if (settings.comp_algo != 0) {
-        // not implemented for the moment
-        // TODO: remove this error here
-        exit(1);
-    } else {
-        // traditional fixpoint computation
+    } else if (settings.comp_algo == 3){
+        result = compSolve3(&aig);
+#ifndef NDEBUG
+        dbgMsg("Decomposition took: " + 
+                std::to_string(getAccTime("decompose")/(double)CLOCKS_PER_SEC));
+        dbgMsg("Local steps took: " + 
+                std::to_string(getAccTime("localstep")/(double)CLOCKS_PER_SEC));
+        dbgMsg("Global steps took: " + 
+                std::to_string(getAccTime("globalstep")/(double)CLOCKS_PER_SEC));
+#endif
+    } else { // traditional fixpoint computation
         result = solve(&aig);
     }
     // return the realizability test result

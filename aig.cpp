@@ -68,7 +68,6 @@ void AIG::input2gate(unsigned input, unsigned rh0) {
     dbgMsg("Gated input " + std::to_string(input) + " with val = " +
            std::to_string(rh0));
 }
-
 void AIG::introduceErrorLatch() {
     if (this->error_fake_latch != NULL)
         return;
@@ -79,6 +78,7 @@ void AIG::introduceErrorLatch() {
     this->error_fake_latch->next = this->spec->outputs[0].lit;
     dbgMsg(std::string("Error fake latch = ") + 
            std::to_string(this->error_fake_latch->lit));
+    //this->spec->maxvar++;
 }
 
 AIG::AIG(const char* aiger_file_name, bool intro_error_latch) {
@@ -290,7 +290,7 @@ BDD BDDAIG::safeRestrict(BDD original, BDD rest_region) {
 }
 
 unsigned AIG::numLatches(){
-	return latches.size();
+    return latches.size();
 }
 
 BDDAIG::BDDAIG(const AIG &base, Cudd* local_mgr) : AIG(base) {
@@ -384,6 +384,7 @@ BDDAIG::~BDDAIG() {
         delete this->trans_rel;
     if (this->short_error != NULL)
         delete this->short_error;
+    
     if (this->must_clean) {
         delete this->lit2bdd_map;
         delete this->bdd2deps_map;
@@ -455,6 +456,13 @@ BDD BDDAIG::uinputCube() {
     return BDD(*this->uinput_cube);
 }
 
+BDD BDDAIG::toCube(std::set<unsigned> &vars) {
+    BDD result = this->mgr->bddOne();
+    for (std::set<unsigned>::iterator i = vars.begin(); i != vars.end(); i++)
+        result &= this->mgr->bddVar((*i));
+    return result;
+}
+
 
 BDD BDDAIG::lit2bdd(unsigned lit) {
     BDD result;
@@ -496,21 +504,32 @@ BDD BDDAIG::lit2bdd(unsigned lit) {
 }
 
 std::vector<unsigned> AIG::getCInputLits(){
-  std::vector<unsigned> v;
-  std::vector<aiger_symbol*>::iterator it = this->c_inputs.begin();
-  for(; it != this->c_inputs.end(); it++){
-		v.push_back((*it)->lit);
-  }
-  return v;
+    std::vector<unsigned> v;
+    std::vector<aiger_symbol*>::iterator it = this->c_inputs.begin();
+    for(; it != this->c_inputs.end(); it++){
+        v.push_back((*it)->lit);
+    }
+    return v;
 }
+
 std::vector<unsigned> AIG::getUInputLits(){
-  std::vector<unsigned> v;
-  std::vector<aiger_symbol*>::iterator it = this->u_inputs.begin();
-  for(; it != this->u_inputs.end(); it++){
-		v.push_back((*it)->lit);
-  }
-  return v;
+    std::vector<unsigned> v;
+    std::vector<aiger_symbol*>::iterator it = this->u_inputs.begin();
+    for(; it != this->u_inputs.end(); it++){
+        v.push_back((*it)->lit);
+    }
+    return v;
 }
+
+std::vector<unsigned> AIG::getLatchLits(){
+    std::vector<unsigned> v;
+    std::vector<aiger_symbol*>::iterator it = this->latches.begin();
+    for(; it != this->latches.end(); it++){
+        v.push_back((*it)->lit);
+    }
+    return v;
+}
+
 std::vector<BDD> BDDAIG::nextFunComposeVec(BDD* care_region=NULL) {
     if (this->next_fun_compose_vec == NULL) {
         //dbgMsg("building and caching next_fun_compose_vec");
@@ -529,10 +548,12 @@ std::vector<BDD> BDDAIG::nextFunComposeVec(BDD* care_region=NULL) {
                     next_fun = this->lit2bdd((*latch_it)->next);
                     next_fun = BDDAIG::safeRestrict(next_fun,
                                                     ~(*this->short_error));
-                    //dbgMsg("Restricting next function of latch " + std::to_string(i));
+                    //dbgMsg("Restricting next function of latch " +
+                    //std::to_string(i));
                 } else {
                     next_fun = this->lit2bdd((*latch_it)->next);
-                    //dbgMsg("Taking the next function of latch " + std::to_string(i));
+                    //dbgMsg("Taking the next function of latch " +
+                    //std::to_string(i));
                 }
                 this->next_fun_compose_vec->push_back(next_fun);
                 latch_it++;
@@ -599,7 +620,6 @@ BDD BDDAIG::transRelBdd() {
 std::set<unsigned> BDDAIG::getBddDeps(BDD b) {
     unsigned long key = (unsigned long) b.getRegularNode();
     if (this->bdd2deps_map->find(key) != this->bdd2deps_map->end()) {
-        dbgMsg("bdd deps cache hit");
         return (*this->bdd2deps_map)[key];
     }
     dbgMsg("bdd deps cache miss");
@@ -627,12 +647,13 @@ std::set<unsigned> BDDAIG::getBddDeps(BDD b) {
     return result;
 }
 
-std::string stringOfUnsignedSet(std::set<unsigned> s){
-  // print some debug information
-  std::string litstring;
-  for (std::set<unsigned>::iterator i = s.begin(); i != s.end(); i++)
-    litstring += std::to_string(*i) + ", ";
-  return(std::string("the cube deps: ") + litstring);
+std::set<unsigned> BDDAIG::getBddLatchDeps(BDD b) {
+    std::set<unsigned> deps = this->getBddDeps(b);
+    std::vector<unsigned> latches = this->getLatchLits();
+    std::set<unsigned> depLatches;
+    std::set_intersection(deps.begin(), deps.end(), latches.begin(), latches.end(),
+                          std::inserter(depLatches, depLatches.begin()));
+    return depLatches;
 }
 
 std::vector<BDD> BDDAIG::mergeSomeSignals(BDD cube, std::vector<unsigned>* original) {
@@ -644,7 +665,7 @@ std::vector<BDD> BDDAIG::mergeSomeSignals(BDD cube, std::vector<unsigned>* origi
     for (std::set<unsigned>::iterator i = cube_deps.begin();
          i != cube_deps.end(); i++)
         litstring += std::to_string(*i) + ", ";
-    dbgMsg("the cube deps: " + litstring);
+    dbgMsg("the cube deps: " + stringOfUnsignedSet(cube_deps));
 #endif
     std::vector<std::set<unsigned>> dep_vector;
     std::vector<BDD> bdd_vector;

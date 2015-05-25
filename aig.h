@@ -44,7 +44,6 @@ class AIG {
         std::vector<aiger_symbol*> latches;
         std::vector<aiger_symbol*> c_inputs;
         std::vector<aiger_symbol*> u_inputs;
-        aiger_symbol* error_fake_latch;
         void introduceErrorLatch();
         std::unordered_map<unsigned, std::set<unsigned>>* lit2deps_map;
         std::unordered_map<unsigned,
@@ -57,10 +56,10 @@ class AIG {
         std::set<unsigned> getLitDeps(unsigned);
         static unsigned primeVar(unsigned lit) { return AIG::stripLit(lit) + 1; }
     public:
+        aiger_symbol* error_fake_latch;
         static unsigned negateLit(unsigned lit) { return lit ^ 1; }
         static bool litIsNegated(unsigned lit) { return (lit & 1) == 1; }
         static unsigned stripLit(unsigned lit) { return lit & ~1; }
-
         AIG(const char*, bool intro_error_latch=true);
         AIG(const AIG&);
         ~AIG();
@@ -71,24 +70,17 @@ class AIG {
         void writeToFile(const char*);
         std::vector<aiger_symbol*> getLatches() { return this->latches; }
         std::vector<aiger_symbol*> getCInputs() { return this->c_inputs; }
-	    unsigned numLatches();
-        void check(){
-#ifndef NDEBUG
-          if (this->c_inputs.size() != 1 ){
-            std::cout << "c_inputs size: " << this->c_inputs.size() << std::endl;
-            std::cout << "u_inputs size: " << this->u_inputs.size() << std::endl;
-          }
-          assert(this->c_inputs.size() == 1);
-#endif
-        }
+        unsigned numLatches();
         std::vector<unsigned> getCInputLits();
         std::vector<unsigned> getUInputLits();
+        std::vector<unsigned> getLatchLits();
 };
 
 class BDDAIG : public AIG {
     private:
         bool must_clean;
     protected:
+        Cudd* mgr;
         BDD* primed_latch_cube;
         BDD* cinput_cube;
         BDD* uinput_cube;
@@ -104,8 +96,6 @@ class BDDAIG : public AIG {
     public:
         static BDD safeRestrict(BDD, BDD);
         std::set<unsigned> semanticDeps(BDD);
-        
-        Cudd* mgr;
         static unsigned primeVar(unsigned lit) { return AIG::stripLit(lit) + 1; }
         BDDAIG(const AIG&, Cudd*);
         BDDAIG(const BDDAIG&, BDD);
@@ -118,7 +108,9 @@ class BDDAIG : public AIG {
         BDD cinputCube();
         BDD uinputCube();
         BDD transRelBdd();
+        BDD toCube(std::set<unsigned>&);
         std::set<unsigned> getBddDeps(BDD);
+        std::set<unsigned> getBddLatchDeps(BDD);
         std::vector<BDD> nextFunComposeVec(BDD*);
         std::vector<BDDAIG*> decompose();
 };
