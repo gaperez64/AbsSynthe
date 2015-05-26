@@ -78,7 +78,7 @@ void AIG::introduceErrorLatch() {
     this->error_fake_latch->next = this->spec->outputs[0].lit;
     dbgMsg(std::string("Error fake latch = ") + 
            std::to_string(this->error_fake_latch->lit));
-    //this->spec->maxvar++;
+    this->spec->maxvar++;
 }
 
 AIG::AIG(const char* aiger_file_name, bool intro_error_latch) {
@@ -151,15 +151,8 @@ AIG::AIG(const AIG &other) {
     this->c_inputs = other.c_inputs;
     this->u_inputs = other.u_inputs;
     this->error_fake_latch = other.error_fake_latch;
-		this->lit2deps_map =  other.lit2deps_map;
-		this->lit2ninputand_map = other.lit2ninputand_map;
-    /*this->lit2deps_map = new std::unordered_map<unsigned, std::set<unsigned> >();
-		this->lit2deps_map = *other.lit2deps_map;
-    this->lit2ninputand_map = new std::unordered_map<unsigned,
-                           std::pair<std::vector<unsigned>,
-                                     std::vector<unsigned> > > ();
-		*this->lit2ninputand_map = *other.lit2ninputand_map;
-		*/
+    this->lit2deps_map = other.lit2deps_map;
+    this->lit2ninputand_map = other.lit2ninputand_map;
 }
 
 AIG::~AIG() {
@@ -324,7 +317,6 @@ BDDAIG::BDDAIG(const BDDAIG &base, BDD error) : AIG(base) {
     this->next_fun_compose_vec = NULL;
     this->trans_rel = NULL;
     this->short_error = new BDD(error);
-		// DEBUGGING BDD b = *this->short_error | error;
     // we are now going to reduce the size of the latches and inputs based on
     // error
     dbgMsg("Creating new game with less variables");
