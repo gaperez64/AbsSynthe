@@ -23,9 +23,6 @@
  *************************************************************************/
 
 #include <assert.h>
-#include <thread>
-#include <mutex>
-#include <condition_variable>
 #include <string>
 #include <algorithm>
 #include <iostream>
