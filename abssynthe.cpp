@@ -31,11 +31,15 @@
 #include "logging.h"
 #include "aig.h"
 
+#ifndef NDEBUG
+extern bool ca3_local_improved;
+#endif 
 const char* ABSSYNTHE_VERSION = "Swiss-Abssynthe 1.0";
 const int EXIT_STATUS_REALIZABLE = 10;
 const int EXIT_STATUS_UNREALIZABLE = 20;
 
 struct settings_struct settings;
+
 
 static struct option long_options[] = {
     {"verbosity", required_argument, NULL, 'v'},
@@ -145,29 +149,36 @@ void parse_arguments(int argc, char** argv) {
 
 int main (int argc, char** argv) {
     parse_arguments(argc, argv);
-    // try to open the spec now
-    AIG aig(settings.spec_file);
     // solve the synthesis problem
     bool result;
     if (settings.parallel) {
-        result = solveParallel(&aig);
-    } else if (settings.comp_algo == 1) {
-        result = compSolve1(&aig);
-    } else if (settings.comp_algo == 2){
-        result = compSolve2(&aig);
-    } else if (settings.comp_algo == 3){
-        result = compSolve3(&aig);
+        result = solveParallel(settings.spec_file);
+    } else {
+			// try to open the spec now
+			AIG aig(settings.spec_file);
+			if (settings.comp_algo == 1) {
+					result = compSolve1(&aig);
+			} else if (settings.comp_algo == 2){
+					result = compSolve2(&aig);
+			} else if (settings.comp_algo == 3){
+					result = compSolve3(&aig);
 #ifndef NDEBUG
-        dbgMsg("Decomposition took: " + 
-                std::to_string(getAccTime("decompose")/(double)CLOCKS_PER_SEC));
-        dbgMsg("Local steps took: " + 
-                std::to_string(getAccTime("localstep")/(double)CLOCKS_PER_SEC));
-        dbgMsg("Global steps took: " + 
-                std::to_string(getAccTime("globalstep")/(double)CLOCKS_PER_SEC));
+					dbgMsg("Decomposition took: " + 
+									std::to_string(getAccTime("decompose")/(double)CLOCKS_PER_SEC));
+					dbgMsg("Local steps took: " + 
+									std::to_string(getAccTime("localstep")/(double)CLOCKS_PER_SEC));
+					dbgMsg("Global steps took: " + 
+									std::to_string(getAccTime("globalstep")/(double)CLOCKS_PER_SEC));
+					if (ca3_local_improved){
+						logMsg("*Local steps improved the fixpoint*");
+					} else {
+						logMsg("*No local improvement*");
+					}
 #endif
-    } else { // traditional fixpoint computation
-        result = solve(&aig);
-    }
+			} else { // traditional fixpoint computation
+					result = solve(&aig);
+			}
+		}
     // return the realizability test result
     logMsg("Realizable? " + std::to_string(result));
     exit(result ? EXIT_STATUS_REALIZABLE : EXIT_STATUS_UNREALIZABLE);

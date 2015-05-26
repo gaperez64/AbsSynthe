@@ -40,6 +40,8 @@
 #include "logging.h"
 #include "aig.h"
 
+bool ca3_local_improved = false;
+
 using namespace std;
 
 static struct {
@@ -462,10 +464,10 @@ bool compSolve2(AIG* spec_base) {
         delete *i;
     }
     if (global_done) return pResult;
-
     double mean_bdd_size = total_bdd_size / subgame_results.size();
     double mean_cinp_size = total_cinp_size / subgame_results.size();
     double cinp_factor = 0.5 * mean_bdd_size / mean_cinp_size;
+    int dbg_count = 1;
     while (subgame_results.size() >= 2) {
         if (global_done) return pResult;
         // Get the pair min_i,min_j that minimizes the score
@@ -480,6 +482,13 @@ bool compSolve2(AIG* spec_base) {
         set<unsigned> joint_cinp; // union of the cinp dependencies
         list<subgame_info>::iterator it, jt;
         int i, j;
+        //if (dbg_count == 3){
+        cout << subgame_results.size() << " games to print\n";
+          for (i=0, it = subgame_results.begin(); 
+             it != subgame_results.end(); i++, it++){
+              cout << "Subgame " << i << " manager: " << it->first.manager() << endl;
+          }
+        //}
         for (i = 0, it = subgame_results.begin(); 
              it != subgame_results.end(); i++, it++){
             jt = it;
@@ -511,15 +520,15 @@ bool compSolve2(AIG* spec_base) {
                          min_jt->second.begin(), min_jt->second.end(), 
                          inserter(intersection, intersection.begin()));
         if (intersection.size() > 0 &&
-            !internalSolve(&mgr, &subgame, NULL, NULL, &losing_transitions))
+            !internalSolve(&mgr, &subgame, NULL, NULL, &losing_transitions, false))
             return false;
         subgame_results.erase(min_it);
         subgame_results.erase(min_jt);
         subgame_results.push_back(subgame_info(losing_transitions, joint_cinp));
+        dbg_count++;
     }
 
     assert(subgame_results.size() == 1);
-
     // Finally, we synth a circuit if required
     if (settings.out_file != NULL) {
         dbgMsg("Starting synthesis, acquiring lock on synth mutex");
@@ -544,7 +553,7 @@ bool compSolve3(AIG* spec_base) {
     vector<BDDAIG*> subgames = spec.decompose();
     if (subgames.size() == 0) return internalSolve(&mgr, &spec, NULL, NULL, NULL,
                                                    true);
-
+    
     // Solving now the subgames
     BDD losing_transitions;
     BDD losing_region;
@@ -577,6 +586,8 @@ bool compSolve3(AIG* spec_base) {
     BDD init_state = spec.initState();
     bool includes_init = ((init_state & global_lose) != ~mgr.bddOne());
     vector<unsigned> latches_u = spec.getLatchLits();
+    ca3_local_improved = false;
+
     while (!includes_init && prev_lose != global_lose) {
         if (global_done) break;
         prev_lose = global_lose;
@@ -603,10 +614,12 @@ bool compSolve3(AIG* spec_base) {
                 sg_info.first = ~tmp_lose;
                 sg_info.second = ~tmp_losing_trans;
                 global_lose |= tmp_lose;
-                if (global_lose == prev_lose)
-                    dbgMsg("\tLocal losing region didn't change");
-                else
-                    dbgMsg("\n\tLocal losing region *DID* change");
+                if (global_lose == prev_lose){
+                    //dbgMsg("\tLocal losing region didn't change");
+                } else {
+                    //dbgMsg("\n\tLocal losing region *DID* change");
+                    ca3_local_improved = true;
+                }
             }
         }
         addTime("localstep");
@@ -620,7 +633,7 @@ bool compSolve3(AIG* spec_base) {
         }
         includes_init = ((init_state & global_lose) != ~mgr.bddOne());
     }
-
+  
     // release memory of current subgames
     for (int i = 0; i < subgames.size(); i++)
         delete subgames[i];
@@ -665,12 +678,14 @@ static void pWorker(AIG* spec_base, int solver) {
     done_check.notify_one();
 }
 
-bool solveParallel(AIG* spec_base) {
-    thread worker0(pWorker, spec_base, 0);
-    thread worker1(pWorker, spec_base, 1);
-    thread worker2(pWorker, spec_base, 2);
+bool solveParallel(const char * spec_file) {
+    //AIG aig0(spec_file);
+    //AIG aig1(spec_file);
+    AIG aig2(spec_file);
+    //thread worker0(pWorker, , 0);
+    //thread worker1(pWorker, &aig1, 1);
+    thread worker2(pWorker, &aig2, 2);
     //thread worker3(pWorker, spec_base, 3);
-
     unique_lock<mutex> lock(done_lock);
     // we use global_done to avoid spurious wake-ups
     while (!global_done) done_check.wait(lock);
@@ -678,8 +693,8 @@ bool solveParallel(AIG* spec_base) {
     // wait for everyone to finish, unfortunately I must
     // do this in order to avoid mem leaks and problems with
     // modifying freed memory
-    worker0.join();
-    worker1.join();
+    //worker0.join();
+   // worker1.join();
     worker2.join();
     //worker3.join();
 
