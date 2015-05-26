@@ -23,6 +23,12 @@
  *************************************************************************/
 
 #include <assert.h>
+#include <unistd.h>
+#include <sys/mman.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <signal.h>
+#include <pthread.h>
 #include <string>
 #include <algorithm>
 #include <iostream>
@@ -37,7 +43,6 @@
 #include "logging.h"
 #include "aig.h"
 
-bool ca3_local_improved = false;
 
 using namespace std;
 
@@ -47,13 +52,14 @@ static struct {
         int v_ = v.second.nodeCount();
         return u_ < v_;
     }
-} bddPairCompare;
+} bdd_pair_compare;
 
-static bool global_done = false;
-static mutex synth_lock;
-static mutex done_lock;
-static condition_variable done_check;
-static bool pResult;
+struct shared_data {
+    bool done;
+    bool result;
+    pthread_mutex_t synth_mutex;
+};
+static shared_data* data = NULL;
 
 
 static unsigned optimizedGate(AIG* spec, unsigned a_lit, unsigned b_lit) {
@@ -206,6 +212,8 @@ static vector<pair<unsigned, BDD>> synthAlgo(Cudd* mgr, BDDAIG* spec,
 
 void finalizeSynth(Cudd* mgr, BDDAIG* spec, 
                    vector<pair<unsigned, BDD>> result) {
+    // let us clean the AIG before we start introducing new stuff
+    spec->removeErrorLatch();
     // we now get rid of all controllable inputs in the aig spec by replacing
     // each one with an and computed using bdd2aig...
     // NOTE: because of the way bdd2aig is implemented, we must ensure that BDDs are
@@ -259,9 +267,9 @@ static BDD upre(BDDAIG* spec, BDD dst, BDD &trans_bdd) {
 bool internalSolve(Cudd* mgr, BDDAIG* spec, const BDD* upre_init, 
                           BDD* losing_region, BDD* losing_transitions,
                           bool do_synth=false) {
-		//static int occ_counter = 1;
+        //static int occ_counter = 1;
     dbgMsg("Computing fixpoint of UPRE.");
-		//cout << "Visited " << occ_counter++ << endl;
+        //cout << "Visited " << occ_counter++ << endl;
     bool includes_init = false;
     unsigned cnt = 0;
     BDD bad_transitions;
@@ -275,8 +283,6 @@ bool internalSolve(Cudd* mgr, BDDAIG* spec, const BDD* upre_init,
     BDD prev_error = ~mgr->bddOne();
     includes_init = ((init_state & error_states) != ~mgr->bddOne());
     while (!includes_init && error_states != prev_error) {
-        // check if another thread has won the race
-        if (global_done) return pResult;
         prev_error = error_states;
         error_states = prev_error | upre(spec, prev_error, bad_transitions);
         includes_init = ((init_state & error_states) != ~mgr->bddOne());
@@ -299,13 +305,9 @@ bool internalSolve(Cudd* mgr, BDDAIG* spec, const BDD* upre_init,
     // good transitions for controller (Eve)
     if (!includes_init && do_synth && settings.out_file != NULL) {
         dbgMsg("Starting synthesis, acquiring lock on synth mutex");
-        synth_lock.lock();
-        if (global_done) { synth_lock.unlock(); return pResult; }
-        global_done = true;
-        pResult = true;
+        if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
         finalizeSynth(mgr, spec, 
                       synthAlgo(mgr, spec, ~bad_transitions, ~error_states));
-        synth_lock.unlock();
     }
     return !includes_init;
 }
@@ -327,8 +329,6 @@ bool compSolve1(AIG* spec_base) {
                                                    NULL, true);
     vector<pair<BDD,BDD> > subgame_results;
     for (vector<BDDAIG*>::iterator i = subgames.begin(); i != subgames.end(); i++) {
-        // check if another thread has won the race
-        if (global_done) break;
         gamecount++;
         BDD error_states;
         BDD bad_transitions;
@@ -349,7 +349,6 @@ bool compSolve1(AIG* spec_base) {
     bool cinput_independent = true;
     set<unsigned> total_cinputs;
     for (vector<BDDAIG*>::iterator i = subgames.begin(); i != subgames.end(); i++) {
-        if (global_done) break;
         vector<unsigned> ic = (*i)->getCInputLits();
         set<unsigned> intersection;
         set_intersection(ic.begin(), ic.end(), total_cinputs.begin(), 
@@ -367,17 +366,15 @@ bool compSolve1(AIG* spec_base) {
 
     if (!cinput_independent) { // we still have one game to solve
         // release cache memory and other stuff used in BDDAIG instances
-		std::cout << ("Not cinput independent\n");
-		std::cout.flush();
+        //std::cout << ("Not cinput independent\n");
+        //std::cout.flush();
         for (vector<BDDAIG*>::iterator i = subgames.begin(); i != subgames.end(); i++)
             delete *i;
-        if (global_done) return pResult;
         BDD losing_states = spec.errorStates();
         BDD losing_transitions = ~mgr.bddOne();
         vector<pair<BDD, BDD> >::iterator sg = subgame_results.begin();
-        sort(subgame_results.begin(), subgame_results.end(), bddPairCompare);
+        sort(subgame_results.begin(), subgame_results.end(), bdd_pair_compare);
         for (sg = subgame_results.begin(); sg != subgame_results.end(); sg++) {
-            if (global_done) return pResult;
             losing_states |= sg->first;
             losing_transitions |= sg->second;
         }
@@ -392,34 +389,21 @@ bool compSolve1(AIG* spec_base) {
         // good transitions for controller (Eve)
         if (!includes_init && settings.out_file != NULL) {
             dbgMsg("Starting synthesis, acquiring lock on synth mutex");
-            synth_lock.lock();
-            if (global_done) { synth_lock.unlock(); return pResult; }
-            global_done = true;
-            pResult = true;
+            if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
             finalizeSynth(&mgr, &spec, 
                           synthAlgo(&mgr, &spec, ~bad_transitions, ~error_states));
-            synth_lock.unlock();
         }
 
     } else if (settings.out_file != NULL) {
         // we have to output a strategy from the local non-deterministic
         // strategies...
         dbgMsg("Starting synthesis, acquiring lock on synth mutex");
-		std::cout << ("Starting synthesis, acquiring lock on synth mutex\n");
-		std::cout.flush();
-        synth_lock.lock();
-        if (global_done) {
-            synth_lock.unlock();
-            for (vector<BDDAIG*>::iterator i = subgames.begin();
-                 i != subgames.end(); i++)
-                delete *i;
-            return pResult;
-        }
-        global_done = true;
-        pResult = true;
+        //std::cout << ("Starting synthesis, acquiring lock on synth mutex\n");
+        //std::cout.flush();
+        if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
         vector<pair<unsigned, BDD>> all_cinput_strats;
         vector<pair<BDD, BDD>>::iterator sg = subgame_results.begin();
-		logMsg("Doing stuff");
+        logMsg("Doing stuff");
         for (vector<BDDAIG*>::iterator i = subgames.begin();
              i != subgames.end(); i++) {
             vector<pair<unsigned, BDD>> temp;
@@ -430,7 +414,6 @@ bool compSolve1(AIG* spec_base) {
             delete *i;
         }
         finalizeSynth(&mgr, &spec, all_cinput_strats);
-        synth_lock.unlock();
     }
 
     return !includes_init;
@@ -452,94 +435,85 @@ bool compSolve2(AIG* spec_base) {
     int total_cinp_size = 0;
     for (vector<BDDAIG*>::iterator i = subgames.begin();
          i != subgames.end(); i++) {
-        // check if another thread has won the race
-        if (!global_done) {
-            gamecount++;
-            dbgMsg("Solving subgame " + to_string(gamecount) + " (" +
-                   to_string((*i)->numLatches()) + " latches)");
-            if (!internalSolve(&mgr, *i, NULL, NULL, &losing_transitions))
-                return false;
-            vector<unsigned> cinput_vect = (*i)->getCInputLits();
-            set<unsigned> cinput_set(cinput_vect.begin(), cinput_vect.end());
-            subgame_results.push_back(subgame_info(losing_transitions, cinput_set));
-            total_bdd_size += losing_transitions.nodeCount();
-            total_cinp_size += cinput_set.size();
-        }
+        gamecount++;
+        dbgMsg("Solving subgame " + to_string(gamecount) + " (" +
+               to_string((*i)->numLatches()) + " latches)");
+        if (!internalSolve(&mgr, *i, NULL, NULL, &losing_transitions))
+            return false;
+        vector<unsigned> cinput_vect = (*i)->getCInputLits();
+        set<unsigned> cinput_set(cinput_vect.begin(), cinput_vect.end());
+        subgame_results.push_back(subgame_info(losing_transitions, cinput_set));
+        total_bdd_size += losing_transitions.nodeCount();
+        total_cinp_size += cinput_set.size();
         // we have to release the memory used for the caches and stuff
         delete *i;
     }
-    if (global_done) return pResult;
     double mean_bdd_size = total_bdd_size / subgame_results.size();
     double mean_cinp_size = total_cinp_size / subgame_results.size();
     double cinp_factor = 0.5 * mean_bdd_size / mean_cinp_size;
-	while (subgame_results.size() >= 2) {
-	  if (global_done) return pResult;
-	  // Get the pair min_i,min_j that minimizes the score
-	  // The score is defined as: 
-	  // b.countNode() + cinp_factor * cinp_union.size()
-	  // where b is the disjunction of the error functions, and cinp_union
-	  // is the union of the cinputs of the subgames.
-	  int min_i, min_j; // the indices of the selected games
-	  list<subgame_info>::iterator min_it, min_jt; // iterators to selected games
-	  double best_score = DBL_MAX;  // the score of the selected pair
-	  BDD joint_err; // the disjunction of the error function of the pair
-	  set<unsigned> joint_cinp; // union of the cinp dependencies
-	  list<subgame_info>::iterator it, jt;
-	  int i, j;
-	  for (i = 0, it = subgame_results.begin(); 
-		  it != subgame_results.end(); i++, it++){
-		jt = it;
-		jt++;
-		j = i + 1;
-		for (; jt != subgame_results.end(); j++, jt++){
-		  BDD b = it->first | jt->first;
-		  set<unsigned> cinp_union;
-		  set_union(it->second.begin(), it->second.end(), 
-			  jt->second.begin(), jt->second.end(),
-			  inserter(cinp_union,cinp_union.begin()));
-		  double score = b.nodeCount() + cinp_factor * cinp_union.size();
-		  if (score < best_score){
-			min_i = i;
-			min_j = j;
-			min_it = it;
-			min_jt = jt;
-			joint_err = b;
-			joint_cinp = cinp_union;
-			best_score = score;
-		  }
-		}
-	  }
-	  dbgMsg("Selected subgames " + to_string(min_i) + " and " + to_string(min_j));
-	  set<unsigned> intersection;
-	  set_intersection(min_it->second.begin(), min_it->second.end(),
-		  min_jt->second.begin(), min_jt->second.end(), 
-		  inserter(intersection, intersection.begin()));
-	  BDD losing_transitions;
-	  if (intersection.size() == 0){
-		losing_transitions = joint_err;
-	  } else { 
-		BDDAIG subgame(spec, joint_err);
-		if (!internalSolve(&mgr, &subgame, NULL, NULL, &losing_transitions, false)){
-		  return false;
-		}
-	  }
-	  subgame_results.erase(min_it);
-	  subgame_results.erase(min_jt);
-	  subgame_results.push_back(subgame_info(losing_transitions, joint_cinp));
-	}
+    while (subgame_results.size() >= 2) {
+      // Get the pair min_i,min_j that minimizes the score
+      // The score is defined as: 
+      // b.countNode() + cinp_factor * cinp_union.size()
+      // where b is the disjunction of the error functions, and cinp_union
+      // is the union of the cinputs of the subgames.
+      int min_i, min_j; // the indices of the selected games
+      list<subgame_info>::iterator min_it, min_jt; // iterators to selected games
+      double best_score = DBL_MAX;  // the score of the selected pair
+      BDD joint_err; // the disjunction of the error function of the pair
+      set<unsigned> joint_cinp; // union of the cinp dependencies
+      list<subgame_info>::iterator it, jt;
+      int i, j;
+      for (i = 0, it = subgame_results.begin(); 
+          it != subgame_results.end(); i++, it++){
+        jt = it;
+        jt++;
+        j = i + 1;
+        for (; jt != subgame_results.end(); j++, jt++){
+          BDD b = it->first | jt->first;
+          set<unsigned> cinp_union;
+          set_union(it->second.begin(), it->second.end(), 
+              jt->second.begin(), jt->second.end(),
+              inserter(cinp_union,cinp_union.begin()));
+          double score = b.nodeCount() + cinp_factor * cinp_union.size();
+          if (score < best_score){
+            min_i = i;
+            min_j = j;
+            min_it = it;
+            min_jt = jt;
+            joint_err = b;
+            joint_cinp = cinp_union;
+            best_score = score;
+          }
+        }
+      }
+      dbgMsg("Selected subgames " + to_string(min_i) + " and " + to_string(min_j));
+      set<unsigned> intersection;
+      set_intersection(min_it->second.begin(), min_it->second.end(),
+          min_jt->second.begin(), min_jt->second.end(), 
+          inserter(intersection, intersection.begin()));
+      BDD losing_transitions;
+      if (intersection.size() == 0){
+        losing_transitions = joint_err;
+      } else { 
+        BDDAIG subgame(spec, joint_err);
+        if (!internalSolve(&mgr, &subgame, NULL, NULL, &losing_transitions, false)){
+          return false;
+        }
+      }
+      subgame_results.erase(min_it);
+      subgame_results.erase(min_jt);
+      subgame_results.push_back(subgame_info(losing_transitions, joint_cinp));
+    }
 
     assert(subgame_results.size() == 1);
     // Finally, we synth a circuit if required
     if (settings.out_file != NULL) {
         dbgMsg("Starting synthesis, acquiring lock on synth mutex");
-        synth_lock.lock();
-        if (global_done) { synth_lock.unlock(); return pResult; }
-        global_done = true;
-        pResult = true;
+        if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
         finalizeSynth(&mgr, &spec, 
                       synthAlgo(&mgr, &spec, ~subgame_results.back().first,
                                 mgr.bddOne()));
-        synth_lock.unlock();
     }
     return true;
 }
@@ -560,7 +534,6 @@ bool compSolve3(AIG* spec_base) {
     vector<subgame_info> subgame_results;
     for (int i = 0; i < subgames.size(); i++) {
         // check if another thread has won the race
-        if (global_done) break;
         dbgMsg("Solving subgame " + to_string(i) + " (" +
                to_string(subgames[i]->numLatches()) + " latches)");
         if (!internalSolve(&mgr, subgames[i], NULL, &losing_region,
@@ -585,10 +558,8 @@ bool compSolve3(AIG* spec_base) {
     BDD init_state = spec.initState();
     bool includes_init = ((init_state & global_lose) != ~mgr.bddOne());
     vector<unsigned> latches_u = spec.getLatchLits();
-    ca3_local_improved = false;
 
     while (!includes_init && prev_lose != global_lose) {
-        if (global_done) break;
         prev_lose = global_lose;
         dbgMsg("Refinement iterate: " + to_string(count++));
         resetTimer("localstep");
@@ -617,7 +588,6 @@ bool compSolve3(AIG* spec_base) {
                     //dbgMsg("\tLocal losing region didn't change");
                 } else {
                     //dbgMsg("\n\tLocal losing region *DID* change");
-                    ca3_local_improved = true;
                 }
             }
         }
@@ -636,66 +606,82 @@ bool compSolve3(AIG* spec_base) {
     // release memory of current subgames
     for (int i = 0; i < subgames.size(); i++)
         delete subgames[i];
-    if (global_done) return pResult;
 
     // if !includes_init == true, then ~bad_transitions is the set of all
     // good transitions for controller (Eve)
     if (!includes_init && settings.out_file != NULL) {
         dbgMsg("Starting synthesis, acquiring lock on synth mutex");
-        synth_lock.lock();
-        if (global_done) { synth_lock.unlock(); return pResult; }
-        global_done = true;
-        pResult = true;
+        if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
         finalizeSynth(&mgr, &spec, 
                       synthAlgo(&mgr, &spec, ~global_losing_trans, ~global_lose));
-        synth_lock.unlock();
     }
 
     return !includes_init;
 }
 
 static void pWorker(AIG* spec_base, int solver) {
+    assert(data != NULL);
+    bool result;
     switch (solver) {
         case 0:
-            pResult = solve(spec_base);
+            result = solve(spec_base);
             break;
         case 1:
-            pResult = compSolve1(spec_base);
+            result = compSolve1(spec_base);
             break;
         case 2:
-            pResult = compSolve2(spec_base);
+            result = compSolve2(spec_base);
             break;
         case 3:
-            pResult = compSolve3(spec_base);
+            result = compSolve3(spec_base);
             break;
         default:
             errMsg("Unknown solver algo: " + to_string(solver));
             exit(1);
     }
-    // notify the main thread
-    global_done = true;
-    done_check.notify_one();
+    data->result = result;
+    data->done = true;
+    exit(0);
 }
 
-bool solveParallel(const char * spec_file) {
-    AIG aig0(spec_file);
-    AIG aig1(spec_file);
-    AIG aig2(spec_file);
-    thread worker0(pWorker, &aig0, 0);
-    thread worker1(pWorker, &aig1, 1);
-    thread worker2(pWorker, &aig2, 2);
-    //thread worker3(pWorker, spec_base, 3);
-    unique_lock<mutex> lock(done_lock);
-    // we use global_done to avoid spurious wake-ups
-    while (!global_done) done_check.wait(lock);
+bool solveParallel() {
+    // place our shared data in shared memory
+    data = (shared_data*) mmap(NULL, sizeof(shared_data), PROT_READ | PROT_WRITE,
+                               MAP_SHARED | MAP_ANON, -1, 0);
+    assert(data);
+    data->done = false;
 
-    // wait for everyone to finish, unfortunately I must
-    // do this in order to avoid mem leaks and problems with
-    // modifying freed memory
-    worker0.join();
-    worker1.join();
-    worker2.join();
-    //worker3.join();
+    // initialize synth mutex
+    pthread_mutexattr_t attr;
+    pthread_mutexattr_init(&attr);
+    pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
+    pthread_mutex_init(&data->synth_mutex, &attr);
 
-    return pResult;
+    // lets spawn all the required children
+    pid_t children[4];
+    int solver;
+    for (int i = 0; i < 4; i++) {
+        pid_t kiddo = fork();
+        if (kiddo) {
+            children[i] = kiddo;
+        } else {
+            solver = i;
+            AIG spec(settings.spec_file);
+            pWorker(&spec, solver);
+        }
+    }
+
+    // the parent waits for one child to finish
+    int status;
+    wait(&status);
+    // then the parent kills all its children
+    if (!data->done)
+        exit(55); // personal code for: "FUCK, some child stopped unexpectedly"
+    for (int i = 0; i < 4; i++)
+        kill(children[i], SIGKILL);
+    bool result = data->result;
+
+    // release shared memory
+    munmap(data, sizeof(shared_data));
+    return result;
 }

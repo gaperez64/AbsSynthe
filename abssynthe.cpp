@@ -31,9 +31,6 @@
 #include "logging.h"
 #include "aig.h"
 
-#ifndef NDEBUG
-extern bool ca3_local_improved;
-#endif 
 const char* ABSSYNTHE_VERSION = "Swiss-Abssynthe 1.0";
 const int EXIT_STATUS_REALIZABLE = 10;
 const int EXIT_STATUS_UNREALIZABLE = 20;
@@ -152,7 +149,7 @@ int main (int argc, char** argv) {
     // solve the synthesis problem
     bool result;
     if (settings.parallel) {
-        result = solveParallel(settings.spec_file);
+        result = solveParallel();
     } else {
 			// try to open the spec now
 			AIG aig(settings.spec_file);
@@ -169,11 +166,6 @@ int main (int argc, char** argv) {
 									std::to_string(getAccTime("localstep")/(double)CLOCKS_PER_SEC));
 					dbgMsg("Global steps took: " + 
 									std::to_string(getAccTime("globalstep")/(double)CLOCKS_PER_SEC));
-					if (ca3_local_improved){
-						logMsg("*Local steps improved the fixpoint*");
-					} else {
-						logMsg("*No local improvement*");
-					}
 #endif
 			} else { // traditional fixpoint computation
 					result = solve(&aig);

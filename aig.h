@@ -44,6 +44,7 @@ class AIG {
         std::vector<aiger_symbol*> latches;
         std::vector<aiger_symbol*> c_inputs;
         std::vector<aiger_symbol*> u_inputs;
+        aiger_symbol* error_fake_latch;
         void introduceErrorLatch();
         std::unordered_map<unsigned, std::set<unsigned>>* lit2deps_map;
         std::unordered_map<unsigned,
@@ -56,7 +57,7 @@ class AIG {
         std::set<unsigned> getLitDeps(unsigned);
         static unsigned primeVar(unsigned lit) { return AIG::stripLit(lit) + 1; }
     public:
-        aiger_symbol* error_fake_latch;
+        void removeErrorLatch();
         static unsigned negateLit(unsigned lit) { return lit ^ 1; }
         static bool litIsNegated(unsigned lit) { return (lit & 1) == 1; }
         static unsigned stripLit(unsigned lit) { return lit & ~1; }

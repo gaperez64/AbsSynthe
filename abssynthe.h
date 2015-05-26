@@ -41,6 +41,6 @@ bool solve(AIG*);
 bool compSolve1(AIG*);
 bool compSolve2(AIG*);
 bool compSolve3(AIG*);
-bool solveParallel(const char * );
+bool solveParallel();
 
 #endif

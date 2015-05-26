@@ -68,6 +68,7 @@ void AIG::input2gate(unsigned input, unsigned rh0) {
     dbgMsg("Gated input " + std::to_string(input) + " with val = " +
            std::to_string(rh0));
 }
+
 void AIG::introduceErrorLatch() {
     if (this->error_fake_latch != NULL)
         return;
@@ -79,6 +80,14 @@ void AIG::introduceErrorLatch() {
     dbgMsg(std::string("Error fake latch = ") + 
            std::to_string(this->error_fake_latch->lit));
     this->spec->maxvar++;
+}
+
+void AIG::removeErrorLatch() {
+    if (this->error_fake_latch == NULL)
+        return;
+    delete this->error_fake_latch;
+    this->error_fake_latch = NULL;
+    this->spec->maxvar--;
 }
 
 AIG::AIG(const char* aiger_file_name, bool intro_error_latch) {
