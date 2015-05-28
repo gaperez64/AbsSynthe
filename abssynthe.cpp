@@ -64,7 +64,9 @@ void usage() {
 << std::endl
 << "-p, --parallel                     launch all solvers in parallel"
 << std::endl
-<< "-s, --strat_ordering               launch solvers in parallel with different strategies for the reorderings"
+<< "-s, --strat_ordering               launch solvers in parallel with different"
+<< std::endl
+<< "                                   strategies for the reorderings"
 << std::endl
 << "-ca {1,2,3}, --comp_algo {1,2,3}   choice of compositional algorithm"
 << std::endl

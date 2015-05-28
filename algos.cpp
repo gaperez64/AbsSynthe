@@ -704,15 +704,14 @@ bool solveParallel(bool ordering_strategies) {
     }
 
     // the parent waits for one child to finish
-    pid_t kiddo;
     int status;
-    while((kiddo = wait(&status)) > 0); // wait for all children
-    if (!data->done)
-        exit(55); // personal code for: "FUCK, children stopped unexpectedly"
-    /* then the parent kills all its children
+    wait(&status);
+    // then the parent kills all its children
     for (int i = 0; i < 4; i++)
         kill(children[i], SIGKILL);
-    */
+    if (!data->done)
+        exit(55); // personal code for: "FUCK, children stopped unexpectedly"
+    // recover the answer
     bool result = data->result;
 
     // release shared memory
