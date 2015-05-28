@@ -315,9 +315,9 @@ bool internalSolve(Cudd* mgr, BDDAIG* spec, const BDD* upre_init,
     return !includes_init;
 }
 
-bool solve(AIG* spec_base) {
+bool solve(AIG* spec_base, Cudd_ReorderingType reordering) {
     Cudd mgr(0, 0);
-    mgr.AutodynEnable(CUDD_REORDER_SIFT);
+    mgr.AutodynEnable(reordering);
     BDDAIG spec(*spec_base, &mgr);
     return internalSolve(&mgr, &spec, NULL, NULL, NULL, true);
 }
@@ -652,6 +652,18 @@ static void pWorker(AIG* spec_base, int solver) {
         case 3:
             result = compSolve3(spec_base);
             break;
+        case 4:
+            result = solve(spec_base,CUDD_REORDER_SIFT);
+            break;
+        case 5:
+            result = solve(spec_base,CUDD_REORDER_WINDOW2);
+            break;
+        case 6:
+            result = solve(spec_base,CUDD_REORDER_WINDOW3);
+            break;
+        case 7:
+            result = solve(spec_base,CUDD_REORDER_WINDOW4);
+            break;
         default:
             errMsg("Unknown solver algo: " + to_string(solver));
             exit(1);
@@ -661,7 +673,7 @@ static void pWorker(AIG* spec_base, int solver) {
     exit(0);
 }
 
-bool solveParallel() {
+bool solveParallel(bool ordering_strategies) {
     // place our shared data in shared memory
     data = (shared_data*) mmap(NULL, sizeof(shared_data), PROT_READ | PROT_WRITE,
                                MAP_SHARED | MAP_ANON, -1, 0);
@@ -684,7 +696,10 @@ bool solveParallel() {
         } else {
             solver = i;
             AIG spec(settings.spec_file);
-            pWorker(&spec, solver);
+	        if (ordering_strategies)
+	            pWorker(&spec, solver);
+	        else
+	            pWorker(&spec, solver + 4);
         }
     }
 

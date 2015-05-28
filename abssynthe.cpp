@@ -42,6 +42,7 @@ static struct option long_options[] = {
     {"verbosity", required_argument, NULL, 'v'},
     {"use_trans", no_argument, NULL, 't'},
     {"parallel", no_argument, NULL, 'p'},
+    {"ordering_strategies", no_argument, NULL, 's'},
     {"help", no_argument, NULL, 'h'},
     {"comp_algo", required_argument, NULL, 'c'},
     {"out_file", required_argument, NULL, 'o'},
@@ -51,7 +52,7 @@ static struct option long_options[] = {
 void usage() {
     std::cout << ABSSYNTHE_VERSION << std::endl
 << "usage:" << std::endl
-<<"./abssynthe [-h] [-t] [-p] [-ca {1,2,3}] [-v VERBOSE_LEVEL] [-o OUT_FILE] spec"
+<<"./abssynthe [-h] [-t] [-p] [-s] [-ca {1,2,3}] [-v VERBOSE_LEVEL] [-o OUT_FILE] spec"
 << std::endl
 << "positional arguments:" << std::endl
 << "spec                               input specification in extended AIGER format"
@@ -62,6 +63,8 @@ void usage() {
 << "-t, --use_trans                    compute a transition relation"
 << std::endl
 << "-p, --parallel                     launch all solvers in parallel"
+<< std::endl
+<< "-s, --strat_ordering               launch solvers in parallel with different strategies for the reorderings"
 << std::endl
 << "-ca {1,2,3}, --comp_algo {1,2,3}   choice of compositional algorithm"
 << std::endl
@@ -85,6 +88,7 @@ void parse_arguments(int argc, char** argv) {
     settings.comp_algo = 0;
     settings.use_trans = false;
     settings.parallel = false;
+    settings.ordering_strategies = false;
     settings.out_file = NULL;
     settings.spec_file = NULL;
 
@@ -92,7 +96,7 @@ void parse_arguments(int argc, char** argv) {
     int opt_key;
     int opt_index;
     while (true) {
-        opt_key = getopt_long(argc, argv, "v:tpc:o:", long_options,
+        opt_key = getopt_long(argc, argv, "v:tpsc:o:", long_options,
                               &opt_index);
         if (opt_key == -1)
             break;
@@ -112,6 +116,10 @@ void parse_arguments(int argc, char** argv) {
             case 'p':
                 logMsg("Using parallel solvers.");
                 settings.parallel = true;
+                break;
+            case 's':
+                logMsg("Using parallel solvers with different reordering strategies.");
+                settings.ordering_strategies = true;
                 break;
             case 'c':
                 settings.comp_algo = atoi(optarg);
@@ -149,7 +157,7 @@ int main (int argc, char** argv) {
     // solve the synthesis problem
     bool result;
     if (settings.parallel) {
-        result = solveParallel();
+        result = solveParallel(settings.ordering_strategies);
     } else {
 			// try to open the spec now
 			AIG aig(settings.spec_file);

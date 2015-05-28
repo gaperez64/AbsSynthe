@@ -25,11 +25,13 @@
 #ifndef ABSSYNTHE_H
 #define ABSSYNTHE_H
 
+#include "cuddObj.hh"
 #include "aig.h"
 
 struct settings_struct {
     bool use_trans;
     bool parallel;
+    bool ordering_strategies;
     int comp_algo;
     const char* spec_file;
     const char* out_file;
@@ -37,10 +39,10 @@ struct settings_struct {
 
 extern struct settings_struct settings;
 
-bool solve(AIG*);
+bool solve(AIG*,Cudd_ReorderingType reordering=CUDD_REORDER_SIFT);
 bool compSolve1(AIG*);
 bool compSolve2(AIG*);
 bool compSolve3(AIG*);
-bool solveParallel();
+bool solveParallel(bool);
 
 #endif
