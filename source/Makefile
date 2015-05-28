@@ -1,4 +1,4 @@
-CXX=clang++
+CXX=g++
 CXXFLAGS=-Wall -std=c++11 -pthread -O3 -D NDEBUG
 HEADERS=abssynthe.h logging.h aig.h aiger.h
 SOURCES=abssynthe.cpp logging.cpp aig.cpp aiger.c algos.cpp
