@@ -669,6 +669,7 @@ static void pWorker(AIG* spec_base, int solver) {
             errMsg("Unknown solver algo: " + to_string(solver));
             exit(1);
     }
+    dbgMsg("We have an answer from parallel solver " + to_string(solver));
     data->result = result;
     data->done = true;
     exit(0);

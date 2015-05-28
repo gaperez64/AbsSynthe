@@ -79,7 +79,7 @@ void AIG::introduceErrorLatch() {
     this->error_fake_latch->next = this->spec->outputs[0].lit;
     dbgMsg(std::string("Error fake latch = ") + 
            std::to_string(this->error_fake_latch->lit));
-    //this->spec->maxvar++;
+    this->spec->maxvar++;
 }
 
 void AIG::removeErrorLatch() {
