@@ -43,6 +43,6 @@ bool solve(AIG*,Cudd_ReorderingType reordering=CUDD_REORDER_SIFT);
 bool compSolve1(AIG*);
 bool compSolve2(AIG*);
 bool compSolve3(AIG*);
-bool solveParallel(bool);
+bool solveParallel();
 
 #endif

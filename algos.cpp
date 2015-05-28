@@ -639,6 +639,7 @@ bool compSolve3(AIG* spec_base) {
 static void pWorker(AIG* spec_base, int solver) {
     assert(data != NULL);
     bool result;
+    dbgMsg("Calling parallel solver " + to_string(solver));
     switch (solver) {
         case 0:
             result = solve(spec_base);
@@ -653,16 +654,16 @@ static void pWorker(AIG* spec_base, int solver) {
             result = compSolve3(spec_base);
             break;
         case 4:
-            result = solve(spec_base,CUDD_REORDER_SIFT);
+            result = solve(spec_base, CUDD_REORDER_SIFT);
             break;
         case 5:
-            result = solve(spec_base,CUDD_REORDER_WINDOW2);
+            result = solve(spec_base, CUDD_REORDER_WINDOW2);
             break;
         case 6:
-            result = solve(spec_base,CUDD_REORDER_WINDOW3);
+            result = solve(spec_base, CUDD_REORDER_WINDOW3);
             break;
         case 7:
-            result = solve(spec_base,CUDD_REORDER_WINDOW4);
+            result = solve(spec_base, CUDD_REORDER_WINDOW4);
             break;
         default:
             errMsg("Unknown solver algo: " + to_string(solver));
@@ -673,7 +674,9 @@ static void pWorker(AIG* spec_base, int solver) {
     exit(0);
 }
 
-bool solveParallel(bool ordering_strategies) {
+bool solveParallel() {
+    bool ordering_strategies = settings.ordering_strategies;
+    dbgMsg("Using ordering_strategies? " + to_string(ordering_strategies));
     // place our shared data in shared memory
     data = (shared_data*) mmap(NULL, sizeof(shared_data), PROT_READ | PROT_WRITE,
                                MAP_SHARED | MAP_ANON, -1, 0);
@@ -697,9 +700,9 @@ bool solveParallel(bool ordering_strategies) {
             solver = i;
             AIG spec(settings.spec_file);
 	        if (ordering_strategies)
-	            pWorker(&spec, solver);
-	        else
 	            pWorker(&spec, solver + 4);
+	        else
+	            pWorker(&spec, solver);
         }
     }
 
