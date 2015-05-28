@@ -52,7 +52,7 @@ static struct option long_options[] = {
 void usage() {
     std::cout << ABSSYNTHE_VERSION << std::endl
 << "usage:" << std::endl
-<<"./abssynthe [-h] [-t] [-p] [-s] [-ca {1,2,3}] [-v VERBOSE_LEVEL] [-o OUT_FILE] spec"
+<<"./abssynthe [-h] [-t] [-p] [-s] [-c {1,2,3}] [-v VERBOSE_LEVEL] [-o OUT_FILE] spec"
 << std::endl
 << "positional arguments:" << std::endl
 << "spec                               input specification in extended AIGER format"
