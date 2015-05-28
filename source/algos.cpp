@@ -35,7 +35,6 @@
 #include <ctime>
 #include <list>
 #include <set>
-#include <tuple>
 #include <cfloat>
 #include "cuddObj.hh"
 
@@ -210,8 +209,8 @@ static vector<pair<unsigned, BDD>> synthAlgo(Cudd* mgr, BDDAIG* spec,
     return result;
 }
 
-void finalizeSynth(Cudd* mgr, BDDAIG* spec, 
-                   vector<pair<unsigned, BDD>> result) {
+static void finalizeSynth(Cudd* mgr, BDDAIG* spec, 
+                          vector<pair<unsigned, BDD>> result) {
     // let us clean the AIG before we start introducing new stuff
     spec->removeErrorLatch();
     // we now get rid of all controllable inputs in the aig spec by replacing
@@ -264,7 +263,7 @@ static BDD upre(BDDAIG* spec, BDD dst, BDD &trans_bdd) {
     return temp_bdd.ExistAbstract(uinput_cube);
 }
 
-bool internalSolve(Cudd* mgr, BDDAIG* spec, const BDD* upre_init, 
+static bool internalSolve(Cudd* mgr, BDDAIG* spec, const BDD* upre_init, 
                           BDD* losing_region, BDD* losing_transitions,
                           bool do_synth=false) {
         //static int occ_counter = 1;
@@ -306,11 +305,8 @@ bool internalSolve(Cudd* mgr, BDDAIG* spec, const BDD* upre_init,
     if (!includes_init && do_synth && settings.out_file != NULL) {
         dbgMsg("Starting synthesis, acquiring lock on synth mutex");
         if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
-        if (data == NULL || !data->done) {
-            finalizeSynth(mgr, spec, 
-                          synthAlgo(mgr, spec, ~bad_transitions, ~error_states));
-        }
-        if (data != NULL) pthread_mutex_unlock(&data->synth_mutex);
+        finalizeSynth(mgr, spec, 
+                      synthAlgo(mgr, spec, ~bad_transitions, ~error_states));
     }
     return !includes_init;
 }
@@ -393,12 +389,9 @@ bool compSolve1(AIG* spec_base) {
         if (!includes_init && settings.out_file != NULL) {
             dbgMsg("Starting synthesis, acquiring lock on synth mutex");
             if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
-            if (data == NULL || !data->done) {
-                finalizeSynth(&mgr, &spec, 
-                              synthAlgo(&mgr, &spec, ~bad_transitions,
-                                        ~error_states));
-            }
-            if (data != NULL) pthread_mutex_unlock(&data->synth_mutex);
+            finalizeSynth(&mgr, &spec, 
+                          synthAlgo(&mgr, &spec, ~bad_transitions,
+                                    ~error_states));
         }
 
     } else if (settings.out_file != NULL) {
@@ -408,22 +401,19 @@ bool compSolve1(AIG* spec_base) {
         //std::cout << ("Starting synthesis, acquiring lock on synth mutex\n");
         //std::cout.flush();
         if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
-        if (data == NULL || !data->done) {
-            vector<pair<unsigned, BDD>> all_cinput_strats;
-            vector<pair<BDD, BDD>>::iterator sg = subgame_results.begin();
-            logMsg("Doing stuff");
-            for (vector<BDDAIG*>::iterator i = subgames.begin();
-                 i != subgames.end(); i++) {
-                vector<pair<unsigned, BDD>> temp;
-                temp = synthAlgo(&mgr, *i, ~sg->second, ~sg->first);
-                all_cinput_strats.insert(all_cinput_strats.end(), 
-                                         temp.begin(), temp.end());
-                sg++;
-                delete *i;
-            }
-            finalizeSynth(&mgr, &spec, all_cinput_strats);
+        vector<pair<unsigned, BDD>> all_cinput_strats;
+        vector<pair<BDD, BDD>>::iterator sg = subgame_results.begin();
+        logMsg("Doing stuff");
+        for (vector<BDDAIG*>::iterator i = subgames.begin();
+             i != subgames.end(); i++) {
+            vector<pair<unsigned, BDD>> temp;
+            temp = synthAlgo(&mgr, *i, ~sg->second, ~sg->first);
+            all_cinput_strats.insert(all_cinput_strats.end(), 
+                                     temp.begin(), temp.end());
+            sg++;
+            delete *i;
         }
-        if (data != NULL) pthread_mutex_unlock(&data->synth_mutex);
+        finalizeSynth(&mgr, &spec, all_cinput_strats);
     }
 
     return !includes_init;
@@ -521,12 +511,9 @@ bool compSolve2(AIG* spec_base) {
     if (settings.out_file != NULL) {
         dbgMsg("Starting synthesis, acquiring lock on synth mutex");
         if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
-        if (data == NULL || !data->done) {
-            finalizeSynth(&mgr, &spec, 
-                          synthAlgo(&mgr, &spec, ~subgame_results.back().first,
-                                    mgr.bddOne()));
-        }
-        if (data != NULL) pthread_mutex_unlock(&data->synth_mutex);
+        finalizeSynth(&mgr, &spec, 
+                      synthAlgo(&mgr, &spec, ~subgame_results.back().first,
+                                mgr.bddOne()));
 
     }
     return true;
@@ -537,7 +524,6 @@ bool compSolve3(AIG* spec_base) {
     Cudd mgr(0, 0);
     mgr.AutodynEnable(CUDD_REORDER_SIFT);
     BDDAIG spec(*spec_base, &mgr);
-    resetTimer("decompose");
     vector<BDDAIG*> subgames = spec.decompose();
     if (subgames.size() == 0) return internalSolve(&mgr, &spec, NULL, NULL, NULL,
                                                    true);
@@ -576,7 +562,6 @@ bool compSolve3(AIG* spec_base) {
     while (!includes_init && prev_lose != global_lose) {
         prev_lose = global_lose;
         dbgMsg("Refinement iterate: " + to_string(count++));
-        resetTimer("localstep");
         for (int i = 0; i < subgames.size(); i++) {
             BDDAIG* subgame = subgames[i];
             subgame_info &sg_info = subgame_results[i];
@@ -608,7 +593,6 @@ bool compSolve3(AIG* spec_base) {
         addTime("localstep");
         if (global_lose == prev_lose) {
             dbgMsg("Global Upre");
-            resetTimer("globalstep");
             global_lose = global_lose | upre(&spec, global_lose, global_losing_trans);
             addTime("globalstep");
         } else {
@@ -626,11 +610,8 @@ bool compSolve3(AIG* spec_base) {
     if (!includes_init && settings.out_file != NULL) {
         dbgMsg("Starting synthesis, acquiring lock on synth mutex");
         if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
-        if (data == NULL || !data->done) {
-            finalizeSynth(&mgr, &spec, 
-                          synthAlgo(&mgr, &spec, ~global_losing_trans, ~global_lose));
-        }
-        if (data != NULL) pthread_mutex_unlock(&data->synth_mutex);
+        finalizeSynth(&mgr, &spec, 
+                      synthAlgo(&mgr, &spec, ~global_losing_trans, ~global_lose));
     }
 
     return !includes_init;
@@ -709,7 +690,9 @@ bool solveParallel() {
 
     // the parent waits for one child to finish
     int status;
-    wait(&status);
+    pid_t kiddo = wait(&status);
+    dbgMsg("Answer from process " + to_string(kiddo));
+    dbgMsg("With status " + to_string(status));
     // then the parent kills all its children
     for (int i = 0; i < 4; i++)
         kill(children[i], SIGKILL);
