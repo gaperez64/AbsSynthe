@@ -46,7 +46,7 @@
 using namespace std;
 
 static struct {
-    bool operator()(pair<BDD, BDD> &u, pair<BDD, BDD> &v){
+    bool operator()(const pair<BDD, BDD> &u, const pair<BDD, BDD> &v){
         int u_ = u.second.nodeCount();
         int v_ = v.second.nodeCount();
         return u_ < v_;
@@ -532,7 +532,7 @@ bool compSolve3(AIG* spec_base) {
     BDD losing_region;
     BDD global_lose = mgr.bddZero();
     vector<subgame_info> subgame_results;
-    for (int i = 0; i < subgames.size(); i++) {
+    for (unsigned i = 0; i < subgames.size(); i++) {
         // check if another thread has won the race
         dbgMsg("Solving subgame " + to_string(i) + " (" +
                to_string(subgames[i]->numLatches()) + " latches)");
@@ -562,7 +562,7 @@ bool compSolve3(AIG* spec_base) {
     while (!includes_init && prev_lose != global_lose) {
         prev_lose = global_lose;
         dbgMsg("Refinement iterate: " + to_string(count++));
-        for (int i = 0; i < subgames.size(); i++) {
+        for (unsigned i = 0; i < subgames.size(); i++) {
             BDDAIG* subgame = subgames[i];
             subgame_info &sg_info = subgame_results[i];
             set<unsigned> latches_sg = spec.getBddLatchDeps(sg_info.second);
@@ -602,7 +602,7 @@ bool compSolve3(AIG* spec_base) {
     }
   
     // release memory of current subgames
-    for (int i = 0; i < subgames.size(); i++)
+    for (unsigned i = 0; i < subgames.size(); i++)
         delete subgames[i];
 
     // if !includes_init == true, then ~bad_transitions is the set of all

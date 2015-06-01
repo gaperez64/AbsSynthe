@@ -871,7 +871,7 @@ bool BDDAIG::isValidLatchBdd(BDD b) {
 bool BDDAIG::isValidBdd(BDD b) {
 #ifndef NDEBUG
     std::set<unsigned> vars_in_cone = this->semanticDeps(b);
-    int hits = 0;
+    unsigned hits = 0;
     for (std::vector<aiger_symbol*>::iterator i = this->latches.begin();
          i != this->latches.end(); i++) {
         if (vars_in_cone.find((*i)->lit) != vars_in_cone.end())
