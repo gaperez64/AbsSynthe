@@ -210,7 +210,7 @@ static vector<pair<unsigned, BDD>> synthAlgo(Cudd* mgr, BDDAIG* spec,
 }
 
 static void finalizeSynth(Cudd* mgr, BDDAIG* spec, 
-                          vector<pair<unsigned, BDD>> result) {
+                          vector<pair<unsigned, BDD>> result, AIG* original=NULL) {
     // let us clean the AIG before we start introducing new stuff
     spec->removeErrorLatch();
     // we now get rid of all controllable inputs in the aig spec by replacing
@@ -218,9 +218,21 @@ static void finalizeSynth(Cudd* mgr, BDDAIG* spec,
     // NOTE: because of the way bdd2aig is implemented, we must ensure that BDDs are
     // no longer operated on after this point!
     unordered_map<unsigned long, unsigned> cache;
+    vector<unsigned> cinputs;
+    if (original != NULL)
+        cinputs = original->getCInputLits();
     for (vector<pair<unsigned, BDD>>::iterator i = result.begin();
-         i != result.end(); i++)
+         i != result.end(); i++) {
         spec->input2gate(i->first, bdd2aig(mgr, spec, i->second, &cache));
+        if (original != NULL)
+            cinputs.erase(remove(cinputs.begin(), cinputs.end(), i->first), cinputs.end());
+    }
+    if (original != NULL) {
+        for (vector<unsigned>::iterator i = cinputs.begin(); i != cinputs.end(); i++) {
+            logMsg("Setting unused cinput " + to_string(*i));
+            spec->input2gate(*i, bdd2aig(mgr, spec, ~mgr->bddOne() , &cache));
+        }
+    }
     // Finally, we write the modified spec to file
     spec->writeToFile(settings.out_file);
 }
@@ -360,8 +372,7 @@ bool compSolve1(AIG* spec_base) {
             total_cinputs.insert(ic.begin(), ic.end());
         }
     }   
-    logMsg("Are we cinput-independent? " + to_string(cinput_independent));
-    //dbgMsg("Are we cinput-independent? " + to_string(cinput_independent));
+    // dbgMsg("Are we cinput-independent? " + to_string(cinput_independent));
 
     if (!cinput_independent) { // we still have one game to solve
         // release cache memory and other stuff used in BDDAIG instances
@@ -391,7 +402,8 @@ bool compSolve1(AIG* spec_base) {
             if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
             finalizeSynth(&mgr, &spec, 
                           synthAlgo(&mgr, &spec, ~bad_transitions,
-                                    ~error_states));
+                                    ~error_states),
+                          spec_base);
         }
 
     } else if (settings.out_file != NULL) {
@@ -403,17 +415,18 @@ bool compSolve1(AIG* spec_base) {
         if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
         vector<pair<unsigned, BDD>> all_cinput_strats;
         vector<pair<BDD, BDD>>::iterator sg = subgame_results.begin();
-        logMsg("Doing stuff");
+        // logMsg("Doing stuff");
         for (vector<BDDAIG*>::iterator i = subgames.begin();
              i != subgames.end(); i++) {
             vector<pair<unsigned, BDD>> temp;
             temp = synthAlgo(&mgr, *i, ~sg->second, ~sg->first);
+            // logMsg("Found " + std::to_string(temp.size()) + " cinputs here");
             all_cinput_strats.insert(all_cinput_strats.end(), 
                                      temp.begin(), temp.end());
             sg++;
             delete *i;
         }
-        finalizeSynth(&mgr, &spec, all_cinput_strats);
+        finalizeSynth(&mgr, &spec, all_cinput_strats, spec_base);
     }
 
     return !includes_init;
@@ -513,7 +526,8 @@ bool compSolve2(AIG* spec_base) {
         if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
         finalizeSynth(&mgr, &spec, 
                       synthAlgo(&mgr, &spec, ~subgame_results.back().first,
-                                mgr.bddOne()));
+                                mgr.bddOne()),
+                      spec_base);
 
     }
     return true;
@@ -611,7 +625,8 @@ bool compSolve3(AIG* spec_base) {
         dbgMsg("Starting synthesis, acquiring lock on synth mutex");
         if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
         finalizeSynth(&mgr, &spec, 
-                      synthAlgo(&mgr, &spec, ~global_losing_trans, ~global_lose));
+                      synthAlgo(&mgr, &spec, ~global_losing_trans, ~global_lose),
+                      spec_base);
     }
 
     return !includes_init;
