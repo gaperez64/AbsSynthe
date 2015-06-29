@@ -711,8 +711,11 @@ bool solveParallel() {
     // then the parent kills all its children
     for (int i = 0; i < 4; i++)
         kill(children[i], SIGKILL);
-    if (!data->done)
+    if (!data->done) {
+        errMsg("Parallel solvers stopped unexpectedly. " +
+               "Synthesis/realizability test inconclusive");
         exit(55); // personal code for: "FUCK, children stopped unexpectedly"
+    }
     // recover the answer
     bool result = data->result;
 
