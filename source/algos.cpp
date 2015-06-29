@@ -705,7 +705,9 @@ bool solveParallel() {
 
     // the parent waits for one child to finish
     int status;
-    pid_t kiddo = wait(&status);
+    pid_t kiddo;
+    while (!data->done)
+        kiddo = wait(&status);
     dbgMsg("Answer from process " + to_string(kiddo));
     dbgMsg("With status " + to_string(status));
     // then the parent kills all its children
