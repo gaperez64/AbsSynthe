@@ -28,6 +28,7 @@ from bdd_aig import BDDAIG
 from algos import (
     backward_safety_synth,
     forward_safety_synth,
+    test_safety_synth
 )
 from bdd_games import (
     ConcGame,
@@ -98,7 +99,10 @@ def synth_from_spec(aig, argv):
     else:
         game = ConcGame(aig,
                         use_trans=argv.use_trans)
-        w = backward_safety_synth(game)
+        if argv.use_beta:
+            w = test_safety_synth(game)
+        else:
+            w = backward_safety_synth(game)
     # final check
     if w is None:
         return False
@@ -134,6 +138,9 @@ def main():
     parser.add_argument("-t", "--use_trans", action="store_true",
                         dest="use_trans", default=False,
                         help="Compute a transition relation")
+    parser.add_argument("-b", "--use_beta", action="store_true",
+                        dest="use_beta", default=False,
+                        help="Use algorithm which is being tested")
     parser.add_argument("-s", "--use_symb", action="store_true",
                         dest="use_symb", default=False,
                         help="Use the symblicit forward approach")

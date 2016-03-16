@@ -156,3 +156,22 @@ def backward_safety_synth(game):
         return None
     else:
         return win_region
+
+
+# Test your algo here
+def test_safety_synth(game):
+    assert isinstance(game, BackwardGame)
+
+    init_state = game.init()
+    error_states = game.error()
+    log.DBG_MSG("Computing fixpoint of UPRE.")
+    win_region = ~fixpoint(
+        error_states,
+        fun=lambda x: x | game.upre(x),
+        early_exit=lambda x: x & init_state
+    )
+
+    if not (win_region & init_state):
+        return None
+    else:
+        return win_region

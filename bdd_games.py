@@ -59,6 +59,11 @@ class ConcGame(BackwardGame):
             dst,
             use_trans=self.use_trans)
 
+    def pre(self, dst):
+        return self.aig.pre_bdd(
+            dst,
+            use_trans=self.use_trans)
+
     def cpre(self, dst, get_strat=False):
         return self.aig.cpre_bdd(
             dst,

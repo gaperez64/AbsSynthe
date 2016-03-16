@@ -135,17 +135,17 @@ class AIG:
     def remove_outputs(self):
         return aiger_remove_outputs(self.spec)
 
-    def _iterate_inputs(self):
+    def iterate_inputs(self):
         for i in range(int(self.spec.num_inputs)):
             yield get_aiger_symbol(self.spec.inputs, i)
 
     def iterate_uncontrollable_inputs(self):
         return ifilter(lambda sym: not sym.name.startswith("controllable"),
-                       self._iterate_inputs())
+                       self.iterate_inputs())
 
     def iterate_controllable_inputs(self):
         return ifilter(lambda sym: sym.name.startswith("controllable"),
-                       self._iterate_inputs())
+                       self.iterate_inputs())
 
     # returns the set A = {a_0,a_1,...} from the expression AND(a_0,a_1,...)
     # and a subset B <= A of the latches that were not completely explored

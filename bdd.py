@@ -57,6 +57,10 @@ class BDD_Base:
         pass
 
     @abstractmethod
+    def extract_funs(relation, variables, care_set=None):
+        pass
+
+    @abstractmethod
     def __init__(self, var=None):
         pass
 

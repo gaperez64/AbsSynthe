@@ -295,54 +295,6 @@ class BDD(bdd.BDD_Base):
             next_free_var += delta
         return temp_vars[0:n_more]
 
-    @staticmethod
-    def conciliate(F, G, var_list=None):
-        """ Procedure based on the paper Abstract Refinement with Craig
-        Interpolation by Esparza, Kiefer and Schwoon """
-        # it is required that F implies G
-        assert (F != BDD.true())
-        assert (G != BDD.false())
-        assert (~F | G) == BDD.true()
-        # create variable list
-        if var_list is None:
-            var_list = range(next_free_var)
-
-        def occ(x):
-            return x.occ_sem(var_list)
-
-        # more implication checks (non-trivial implication)
-        if F == BDD.false():
-            log.WRN_MSG("F is FALSE")
-            return (set(occ(G)), G, G)
-        if G == BDD.true():
-            log.WRN_MSG("G is TRUE")
-            return (set(occ(F)), F, F)
-        # we now compute two interpolants that we will return
-        I = F
-        J = G
-        Z = set(occ(F) + occ(G))
-        Y = set([])
-        while True:
-            X = set(occ(I)) - set(occ(J))
-            if X:
-                I = I.exist_abstract(
-                    BDD.get_cube([BDD(x) for x in X]))
-                Z -= X
-            Y = set(occ(J)) - set(occ(I))
-            if Y:
-                J = I.univ_abstract(
-                    BDD.get_cube([BDD(y) for y in Y]))
-                Z -= Y
-            else:
-                break
-        # these are interpolants so they should be implied by F and imply G
-        assert (~F | I) == BDD.true()
-        assert (~F | J) == BDD.true()
-        assert (~I | G) == BDD.true()
-        assert (~J | G) == BDD.true()
-        # return the conciliating set and both interpolants
-        return (Z, I, J)
-
 
 # initialize the whole thing
 BDD.init_cudd()
