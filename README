@@ -2,6 +2,3 @@ AbsSynthe - a tool to synthesize controllers from succinct safety
 specifications. 
 
 Version = 2.0
-
-** Note: the native version of AbsSynthe (a.k.a. Swiss AbsSynthe) has been moved to a separate branch:
-"native-dev-par". This new branch corresponds to the solver submitted to SyntComp 2015.

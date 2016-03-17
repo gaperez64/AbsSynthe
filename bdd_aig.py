@@ -89,22 +89,6 @@ class BDDAIG(AIG):
                 self.set_lit2bdd(l.next,
                                  self.lit2bdd(l.next).safe_restrict(b))
 
-    def assume_funs_latch_next_funs(self, b, var_cube):
-        log.DBG_MSG("Addind assumption of function for some vars")
-        for l in self.iterate_latches():
-            prev = self.lit2bdd(l.next)
-            self.set_lit2bdd(l.next,
-                             prev.and_abstract(b, var_cube))
-            if log.debug:
-                deps_b = self.get_bdd_deps(b)
-                log.DBG_MSG("Vars in fun b: " + str(deps_b))
-                deps_cube = self.get_bdd_deps(var_cube)
-                log.DBG_MSG("Vars in cube: " + str(deps_cube))
-                deps = self.get_bdd_deps(prev)
-                log.DBG_MSG("Deps, originally: " + str(deps))
-                nu_deps = self.get_bdd_deps(self.lit2bdd(l.next))
-                log.DBG_MSG("Deps, after ass: " + str((deps - nu_deps)))
-
     # short-circuit the error bdd and restrict the whole thing to
     # the relevant latches
     def short_error(self, b):
@@ -267,36 +251,6 @@ class BDDAIG(AIG):
             # take a transition step backwards
             return b.compose(latches, latch_funs)
 
-    def pre_bdd(self, dst_states_bdd, no_projection=False, use_trans=False):
-        """
-        PRE = EXu.EXc.EL' : T(L,Xu,Xc,L') ^ dst(L')
-        """
-        # take a transition step backwards
-        temp_bdd = self.substitute_latches_next(
-            dst_states_bdd,
-            use_trans=use_trans)
-        # there are actions for both players such that...
-        local_cube = BDD.make_cube(imap(funcomp(BDD, symbol_lit),
-                                        self.iterate_inputs()))
-        deps = self.get_bdd_deps(local_cube)
-        log.DBG_MSG("cube deps: " + str(deps))
-        deps = self.get_bdd_deps(temp_bdd)
-        log.DBG_MSG("temp deps: " + str(deps))
-        log.DBG_MSG("cube CNF: " + str(local_cube.bdd2cnf()))
-        local_cube.dump_dot()
-        p_bdd = temp_bdd.exist_abstract(
-            BDD.make_cube(imap(funcomp(BDD, symbol_lit),
-                               self.iterate_inputs())))
-        deps = self.get_bdd_deps(p_bdd)
-        log.DBG_MSG("result deps: " + str(deps))
-        # prepare the output
-        if no_projection:
-            log.DBG_MSG("No projection applied")
-            return temp_bdd
-        else:
-            log.DBG_MSG("Projection applied")
-            return p_bdd
-
     def upre_bdd(self, dst_states_bdd, env_strat=None, get_strat=False,
                  use_trans=False):
         """
@@ -415,7 +369,33 @@ class BDDAIG(AIG):
         Calculate BDDs for output functions given non-deterministic winning
         strategy.
         """
-        return BDD.extract_funs(strategy,
-                                [x.lit for x
-                                 in self.iterate_controllable_inputs()],
-                                care_set)
+        if care_set is None:
+            care_set = BDD.true()
+
+        output_models = dict()
+        all_outputs = [BDD(x.lit) for x in self.iterate_controllable_inputs()]
+        for c_symb in self.iterate_controllable_inputs():
+            c = BDD(c_symb.lit)
+            others = set(set(all_outputs) - set([c]))
+            if others:
+                others_cube = BDD.make_cube(others)
+                c_arena = strategy.exist_abstract(others_cube)
+            else:
+                c_arena = strategy
+            # pairs (x,u) in which c can be true
+            can_be_true = c_arena.cofactor(c)
+            # pairs (x,u) in which c can be false
+            can_be_false = c_arena.cofactor(~c)
+            must_be_true = (~can_be_false) & can_be_true
+            must_be_false = (~can_be_true) & can_be_false
+            local_care_set = care_set & (must_be_true | must_be_false)
+            # Restrict operation:
+            #   on care_set: must_be_true.restrict(care_set) <-> must_be_true
+            c_model = min([must_be_true.safe_restrict(local_care_set),
+                          (~must_be_false).safe_restrict(local_care_set)],
+                          key=lambda x: x.dag_size())
+            output_models[c_symb.lit] = c_model
+            log.DBG_MSG("Size of function for " + str(c.get_index()) + " = " +
+                        str(c_model.dag_size()))
+            strategy &= BDD.make_eq(c, c_model)
+        return output_models
