@@ -365,11 +365,60 @@ static BDD upre(BDDAIG* spec, BDD dst, BDD &trans_bdd) {
 // NOTE: trans_bdd contains the set of all transitions going into bad
 // states after the upre step (the complement of all good transitions)
 static BDD pre(BDDAIG* spec, BDD dst, BDD &trans_bdd) {
-    BDD not_dst = ~dst;
-    trans_bdd = substituteLatchesNext(spec, dst, &not_dst);
+    //BDD not_dst = ~dst;
+    trans_bdd = substituteLatchesNext(spec, dst);//, &not_dst);
     BDD cinput_cube = spec->cinputCube();
     BDD uinput_cube = spec->uinputCube();
     return trans_bdd.ExistAbstract(cinput_cube & uinput_cube);
+}
+
+
+static bool internalSolve2(Cudd* mgr, BDDAIG* spec, const BDD* upre_init, 
+                          BDD* losing_region, BDD* losing_transitions,
+                          bool do_synth=false) {
+        //static int occ_counter = 1;
+    dbgMsg("Computing fixpoint of UPRE.");
+        //cout << "Visited " << occ_counter++ << endl;
+    bool includes_init = false;
+    unsigned cnt = 0;
+    BDD bad_transitions;
+    BDD init_state = spec->initState();
+    BDD error_states;
+    if (upre_init != NULL) {
+        error_states = *upre_init;
+    } else {
+        error_states = spec->errorStates();
+    }
+    BDD prev_error = ~mgr->bddOne();
+    includes_init = ((init_state & error_states) != ~mgr->bddOne());
+    while (!includes_init && error_states != prev_error) {
+        prev_error = error_states;
+        error_states = prev_error | upre(spec, prev_error, bad_transitions);
+        includes_init = ((init_state & error_states) != ~mgr->bddOne());
+        cnt++;
+    }
+    
+    dbgMsg("Early exit? " + to_string(includes_init) + 
+           ", after " + to_string(cnt) + " iterations.");
+
+#ifndef NDEBUG
+    spec->dump2dot(error_states & init_state, "uprestar_and_init.dot");
+#endif
+    if (losing_region != NULL) {
+        *losing_region = error_states;
+    }
+    if (losing_transitions != NULL){
+        *losing_transitions = bad_transitions;
+    } 
+    // if !includes_init == true, then ~bad_transitions is the set of all
+    // good transitions for controller (Eve)
+    if (!includes_init && do_synth && settings.out_file != NULL) {
+        dbgMsg("Starting synthesis, acquiring lock on synth mutex");
+        if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
+        finalizeSynth(mgr, spec, 
+                      synthAlgo(mgr, spec, ~bad_transitions, ~error_states));
+    }
+    return !includes_init;
 }
 
 static bool internalSolve(Cudd* mgr, BDDAIG* spec, const BDD* upre_init, 
@@ -385,6 +434,7 @@ static bool internalSolve(Cudd* mgr, BDDAIG* spec, const BDD* upre_init,
     } else {
         error_states = spec->errorStates();
     }
+    BDD original_error = error_states;
     BDD prev_error = ~mgr->bddOne();
     BDD cinput_cube = spec->cinputCube();
 
@@ -403,21 +453,31 @@ static bool internalSolve(Cudd* mgr, BDDAIG* spec, const BDD* upre_init,
             dbgMsg("Computing fixpoint on local spec");
             BDD prev_error = ~mgr->bddOne();
             includes_init = ((init_state & error_prime) != ~mgr->bddOne());
+            unsigned cnt = 0;
             while (!includes_init && error_prime != prev_error) {
                 prev_error = error_prime;
                 error_prime = prev_error | upre(&local_spec, prev_error, bad_transitions);
+                assert((error_states & error_prime) == error_states);
+                assert((original_error & error_prime) == original_error);
                 includes_init = ((init_state & error_prime) != ~mgr->bddOne());
+                cnt++;
             }
+            if (!includes_init)
+                dbgMsg("Iterations before fixpoint: " + to_string(cnt));
             // if error_prime is now bigger than error_states, this will be repeated
-        } while (error_prime != error_states);
-        // we now do one step of the real upre on the real spec to check for
-        // fixpoint convergence
-        dbgMsg("Making a real upre step");
-        error_states = error_prime | upre(spec, error_prime, bad_transitions);
-        // if this makes error_states bigger than error_prime we will repeat the
-        // whole thing
-        includes_init = ((init_state & error_states) != ~mgr->bddOne());
-    } while (error_prime != error_states && !includes_init);
+        } while (!includes_init && error_prime != error_states);
+        if (!includes_init) {
+            // we now do one step of the real upre on the real spec to check for
+            // fixpoint convergence
+            dbgMsg("Making a real upre step");
+            error_states = error_prime | upre(spec, error_prime, bad_transitions);
+            assert((error_prime & error_states) == error_prime);
+            assert((original_error & error_states) == original_error);
+            // if this makes error_states bigger than error_prime we will repeat the
+            // whole thing
+            includes_init = ((init_state & error_states) != ~mgr->bddOne());
+        }
+    } while (!includes_init && error_prime != error_states);
 
     if (!includes_init && do_synth && settings.out_file != NULL) {
         dbgMsg("Starting synthesis, acquiring lock on synth mutex");
