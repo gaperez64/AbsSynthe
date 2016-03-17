@@ -68,7 +68,7 @@ void usage() {
 << std::endl
 << "                                   strategies for the reorderings"
 << std::endl
-<< "-ca {1,2,3}, --comp_algo {1,2,3}   choice of compositional algorithm"
+<< "-c {1,2,3}, --comp_algo {1,2,3}   choice of compositional algorithm"
 << std::endl
 << "-v VERBOSE_LEVEL, --verbose_level VERBOSE_LEVEL" << std::endl
 << "                                   Verbose level string, i.e. (D)ebug,"

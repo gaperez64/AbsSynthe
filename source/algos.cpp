@@ -124,6 +124,93 @@ static unsigned bdd2aig(Cudd* mgr, BDDAIG* spec, BDD a_bdd,
     return res;
 }
 
+
+static vector<pair<unsigned, BDD>> synthAlgoAdam(Cudd* mgr, BDDAIG* spec,
+                                                 BDD non_det_strategy, BDD care_set) {
+    BDD strategy = non_det_strategy;
+#ifndef NDEBUG
+    spec->dump2dot(strategy, "strategy.dot");
+    set<unsigned> deps = spec->semanticDeps(strategy);
+    string litstring;
+    for (set<unsigned>::iterator i = deps.begin(); i != deps.end(); i++)
+        litstring += to_string(*i) + ", ";
+    dbgMsg("Semantic deps of the non-det strat: " + litstring);
+#endif
+    vector<aiger_symbol*> u_inputs = spec->getUInputs();
+    vector<unsigned> u_input_lits;
+    vector<BDD> u_input_funs;
+
+    dbgMsg("non-det strategy BDD size: " +
+           to_string(non_det_strategy.nodeCount()));
+
+    // as a first step, we compute a single bdd per controllable input
+    for (vector<aiger_symbol*>::iterator i = u_inputs.begin();
+         i != u_inputs.end(); i++) {
+        BDD c = mgr->bddVar((*i)->lit);
+        BDD others_cube = mgr->bddOne();
+        unsigned others_count = 0;
+        for (vector<aiger_symbol*>::iterator j = u_inputs.begin();
+             j != u_inputs.end(); j++) {
+            //dbgMsg("CInput " + to_string((*j)->lit));
+            if ((*i)->lit == (*j)->lit)
+                continue;
+            others_cube &= mgr->bddVar((*j)->lit);
+            //dbgMsg("Other cube has lit " + to_string((*j)->lit));
+            others_count++;
+        }
+        BDD u_arena;
+        if (others_count > 0)
+            u_arena = strategy.ExistAbstract(others_cube);
+        else {
+            //dbgMsg("No need to abstract other cinputs");
+            u_arena = strategy;
+        }
+#ifndef NDEBUG
+        spec->dump2dot(u_arena, "u_arena.dot");
+        spec->dump2dot(u_arena.Cofactor(c), "u_arena_true.dot");
+#endif
+        // pairs (x,u) in which c can be true
+        BDD can_be_true = u_arena.Cofactor(c);
+        //dbgMsg("Can be true BDD size: " + to_string(can_be_true.nodeCount()));
+        // pairs (x,u) in which c can be false
+        BDD can_be_false = u_arena.Cofactor(~c);
+        //dbgMsg("Can be false BDD size: " + to_string(can_be_false.nodeCount()));
+        BDD must_be_true = (~can_be_false) & can_be_true;
+        //dbgMsg("Must be true BDD size: " + to_string(must_be_true.nodeCount()));
+        BDD must_be_false = (~can_be_true) & can_be_false;
+        //dbgMsg("Must be false BDD size: " + to_string(must_be_false.nodeCount()));
+        BDD local_care_set = care_set & (must_be_true | must_be_false);
+        // on care set: must_be_true.restrict(care_set) <-> must_be_true
+        // or         ~(must_be_false).restrict(care_set) <-> ~must_be_false
+        BDD opt1 = BDDAIG::safeRestrict(must_be_true, local_care_set);
+        //dbgMsg("opt1 BDD size: " + to_string(opt1.nodeCount()));
+        BDD opt2 = BDDAIG::safeRestrict(~must_be_false, local_care_set);
+        //dbgMsg("opt2 BDD size: " + to_string(opt2.nodeCount()));
+        BDD res;
+        if (opt1.nodeCount() < opt2.nodeCount())
+            res = opt1;
+        else
+            res = opt2;
+        dbgMsg("Size of function for " + to_string(c.NodeReadIndex()) + " = " +
+               to_string(res.nodeCount()));
+        strategy &= (~c | res) & (~res | c);
+        u_input_funs.push_back(res);
+        u_input_lits.push_back((*i)->lit);
+    }
+
+    vector<pair<unsigned, BDD>> result;
+    vector<unsigned>::iterator i = u_input_lits.begin();
+    vector<BDD>::iterator j = u_input_funs.begin();
+    for (; i != u_input_lits.end();) {
+        result.push_back(make_pair(*i, *j));
+        i++;
+        j++;
+    }
+
+    return result;
+}
+
+
 static vector<pair<unsigned, BDD>> synthAlgo(Cudd* mgr, BDDAIG* spec,
                                              BDD non_det_strategy, BDD care_set) {
     BDD strategy = non_det_strategy;
@@ -275,45 +362,63 @@ static BDD upre(BDDAIG* spec, BDD dst, BDD &trans_bdd) {
     return temp_bdd.ExistAbstract(uinput_cube);
 }
 
+// NOTE: trans_bdd contains the set of all transitions going into bad
+// states after the upre step (the complement of all good transitions)
+static BDD pre(BDDAIG* spec, BDD dst, BDD &trans_bdd) {
+    BDD not_dst = ~dst;
+    trans_bdd = substituteLatchesNext(spec, dst, &not_dst);
+    BDD cinput_cube = spec->cinputCube();
+    BDD uinput_cube = spec->uinputCube();
+    return trans_bdd.ExistAbstract(cinput_cube & uinput_cube);
+}
+
 static bool internalSolve(Cudd* mgr, BDDAIG* spec, const BDD* upre_init, 
                           BDD* losing_region, BDD* losing_transitions,
                           bool do_synth=false) {
-        //static int occ_counter = 1;
-    dbgMsg("Computing fixpoint of UPRE.");
-        //cout << "Visited " << occ_counter++ << endl;
     bool includes_init = false;
-    unsigned cnt = 0;
     BDD bad_transitions;
     BDD init_state = spec->initState();
     BDD error_states;
+    BDD error_prime;
     if (upre_init != NULL) {
         error_states = *upre_init;
     } else {
         error_states = spec->errorStates();
     }
     BDD prev_error = ~mgr->bddOne();
-    includes_init = ((init_state & error_states) != ~mgr->bddOne());
-    while (!includes_init && error_states != prev_error) {
-        prev_error = error_states;
-        error_states = prev_error | upre(spec, prev_error, bad_transitions);
-        includes_init = ((init_state & error_states) != ~mgr->bddOne());
-        cnt++;
-    }
-    
-    dbgMsg("Early exit? " + to_string(includes_init) + 
-           ", after " + to_string(cnt) + " iterations.");
+    BDD cinput_cube = spec->cinputCube();
 
-#ifndef NDEBUG
-    spec->dump2dot(error_states & init_state, "uprestar_and_init.dot");
-#endif
-    if (losing_region != NULL) {
-        *losing_region = error_states;
-    }
-    if (losing_transitions != NULL){
-        *losing_transitions = bad_transitions;
-    } 
-    // if !includes_init == true, then ~bad_transitions is the set of all
-    // good transitions for controller (Eve)
+    do {
+        error_prime = error_states;
+        do {
+            error_states = error_prime;
+            // compute one step of pre
+            pre(spec, error_states, bad_transitions);
+            // obtain one strategy for Adam from bad_transitions
+            BDD proj_bad = bad_transitions.ExistAbstract(cinput_cube);
+            vector<pair<unsigned, BDD>> strat_adam = synthAlgoAdam(mgr, spec, proj_bad, ~error_states);
+            // use the strategy to simplify next functions
+            BDDAIG local_spec(*spec, strat_adam);
+            // compute the fixpoint of upre on the local game
+            dbgMsg("Computing fixpoint on local spec");
+            BDD prev_error = ~mgr->bddOne();
+            includes_init = ((init_state & error_prime) != ~mgr->bddOne());
+            while (!includes_init && error_prime != prev_error) {
+                prev_error = error_prime;
+                error_prime = prev_error | upre(&local_spec, prev_error, bad_transitions);
+                includes_init = ((init_state & error_prime) != ~mgr->bddOne());
+            }
+            // if error_prime is now bigger than error_states, this will be repeated
+        } while (error_prime != error_states);
+        // we now do one step of the real upre on the real spec to check for
+        // fixpoint convergence
+        dbgMsg("Making a real upre step");
+        error_states = error_prime | upre(spec, error_prime, bad_transitions);
+        // if this makes error_states bigger than error_prime we will repeat the
+        // whole thing
+        includes_init = ((init_state & error_states) != ~mgr->bddOne());
+    } while (error_prime != error_states && !includes_init);
+
     if (!includes_init && do_synth && settings.out_file != NULL) {
         dbgMsg("Starting synthesis, acquiring lock on synth mutex");
         if (data != NULL) pthread_mutex_lock(&data->synth_mutex);

@@ -71,6 +71,7 @@ class AIG {
         void writeToFile(const char*);
         std::vector<aiger_symbol*> getLatches() { return this->latches; }
         std::vector<aiger_symbol*> getCInputs() { return this->c_inputs; }
+        std::vector<aiger_symbol*> getUInputs() { return this->u_inputs; }
         unsigned numLatches();
         std::vector<unsigned> getCInputLits();
         std::vector<unsigned> getUInputLits();
@@ -98,6 +99,8 @@ class BDDAIG : public AIG {
         static BDD safeRestrict(BDD, BDD);
         std::set<unsigned> semanticDeps(BDD);
         static unsigned primeVar(unsigned lit) { return AIG::stripLit(lit) + 1; }
+
+        BDDAIG(const BDDAIG&, std::vector<std::pair<unsigned, BDD>>);
         BDDAIG(const AIG&, Cudd*);
         BDDAIG(const BDDAIG&, BDD);
         ~BDDAIG();

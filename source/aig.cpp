@@ -315,6 +315,62 @@ BDDAIG::BDDAIG(const AIG &base, Cudd* local_mgr) : AIG(base) {
     this->short_error = NULL;
 }
 
+BDDAIG::BDDAIG(const BDDAIG &base, std::vector<std::pair<unsigned, BDD>> adam_strat) : AIG(base) {
+    this->mgr = base.mgr;
+    this->must_clean = true;
+    this->lit2bdd_map = new std::unordered_map<unsigned, BDD>();
+    this->bdd2deps_map = new std::unordered_map<unsigned long, std::set<unsigned>>();
+    this->primed_latch_cube = NULL;
+    this->cinput_cube = NULL;
+    this->uinput_cube = NULL;
+    this->next_fun_compose_vec = NULL;
+    this->trans_rel = NULL;
+    this->short_error = NULL;
+
+    // compute the full strategy and make a cube for the u inputs
+    BDD full_strat = mgr->bddOne();
+    BDD u_input_cube = mgr->bddOne();
+    for (std::vector<std::pair<unsigned, BDD>>::iterator i = adam_strat.begin();
+         i != adam_strat.end(); i++) {
+        BDD cur_var = mgr->bddVar((*i).first);
+        BDD cur_bdd = (*i).second;
+        u_input_cube &= cur_var;
+        full_strat &= (~cur_var | cur_bdd) & (cur_var | ~cur_bdd);
+    }
+
+    // we will simplify the next fun vector
+    this->next_fun_compose_vec = new std::vector<BDD>();
+    // fill the vector with singleton bdds except for the latches
+    std::vector<aiger_symbol*>::iterator latch_it = this->latches.begin();
+    for (unsigned i = 0; ((int) i) < this->mgr->ReadSize(); i++) {
+        if (latch_it != this->latches.end() && i == (*latch_it)->lit) {
+            // since we allow for short_error to override the next fun...
+            BDD next_fun;
+            if (i == this->error_fake_latch->lit &&
+                this->short_error != NULL) {
+                next_fun = *this->short_error; 
+                //dbgMsg("Latch " + std::to_string(i) + " is the error latch");
+            } else if (this->short_error != NULL) { // simplify functions
+                next_fun = this->lit2bdd((*latch_it)->next);
+                next_fun = BDDAIG::safeRestrict(next_fun,
+                                                ~(*this->short_error));
+                //dbgMsg("Restricting next function of latch " +
+                //std::to_string(i));
+            } else {
+                next_fun = this->lit2bdd((*latch_it)->next);
+                next_fun = next_fun.AndAbstract(full_strat, u_input_cube);
+                //dbgMsg("Taking the next function of latch " +
+                //std::to_string(i));
+            }
+            this->next_fun_compose_vec->push_back(next_fun);
+            latch_it++;
+        } else {
+            this->next_fun_compose_vec->push_back(this->mgr->bddVar(i));
+        }
+    }
+    //dbgMsg("done with the next_fun_compose_vec");
+}
+
 BDDAIG::BDDAIG(const BDDAIG &base, BDD error) : AIG(base) {
     this->mgr = base.mgr;
     this->must_clean = false;
