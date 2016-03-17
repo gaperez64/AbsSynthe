@@ -295,6 +295,39 @@ class BDD(bdd.BDD_Base):
             next_free_var += delta
         return temp_vars[0:n_more]
 
+    @staticmethod
+    def extract_funs(relation, variables, care_set=None):
+        if care_set is None:
+            care_set = BDD.true()
+
+        output_models = dict()
+        all_outputs = [BDD(x) for x in variables]
+        for c_symb in variables:
+            c = BDD(c_symb)
+            others = set(set(all_outputs) - set([c]))
+            if others:
+                others_cube = BDD.make_cube(others)
+                c_arena = relation.exist_abstract(others_cube)
+            else:
+                c_arena = relation
+            # pairs (x,u) in which c can be true
+            can_be_true = c_arena.cofactor(c)
+            # pairs (x,u) in which c can be false
+            can_be_false = c_arena.cofactor(~c)
+            must_be_true = (~can_be_false) & can_be_true
+            must_be_false = (~can_be_true) & can_be_false
+            local_care_set = care_set & (must_be_true | must_be_false)
+            # Restrict operation:
+            #   on care_set: must_be_true.restrict(care_set) <-> must_be_true
+            c_model = min([must_be_true.safe_restrict(local_care_set),
+                          (~must_be_false).safe_restrict(local_care_set)],
+                          key=lambda x: x.dag_size())
+            output_models[c_symb] = c_model
+            log.DBG_MSG("Size of function for " + str(c.get_index()) + " = " +
+                        str(c_model.dag_size()))
+            relation &= BDD.make_eq(c, c_model)
+        return output_models
+
 
 # initialize the whole thing
 BDD.init_cudd()

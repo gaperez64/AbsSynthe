@@ -28,11 +28,11 @@ from bdd_aig import BDDAIG
 from algos import (
     backward_safety_synth,
     forward_safety_synth,
-    test_safety_synth
 )
 from bdd_games import (
     ConcGame,
     SymblicitGame,
+    test_safety_synth
 )
 from comp_algos import (
     decompose,
