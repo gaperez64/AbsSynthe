@@ -342,6 +342,7 @@ BDDAIG::BDDAIG(const BDDAIG &base, std::vector<std::pair<unsigned, BDD>> adam_st
     this->next_fun_compose_vec = new std::vector<BDD>();
     // fill the vector with singleton bdds except for the latches
     std::vector<aiger_symbol*>::iterator latch_it = this->latches.begin();
+    bool some_change = false;
     for (unsigned i = 0; ((int) i) < this->mgr->ReadSize(); i++) {
         if (latch_it != this->latches.end() && i == (*latch_it)->lit) {
             // since we allow for short_error to override the next fun...
@@ -352,15 +353,17 @@ BDDAIG::BDDAIG(const BDDAIG &base, std::vector<std::pair<unsigned, BDD>> adam_st
                 //dbgMsg("Latch " + std::to_string(i) + " is the error latch");
             } else if (this->short_error != NULL) { // simplify functions
                 next_fun = this->lit2bdd((*latch_it)->next);
-                next_fun = BDDAIG::safeRestrict(next_fun,
-                                                ~(*this->short_error));
+                next_fun = next_fun.AndAbstract(full_strat, u_input_cube);
+                //next_fun = BDDAIG::safeRestrict(next_fun,
+                //                                ~(*this->short_error));
                 //dbgMsg("Restricting next function of latch " +
                 //std::to_string(i));
             } else {
                 next_fun = this->lit2bdd((*latch_it)->next);
                 next_fun = next_fun.AndAbstract(full_strat, u_input_cube);
-                //dbgMsg("Taking the next function of latch " +
-                //std::to_string(i));
+                some_change = some_change | (next_fun != this->lit2bdd((*latch_it)->next));
+                dbgMsg("Simplifying the next function of latch " +
+                std::to_string(i));
             }
             this->next_fun_compose_vec->push_back(next_fun);
             latch_it++;
@@ -368,6 +371,7 @@ BDDAIG::BDDAIG(const BDDAIG &base, std::vector<std::pair<unsigned, BDD>> adam_st
             this->next_fun_compose_vec->push_back(this->mgr->bddVar(i));
         }
     }
+    assert(some_change);
     //dbgMsg("done with the next_fun_compose_vec");
 }
 

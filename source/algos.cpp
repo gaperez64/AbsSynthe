@@ -440,13 +440,24 @@ static bool internalSolve(Cudd* mgr, BDDAIG* spec, const BDD* upre_init,
 
     do {
         error_prime = error_states;
+        BDD old_strats = ~mgr->bddOne();
         do {
             error_states = error_prime;
             // compute one step of pre
             pre(spec, error_states, bad_transitions);
             // obtain one strategy for Adam from bad_transitions
             BDD proj_bad = bad_transitions.ExistAbstract(cinput_cube);
-            vector<pair<unsigned, BDD>> strat_adam = synthAlgoAdam(mgr, spec, proj_bad, ~error_states);
+            vector<pair<unsigned, BDD>> strat_adam = synthAlgoAdam(mgr, spec, proj_bad & ~old_strats,
+                                                                   ~error_states);
+            // compute the full strategy and save the strategy as already tried
+            BDD full_strat = mgr->bddOne();
+            for (std::vector<std::pair<unsigned, BDD>>::iterator i = strat_adam.begin();
+                 i != strat_adam.end(); i++) {
+                BDD cur_var = mgr->bddVar((*i).first);
+                BDD cur_bdd = (*i).second;
+                full_strat &= (~cur_var | cur_bdd) & (cur_var | ~cur_bdd);
+            }
+            old_strats |= full_strat;
             // use the strategy to simplify next functions
             BDDAIG local_spec(*spec, strat_adam);
             // compute the fixpoint of upre on the local game
