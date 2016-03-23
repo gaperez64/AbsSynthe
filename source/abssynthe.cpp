@@ -68,7 +68,7 @@ void usage() {
 << std::endl
 << "                                   strategies for the reorderings"
 << std::endl
-<< "-c {1,2,3}, --comp_algo {1,2,3}   choice of compositional algorithm"
+<< "-c {1,2,3,4}, --comp_algo {1,2,3,4}   choice of compositional algorithm"
 << std::endl
 << "-v VERBOSE_LEVEL, --verbose_level VERBOSE_LEVEL" << std::endl
 << "                                   Verbose level string, i.e. (D)ebug,"
@@ -125,8 +125,8 @@ void parse_arguments(int argc, char** argv) {
                 break;
             case 'c':
                 settings.comp_algo = atoi(optarg);
-                if (settings.comp_algo < 1 || settings.comp_algo > 3) {
-                    errMsg(std::string("Expected comp_algo to be in {1,2,3} "
+                if (settings.comp_algo < 1 || settings.comp_algo > 4) {
+                    errMsg(std::string("Expected comp_algo to be in {1,2,3,4} "
                                        "instead of ") + optarg);
                     usage();
                     exit(1);
@@ -169,6 +169,8 @@ int main (int argc, char** argv) {
                 result = compSolve2(&aig);
         } else if (settings.comp_algo == 3){
                 result = compSolve3(&aig);
+        } else if (settings.comp_algo == 4){
+                result = compSolve4(&aig);
         } else { // traditional fixpoint computation
                 result = solve(&aig);
         }

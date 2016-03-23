@@ -365,15 +365,15 @@ static BDD upre(BDDAIG* spec, BDD dst, BDD &trans_bdd) {
 // NOTE: trans_bdd contains the set of all transitions going into bad
 // states after the upre step (the complement of all good transitions)
 static BDD pre(BDDAIG* spec, BDD dst, BDD &trans_bdd) {
-    //BDD not_dst = ~dst;
-    trans_bdd = substituteLatchesNext(spec, dst);//, &not_dst);
+    BDD not_dst = ~dst;
+    trans_bdd = substituteLatchesNext(spec, dst, &not_dst);
     BDD cinput_cube = spec->cinputCube();
     BDD uinput_cube = spec->uinputCube();
     return trans_bdd.ExistAbstract(cinput_cube & uinput_cube);
 }
 
 
-static bool internalSolve2(Cudd* mgr, BDDAIG* spec, const BDD* upre_init, 
+static bool internalSolve(Cudd* mgr, BDDAIG* spec, const BDD* upre_init, 
                           BDD* losing_region, BDD* losing_transitions,
                           bool do_synth=false) {
         //static int occ_counter = 1;
@@ -421,7 +421,8 @@ static bool internalSolve2(Cudd* mgr, BDDAIG* spec, const BDD* upre_init,
     return !includes_init;
 }
 
-static bool internalSolve(Cudd* mgr, BDDAIG* spec, const BDD* upre_init, 
+// THIS IS A TEST internalSolve in which we guess strategies for adam
+static bool internalSolve2(Cudd* mgr, BDDAIG* spec, const BDD* upre_init, 
                           BDD* losing_region, BDD* losing_transitions,
                           bool do_synth=false) {
     bool includes_init = false;
@@ -806,6 +807,121 @@ bool compSolve3(AIG* spec_base) {
     }
 
     return !includes_init;
+}
+
+bool compSolve4(AIG* spec_base) {
+    typedef pair<BDD, BDD> subgame_info;
+    Cudd mgr(0, 0);
+    mgr.AutodynEnable(CUDD_REORDER_SIFT);
+    BDDAIG spec(*spec_base, &mgr);
+    vector<BDDAIG*> subgames = spec.decompose();
+    if (subgames.size() == 0) return internalSolve(&mgr, &spec, NULL, NULL, NULL,
+                                                   true);
+    // Solving now the subgames
+    BDD losing_transitions;
+    BDD losing_region;
+    BDD global_win_strats = mgr.bddOne();
+    BDD global_lose = mgr.bddZero();
+    vector<subgame_info> subgame_results;
+    for (unsigned i = 0; i < subgames.size(); i++) {
+        // check if another thread has won the race
+        dbgMsg("Solving subgame " + to_string(i) + " (" +
+               to_string(subgames[i]->numLatches()) + " latches)");
+        if (!internalSolve(&mgr, subgames[i], NULL, &losing_region,
+                           &losing_transitions))
+            return false;
+        subgame_results.push_back(subgame_info(~losing_region, ~losing_transitions & ~losing_region));
+        global_win_strats &= ~losing_transitions & ~losing_region;
+        global_lose |= losing_region;
+    }
+
+    addTime("decompose");
+    dbgMsg("");
+    dbgMsg("Now refining the aggregate game");
+
+    BDD tmp_losing_trans;
+    BDD tmp_lose;
+    int count = 1;
+    vector<unsigned> latches_u = spec.getLatchLits();
+    bool something_changed = true;
+    BDD init_state = spec.initState();
+
+    while (something_changed) {
+        something_changed = false;
+        dbgMsg("Refinement iterate: " + to_string(count++));
+        for (unsigned i = 0; i < subgames.size(); i++) {
+            BDDAIG* subgame = subgames[i];
+            subgame_info &sg_info = subgame_results[i];
+            BDD &winning_states = sg_info.first;
+            BDD &winning_strats = sg_info.second;
+            // if safe actions locally and globally do not coincide
+            if ((winning_strats & global_win_strats) != winning_strats) {
+                assert((~global_win_strats | winning_strats) == mgr.bddOne());
+                dbgMsg("Local and global safe actions are not the same");
+                set<unsigned> latches_sg = spec.getBddLatchDeps(sg_info.second);
+                set<unsigned> rem_latches;
+                set_difference(latches_u.begin(), latches_u.end(), 
+                               latches_sg.begin(), latches_sg.end(), 
+                               inserter(rem_latches, rem_latches.begin()));
+                BDD joint_safe_trans = winning_strats & global_win_strats;
+                BDD nu_local_win_strats = joint_safe_trans.ExistAbstract(spec.toCube(rem_latches));
+                
+                if (nu_local_win_strats != winning_strats) {
+                    dbgMsg("Even after getting rid of latches not present, this is new info!");
+                    assert((~nu_local_win_strats | ~winning_states) == ~nu_local_win_strats);
+                    assert((~nu_local_win_strats | winning_strats) == mgr.bddOne());
+                    // now we should solve a new game with the complement of
+                    // nu_ocal_safe_trans as the error signal function
+                    something_changed = true;
+                    dbgMsg("\tActually refining subgame " + to_string(i));
+                    BDDAIG* old_sg = subgame;
+                    subgames[i] = new BDDAIG(spec, ~nu_local_win_strats);
+                    delete old_sg;
+                    subgame = subgames[i];
+                    BDD local_lose = ~winning_states;
+                    if (!internalSolve(&mgr, subgame, &local_lose, &tmp_lose,
+                                       &tmp_losing_trans)) {
+                        dbgMsg("RETURNED FALSE!");
+                        return false;
+                    }
+                    // subgames[i] = new BDDAIG(*subgame, tmp_losing_trans);
+                    // delete(subgame);
+                    sg_info.first = ~tmp_lose;
+                    sg_info.second = ~tmp_losing_trans & ~tmp_lose;
+                    global_win_strats &= ~tmp_losing_trans & ~tmp_lose;
+                    // if the winning strategy is no longer defined for the
+                    // initial state we are already toasted
+                    if ((init_state & global_win_strats) == mgr.bddZero()) {
+                        dbgMsg("The global winning strategy is no longer defined for the initial state");
+                        return false;
+                    }
+                    global_lose |= tmp_lose;
+                    if (winning_states == ~tmp_lose){
+                        dbgMsg("\tLocal losing region didn't change");
+                    } else {
+                        dbgMsg("\n\tLocal losing region *DID* change");
+                    }
+                }
+            }
+        }
+        addTime("localstep");
+    }
+  
+    // release memory of current subgames
+    for (unsigned i = 0; i < subgames.size(); i++)
+        delete subgames[i];
+
+    // if !includes_init == true, then ~bad_transitions is the set of all
+    // good transitions for controller (Eve)
+    if (settings.out_file != NULL) {
+        dbgMsg("Starting synthesis, acquiring lock on synth mutex");
+        if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
+        finalizeSynth(&mgr, &spec, 
+                      synthAlgo(&mgr, &spec, global_win_strats, ~global_lose),
+                      spec_base);
+    }
+
+    return true;
 }
 
 static void pWorker(AIG* spec_base, int solver) {
