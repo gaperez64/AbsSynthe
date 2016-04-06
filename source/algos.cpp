@@ -81,7 +81,7 @@ static unsigned optimizedGate(AIG* spec, unsigned a_lit, unsigned b_lit) {
  * and the BDD class is in fact a wrapper for a pointer to such a node, I will
  * cache the actual address of the Nodes with their corresponding aig
  */
-static unsigned bdd2aig(Cudd* mgr, BDDAIG* spec, BDD a_bdd, 
+static unsigned bdd2aig(Cudd* mgr, AIG* spec, BDD a_bdd, 
                         unordered_map<unsigned long, unsigned>* cache) {
     unordered_map<unsigned long, unsigned>::iterator cache_hit =
         cache->find((unsigned long) a_bdd.getRegularNode());
@@ -210,7 +210,6 @@ static vector<pair<unsigned, BDD>> synthAlgoAdam(Cudd* mgr, BDDAIG* spec,
     return result;
 }
 
-
 static vector<pair<unsigned, BDD>> synthAlgo(Cudd* mgr, BDDAIG* spec,
                                              BDD non_det_strategy, BDD care_set) {
     BDD strategy = non_det_strategy;
@@ -299,6 +298,7 @@ static vector<pair<unsigned, BDD>> synthAlgo(Cudd* mgr, BDDAIG* spec,
 static void finalizeSynth(Cudd* mgr, BDDAIG* spec, 
                           vector<pair<unsigned, BDD>> result, AIG* original=NULL) {
     // let us clean the AIG before we start introducing new stuff
+    // if we have a base spec we should clean in the base
     spec->removeErrorLatch();
     // we now get rid of all controllable inputs in the aig spec by replacing
     // each one with an and computed using bdd2aig...
@@ -322,6 +322,24 @@ static void finalizeSynth(Cudd* mgr, BDDAIG* spec,
     }
     // Finally, we write the modified spec to file
     spec->writeToFile(settings.out_file);
+}
+
+static void outputWinRegion(Cudd* mgr, AIG* spec, BDD winning_region) {
+    // let us clean the AIG before we start introducing new stuff
+    spec->removeErrorLatch();
+    // we will work on a clean spec
+    AIG blank_spec;
+    vector<aiger_symbol*> latches = spec->getLatches();
+    unordered_map<unsigned long, unsigned> cache;
+    dbgMsg("Adding latches to the new AIG instance.");
+    for (vector<aiger_symbol*>::iterator i = latches.begin();
+             i != latches.end(); i++) {
+        string str( (*i)->name );
+        blank_spec.addInput((*i)->lit, NULL);// (*i)->name);
+    }
+    blank_spec.addOutput(bdd2aig(mgr, &blank_spec, winning_region, &cache), "winning region");
+    // Finally, we write the file
+    blank_spec.writeToFile(settings.win_region_out_file);
 }
 
 static BDD substituteLatchesNext(BDDAIG* spec, BDD dst, BDD* care_region=NULL) {
@@ -417,6 +435,10 @@ static bool internalSolve(Cudd* mgr, BDDAIG* spec, const BDD* upre_init,
         if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
         finalizeSynth(mgr, spec, 
                       synthAlgo(mgr, spec, ~bad_transitions, ~error_states));
+        if (settings.win_region_out_file != NULL) {
+            dbgMsg("Starting output of winning region");
+            outputWinRegion(mgr, spec, ~error_states);
+        }
     }
     return !includes_init;
 }
@@ -452,7 +474,7 @@ static bool internalSolve2(Cudd* mgr, BDDAIG* spec, const BDD* upre_init,
                                                                    ~error_states);
             // compute the full strategy and save the strategy as already tried
             BDD full_strat = mgr->bddOne();
-            for (std::vector<std::pair<unsigned, BDD>>::iterator i = strat_adam.begin();
+            for (vector<pair<unsigned, BDD>>::iterator i = strat_adam.begin();
                  i != strat_adam.end(); i++) {
                 BDD cur_var = mgr->bddVar((*i).first);
                 BDD cur_bdd = (*i).second;
@@ -496,6 +518,10 @@ static bool internalSolve2(Cudd* mgr, BDDAIG* spec, const BDD* upre_init,
         if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
         finalizeSynth(mgr, spec, 
                       synthAlgo(mgr, spec, ~bad_transitions, ~error_states));
+        if (settings.win_region_out_file != NULL) {
+            dbgMsg("Starting output of winning region");
+            outputWinRegion(mgr, spec, ~error_states);
+        }
     }
     return !includes_init;
 }
@@ -553,8 +579,8 @@ bool compSolve1(AIG* spec_base) {
 
     if (!cinput_independent) { // we still have one game to solve
         // release cache memory and other stuff used in BDDAIG instances
-        //std::cout << ("Not cinput independent\n");
-        //std::cout.flush();
+        //cout << ("Not cinput independent\n");
+        //cout.flush();
         for (vector<BDDAIG*>::iterator i = subgames.begin(); i != subgames.end(); i++)
             delete *i;
         BDD losing_states = spec.errorStates();
@@ -581,29 +607,39 @@ bool compSolve1(AIG* spec_base) {
                           synthAlgo(&mgr, &spec, ~bad_transitions,
                                     ~error_states),
                           spec_base);
+            if (settings.win_region_out_file != NULL) {
+                dbgMsg("Starting output of winning region");
+                outputWinRegion(&mgr, spec_base, ~error_states);
+            }
         }
 
     } else if (settings.out_file != NULL) {
         // we have to output a strategy from the local non-deterministic
         // strategies...
         dbgMsg("Starting synthesis, acquiring lock on synth mutex");
-        //std::cout << ("Starting synthesis, acquiring lock on synth mutex\n");
-        //std::cout.flush();
+        //cout << ("Starting synthesis, acquiring lock on synth mutex\n");
+        //cout.flush();
         if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
         vector<pair<unsigned, BDD>> all_cinput_strats;
         vector<pair<BDD, BDD>>::iterator sg = subgame_results.begin();
         // logMsg("Doing stuff");
+        BDD global_lose = ~mgr.bddOne();
         for (vector<BDDAIG*>::iterator i = subgames.begin();
              i != subgames.end(); i++) {
             vector<pair<unsigned, BDD>> temp;
             temp = synthAlgo(&mgr, *i, ~sg->second, ~sg->first);
-            // logMsg("Found " + std::to_string(temp.size()) + " cinputs here");
+            global_lose |= sg->first;
+            // logMsg("Found " + to_string(temp.size()) + " cinputs here");
             all_cinput_strats.insert(all_cinput_strats.end(), 
                                      temp.begin(), temp.end());
             sg++;
             delete *i;
         }
         finalizeSynth(&mgr, &spec, all_cinput_strats, spec_base);
+        if (settings.win_region_out_file != NULL) {
+            dbgMsg("Starting output of winning region");
+            outputWinRegion(&mgr, spec_base, ~global_lose);
+        }
     }
 
     return !includes_init;
@@ -705,6 +741,10 @@ bool compSolve2(AIG* spec_base) {
                       synthAlgo(&mgr, &spec, ~subgame_results.back().first,
                                 mgr.bddOne()),
                       spec_base);
+        if (settings.win_region_out_file != NULL) {
+            dbgMsg("Starting output of winning region");
+            outputWinRegion(&mgr, spec_base, ~subgame_results.back().first);
+        }
 
     }
     return true;
@@ -804,6 +844,10 @@ bool compSolve3(AIG* spec_base) {
         finalizeSynth(&mgr, &spec, 
                       synthAlgo(&mgr, &spec, ~global_losing_trans, ~global_lose),
                       spec_base);
+        if (settings.win_region_out_file != NULL) {
+            dbgMsg("Starting output of winning region");
+            outputWinRegion(&mgr, spec_base, ~global_lose);
+        }
     }
 
     return !includes_init;
@@ -822,6 +866,7 @@ bool compSolve4(AIG* spec_base) {
     BDD losing_region;
     BDD global_win_strats = mgr.bddOne();
     BDD global_lose = mgr.bddZero();
+    BDD global_losing_trans;
     vector<subgame_info> subgame_results;
     for (unsigned i = 0; i < subgames.size(); i++) {
         // check if another thread has won the race
@@ -892,7 +937,7 @@ bool compSolve4(AIG* spec_base) {
                     // if the winning strategy is no longer defined for the
                     // initial state we are already toasted
                     if ((init_state & global_win_strats) == mgr.bddZero()) {
-                        dbgMsg("The global winning strategy is no longer defined for the initial state");
+                        dbgMsg("The global w. strategy is no longer defined for the initial state");
                         return false;
                     }
                     global_lose |= tmp_lose;
@@ -905,6 +950,20 @@ bool compSolve4(AIG* spec_base) {
             }
         }
         addTime("localstep");
+        if (!something_changed) {
+            dbgMsg("Global Upre");
+            BDD nu_global_lose = global_lose | upre(&spec, global_lose, global_losing_trans);
+            global_win_strats = ~global_losing_trans & ~global_lose;
+            addTime("globalstep");
+            something_changed = (nu_global_lose != global_lose);
+            global_lose = nu_global_lose;
+        } else {
+            dbgMsg("Skipping global Upre");
+        }
+        if ((init_state & global_lose) != ~mgr.bddOne()) {
+            dbgMsg("The global step revealed we lose.");
+            return false;
+        }
     }
   
     // release memory of current subgames
@@ -919,6 +978,10 @@ bool compSolve4(AIG* spec_base) {
         finalizeSynth(&mgr, &spec, 
                       synthAlgo(&mgr, &spec, global_win_strats, ~global_lose),
                       spec_base);
+        if (settings.win_region_out_file != NULL) {
+            dbgMsg("Starting output of winning region");
+            outputWinRegion(&mgr, spec_base, ~global_lose);
+        }
     }
 
     return true;

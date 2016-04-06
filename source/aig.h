@@ -44,7 +44,8 @@ class AIG {
         std::vector<aiger_symbol*> latches;
         std::vector<aiger_symbol*> c_inputs;
         std::vector<aiger_symbol*> u_inputs;
-        aiger_symbol* error_fake_latch;
+        aiger_symbol error_fake_latch;
+        bool created_error_fake_latch = false;
         void introduceErrorLatch();
         std::unordered_map<unsigned, std::set<unsigned>>* lit2deps_map;
         std::unordered_map<unsigned,
@@ -63,9 +64,12 @@ class AIG {
         static unsigned stripLit(unsigned lit) { return lit & ~1; }
         AIG(const char*, bool intro_error_latch=true);
         AIG(const AIG&);
+        AIG();
         ~AIG();
         void cleanCaches();
         unsigned maxVar();
+        void addInput(unsigned, const char*);
+        void addOutput(unsigned, const char*);
         void addGate(unsigned, unsigned, unsigned);
         void input2gate(unsigned, unsigned);
         void writeToFile(const char*);

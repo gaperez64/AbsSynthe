@@ -64,7 +64,7 @@ typedef struct aiger_symbol aiger_symbol;
 
 /*------------------------------------------------------------------------*/
 /* Each literal is associated to a variable having an unsigned index.  The
- * variable index is obtained by deviding the literal index by two, which is
+ * variable index is obtained by dividing the literal index by two, which is
  * the same as removing the sign bit.
  */
 #define aiger_var2lit(i) \

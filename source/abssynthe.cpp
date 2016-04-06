@@ -46,13 +46,14 @@ static struct option long_options[] = {
     {"help", no_argument, NULL, 'h'},
     {"comp_algo", required_argument, NULL, 'c'},
     {"out_file", required_argument, NULL, 'o'},
+    {"win_region", required_argument, NULL, 'w'},
     {NULL, 0, NULL, 0}
 };
 
 void usage() {
     std::cout << ABSSYNTHE_VERSION << std::endl
 << "usage:" << std::endl
-<<"./abssynthe [-h] [-t] [-p] [-s] [-c {1,2,3}] [-v VERBOSE_LEVEL] [-o OUT_FILE] spec"
+<<"./abssynthe [-h] [-t] [-p] [-s] [-c {1,2,3,4}] [-v VERBOSE_LEVEL] [-o OUT_FILE] spec"
 << std::endl
 << "positional arguments:" << std::endl
 << "spec                               input specification in extended AIGER format"
@@ -68,7 +69,8 @@ void usage() {
 << std::endl
 << "                                   strategies for the reorderings"
 << std::endl
-<< "-c {1,2,3,4}, --comp_algo {1,2,3,4}   choice of compositional algorithm"
+<< "-c {1,2,3,4}, --comp_algo {1,2,3,4}" << std::endl
+<< "                                   choice of compositional algorithm"
 << std::endl
 << "-v VERBOSE_LEVEL, --verbose_level VERBOSE_LEVEL" << std::endl
 << "                                   Verbose level string, i.e. (D)ebug,"
@@ -82,7 +84,12 @@ void usage() {
 << std::endl
 << "                                   be used. The argument is ignored if spec"
 << std::endl
-<< "                                   is not realizable." << std::endl;
+<< "                                   is not realizable." << std::endl
+<< "-w WIN_REGION_OUT_FILE, --win_region WIN_REGION_OUT_FILE" << std::endl
+<< "                                   Output winning region file path. Same "
+<< std::endl
+<< "                                   file extension rules as for OUT_FILE."
+<< std::endl;
 }
 
 void parse_arguments(int argc, char** argv) {
@@ -98,7 +105,7 @@ void parse_arguments(int argc, char** argv) {
     int opt_key;
     int opt_index;
     while (true) {
-        opt_key = getopt_long(argc, argv, "v:tpsc:o:", long_options,
+        opt_key = getopt_long(argc, argv, "v:tpsc:o:w:", long_options,
                               &opt_index);
         if (opt_key == -1)
             break;
@@ -134,6 +141,9 @@ void parse_arguments(int argc, char** argv) {
                 break;
             case 'o':
                 settings.out_file = optarg;
+                break;
+            case 'w':
+                settings.win_region_out_file = optarg;
                 break;
             default:
                 usage();
