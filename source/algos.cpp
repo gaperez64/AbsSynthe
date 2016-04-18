@@ -125,90 +125,91 @@ static unsigned bdd2aig(Cudd* mgr, AIG* spec, BDD a_bdd,
 }
 
 
-static vector<pair<unsigned, BDD>> synthAlgoAdam(Cudd* mgr, BDDAIG* spec,
-                                                 BDD non_det_strategy, BDD care_set) {
-    BDD strategy = non_det_strategy;
-#ifndef NDEBUG
-    spec->dump2dot(strategy, "strategy.dot");
-    set<unsigned> deps = spec->semanticDeps(strategy);
-    string litstring;
-    for (set<unsigned>::iterator i = deps.begin(); i != deps.end(); i++)
-        litstring += to_string(*i) + ", ";
-    dbgMsg("Semantic deps of the non-det strat: " + litstring);
-#endif
-    vector<aiger_symbol*> u_inputs = spec->getUInputs();
-    vector<unsigned> u_input_lits;
-    vector<BDD> u_input_funs;
-
-    dbgMsg("non-det strategy BDD size: " +
-           to_string(non_det_strategy.nodeCount()));
-
-    // as a first step, we compute a single bdd per controllable input
-    for (vector<aiger_symbol*>::iterator i = u_inputs.begin();
-         i != u_inputs.end(); i++) {
-        BDD c = mgr->bddVar((*i)->lit);
-        BDD others_cube = mgr->bddOne();
-        unsigned others_count = 0;
-        for (vector<aiger_symbol*>::iterator j = u_inputs.begin();
-             j != u_inputs.end(); j++) {
-            //dbgMsg("CInput " + to_string((*j)->lit));
-            if ((*i)->lit == (*j)->lit)
-                continue;
-            others_cube &= mgr->bddVar((*j)->lit);
-            //dbgMsg("Other cube has lit " + to_string((*j)->lit));
-            others_count++;
-        }
-        BDD u_arena;
-        if (others_count > 0)
-            u_arena = strategy.ExistAbstract(others_cube);
-        else {
-            //dbgMsg("No need to abstract other cinputs");
-            u_arena = strategy;
-        }
-#ifndef NDEBUG
-        spec->dump2dot(u_arena, "u_arena.dot");
-        spec->dump2dot(u_arena.Cofactor(c), "u_arena_true.dot");
-#endif
-        // pairs (x,u) in which c can be true
-        BDD can_be_true = u_arena.Cofactor(c);
-        //dbgMsg("Can be true BDD size: " + to_string(can_be_true.nodeCount()));
-        // pairs (x,u) in which c can be false
-        BDD can_be_false = u_arena.Cofactor(~c);
-        //dbgMsg("Can be false BDD size: " + to_string(can_be_false.nodeCount()));
-        BDD must_be_true = (~can_be_false) & can_be_true;
-        //dbgMsg("Must be true BDD size: " + to_string(must_be_true.nodeCount()));
-        BDD must_be_false = (~can_be_true) & can_be_false;
-        //dbgMsg("Must be false BDD size: " + to_string(must_be_false.nodeCount()));
-        BDD local_care_set = care_set & (must_be_true | must_be_false);
-        // on care set: must_be_true.restrict(care_set) <-> must_be_true
-        // or         ~(must_be_false).restrict(care_set) <-> ~must_be_false
-        BDD opt1 = BDDAIG::safeRestrict(must_be_true, local_care_set);
-        //dbgMsg("opt1 BDD size: " + to_string(opt1.nodeCount()));
-        BDD opt2 = BDDAIG::safeRestrict(~must_be_false, local_care_set);
-        //dbgMsg("opt2 BDD size: " + to_string(opt2.nodeCount()));
-        BDD res;
-        if (opt1.nodeCount() < opt2.nodeCount())
-            res = opt1;
-        else
-            res = opt2;
-        dbgMsg("Size of function for " + to_string(c.NodeReadIndex()) + " = " +
-               to_string(res.nodeCount()));
-        strategy &= (~c | res) & (~res | c);
-        u_input_funs.push_back(res);
-        u_input_lits.push_back((*i)->lit);
-    }
-
-    vector<pair<unsigned, BDD>> result;
-    vector<unsigned>::iterator i = u_input_lits.begin();
-    vector<BDD>::iterator j = u_input_funs.begin();
-    for (; i != u_input_lits.end();) {
-        result.push_back(make_pair(*i, *j));
-        i++;
-        j++;
-    }
-
-    return result;
-}
+//static vector<pair<unsigned, BDD>> synthAlgoAdam(Cudd* mgr, BDDAIG* spec,
+//                                                 BDD non_det_strategy,
+//                                                 BDD care_set) {
+//    BDD strategy = non_det_strategy;
+//#ifndef NDEBUG
+//    spec->dump2dot(strategy, "strategy.dot");
+//    set<unsigned> deps = spec->semanticDeps(strategy);
+//    string litstring;
+//    for (set<unsigned>::iterator i = deps.begin(); i != deps.end(); i++)
+//        litstring += to_string(*i) + ", ";
+//    dbgMsg("Semantic deps of the non-det strat: " + litstring);
+//#endif
+//    vector<aiger_symbol*> u_inputs = spec->getUInputs();
+//    vector<unsigned> u_input_lits;
+//    vector<BDD> u_input_funs;
+//
+//    dbgMsg("non-det strategy BDD size: " +
+//           to_string(non_det_strategy.nodeCount()));
+//
+//    // as a first step, we compute a single bdd per controllable input
+//    for (vector<aiger_symbol*>::iterator i = u_inputs.begin();
+//         i != u_inputs.end(); i++) {
+//        BDD c = mgr->bddVar((*i)->lit);
+//        BDD others_cube = mgr->bddOne();
+//        unsigned others_count = 0;
+//        for (vector<aiger_symbol*>::iterator j = u_inputs.begin();
+//             j != u_inputs.end(); j++) {
+//            //dbgMsg("CInput " + to_string((*j)->lit));
+//            if ((*i)->lit == (*j)->lit)
+//                continue;
+//            others_cube &= mgr->bddVar((*j)->lit);
+//            //dbgMsg("Other cube has lit " + to_string((*j)->lit));
+//            others_count++;
+//        }
+//        BDD u_arena;
+//        if (others_count > 0)
+//            u_arena = strategy.ExistAbstract(others_cube);
+//        else {
+//            //dbgMsg("No need to abstract other cinputs");
+//            u_arena = strategy;
+//        }
+//#ifndef NDEBUG
+//        spec->dump2dot(u_arena, "u_arena.dot");
+//        spec->dump2dot(u_arena.Cofactor(c), "u_arena_true.dot");
+//#endif
+//        // pairs (x,u) in which c can be true
+//        BDD can_be_true = u_arena.Cofactor(c);
+//        //dbgMsg("Can be true BDD size: " + to_string(can_be_true.nodeCount()));
+//        // pairs (x,u) in which c can be false
+//        BDD can_be_false = u_arena.Cofactor(~c);
+//        //dbgMsg("Can be false BDD size: " + to_string(can_be_false.nodeCount()));
+//        BDD must_be_true = (~can_be_false) & can_be_true;
+//        //dbgMsg("Must be true BDD size: " + to_string(must_be_true.nodeCount()));
+//        BDD must_be_false = (~can_be_true) & can_be_false;
+//        //dbgMsg("Must be false BDD size: " + to_string(must_be_false.nodeCount()));
+//        BDD local_care_set = care_set & (must_be_true | must_be_false);
+//        // on care set: must_be_true.restrict(care_set) <-> must_be_true
+//        // or         ~(must_be_false).restrict(care_set) <-> ~must_be_false
+//        BDD opt1 = BDDAIG::safeRestrict(must_be_true, local_care_set);
+//        //dbgMsg("opt1 BDD size: " + to_string(opt1.nodeCount()));
+//        BDD opt2 = BDDAIG::safeRestrict(~must_be_false, local_care_set);
+//        //dbgMsg("opt2 BDD size: " + to_string(opt2.nodeCount()));
+//        BDD res;
+//        if (opt1.nodeCount() < opt2.nodeCount())
+//            res = opt1;
+//        else
+//            res = opt2;
+//        dbgMsg("Size of function for " + to_string(c.NodeReadIndex()) + " = " +
+//               to_string(res.nodeCount()));
+//        strategy &= (~c | res) & (~res | c);
+//        u_input_funs.push_back(res);
+//        u_input_lits.push_back((*i)->lit);
+//    }
+//
+//    vector<pair<unsigned, BDD>> result;
+//    vector<unsigned>::iterator i = u_input_lits.begin();
+//    vector<BDD>::iterator j = u_input_funs.begin();
+//    for (; i != u_input_lits.end();) {
+//        result.push_back(make_pair(*i, *j));
+//        i++;
+//        j++;
+//    }
+//
+//    return result;
+//}
 
 static vector<pair<unsigned, BDD>> synthAlgo(Cudd* mgr, BDDAIG* spec,
                                              BDD non_det_strategy, BDD care_set) {
@@ -337,7 +338,8 @@ static void outputWinRegion(Cudd* mgr, AIG* spec, BDD winning_region) {
         string str( (*i)->name );
         blank_spec.addInput((*i)->lit, NULL);// (*i)->name);
     }
-    blank_spec.addOutput(bdd2aig(mgr, &blank_spec, winning_region, &cache), "winning region");
+    blank_spec.addOutput(bdd2aig(mgr, &blank_spec,
+                                 winning_region, &cache), "winning region");
     // Finally, we write the file
     blank_spec.writeToFile(settings.win_region_out_file);
 }
@@ -369,6 +371,110 @@ static BDD substituteLatchesNext(BDDAIG* spec, BDD dst, BDD* care_region=NULL) {
     return result;
 }
 
+// ABSTRACTION ALGORITHM (adapted by Romain Brenguier from simpleBDDSolver)
+static BDD abstractSafeCpreAux(BDDAIG* spec, BDD safe, BDD untracked_actions,
+                               BDD cache) {
+    BDD trans_bdd = cache;
+    BDD cinput_tracked_cube = spec->cinputCube();
+    BDD temp_bdd = trans_bdd.ExistAbstract(cinput_tracked_cube);
+    BDD uinput_tracked_cube = spec->uinputCube().ExistAbstract(untracked_actions);
+    return temp_bdd.UnivAbstract(uinput_tracked_cube);
+}
+
+static pair<BDD,BDD> abstractSafeCpre(BDDAIG* spec, BDD safe,
+                                      BDD untracked_latches, BDD untracked_actions) {
+    BDD trans_bdd = substituteLatchesNext(spec, safe);
+    BDD trans_and_actions = trans_bdd.Restrict(untracked_actions);
+    BDD cinput_tracked_cube = spec->cinputCube();
+    BDD temp_bdd = trans_and_actions.ExistAbstract(cinput_tracked_cube);
+    BDD uinput_tracked_cube = spec->uinputCube().ExistAbstract(untracked_actions);
+    BDD results = temp_bdd.UnivAbstract(uinput_tracked_cube);
+    if (untracked_latches.IsZero())
+        return pair<BDD,BDD>(results, trans_bdd);
+    else
+        return pair<BDD,BDD>(results.ExistAbstract(untracked_latches), trans_bdd);
+}
+
+static bool internalSolveAbstract(Cudd* mgr, BDDAIG* spec, const BDD* cpre_init,
+                                  bool do_synth=false) {
+    unsigned cnt = 0;
+    dbgMsg("Internal solve abstract");
+    BDD init_state = spec->initState();
+    BDD error_states;
+    if (cpre_init != NULL)
+        error_states = *cpre_init;
+    else
+        error_states = spec->errorStates();
+
+    BDD tracked_latches = error_states.Support();
+    BDD untracked_latches = spec->latchCube().ExistAbstract(tracked_latches);
+    BDD untracked_actions = spec->uinputCube();
+    bool includes_init = (init_state & error_states).IsZero();
+  
+    BDD mayWin = ~error_states;
+  
+    bool cont = true;
+    BDD cache;
+  
+    while (cont) {
+        dbgMsg("Algos.cpp: Refinement step " + to_string(cnt));
+        dbgMsg("Number of untracked latches = " + 
+               to_string(untracked_latches.SupportSize()));
+        dbgMsg("Number of untracked actions = " + 
+               to_string(untracked_actions.SupportSize()));
+  
+        // Compute the fixpoint of Safe_CPRE in mayWin
+        int cnt2 = 0;
+        includes_init = false;
+        bool cont2 = true;
+        while(cont2 && ! includes_init) {
+  	        dbgMsg("Fixpoint step "+to_string(cnt2));
+  	        pair<BDD,BDD> res = abstractSafeCpre(spec, mayWin, untracked_latches,
+                                                 untracked_actions);
+  	        BDD mayWin1 = mayWin;
+            mayWin = mayWin & res.first;
+            if (mayWin1 == mayWin) {
+                cont2 = false;
+                cache = res.second;
+            }
+            includes_init = (init_state & mayWin).IsZero();
+            cnt2++;
+        }
+  
+        cache = ~abstractSafeCpreAux(spec,mayWin,untracked_actions,cache);
+        BDD mayLose = mayWin & cache;
+  
+        if (includes_init || mayLose.IsZero()) 
+            cont = false;
+        else {
+            cache = mgr->bddOne();
+            dbgMsg("Promoting");
+            BDD implicant = mayLose.LargestCube();
+            dbgMsg("Size of the implicant = "+to_string(implicant.SupportSize()));
+  
+            untracked_latches = untracked_latches.ExistAbstract(implicant.Support());
+            BDD new_untracked = untracked_actions.ExistAbstract(implicant.Support());
+            mayWin = mayWin & ~ mayLose.ExistAbstract(untracked_actions)
+                                       .UnivAbstract(untracked_latches);
+            untracked_actions = new_untracked;
+          cnt++;
+        }
+    }
+    
+    BDD bad_transitions = cache; 
+  
+    dbgMsg("Early exit? " + to_string(includes_init) + 
+  	       ", after " + to_string(cnt) + " iterations.");
+  
+    if (!includes_init && do_synth && settings.out_file != NULL) {
+        dbgMsg("Starting synthesis, acquiring lock on synth mutex");
+        if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
+        finalizeSynth(mgr, spec, 
+                      synthAlgo(mgr, spec, ~bad_transitions, ~error_states));
+    }
+    return !includes_init;
+}
+
 // NOTE: trans_bdd contains the set of all transitions going into bad
 // states after the upre step (the complement of all good transitions)
 static BDD upre(BDDAIG* spec, BDD dst, BDD &trans_bdd) {
@@ -382,31 +488,29 @@ static BDD upre(BDDAIG* spec, BDD dst, BDD &trans_bdd) {
 
 // NOTE: trans_bdd contains the set of all transitions going into bad
 // states after the upre step (the complement of all good transitions)
-static BDD pre(BDDAIG* spec, BDD dst, BDD &trans_bdd) {
-    BDD not_dst = ~dst;
-    trans_bdd = substituteLatchesNext(spec, dst, &not_dst);
-    BDD cinput_cube = spec->cinputCube();
-    BDD uinput_cube = spec->uinputCube();
-    return trans_bdd.ExistAbstract(cinput_cube & uinput_cube);
-}
+//static BDD pre(BDDAIG* spec, BDD dst, BDD &trans_bdd) {
+//    BDD not_dst = ~dst;
+//    trans_bdd = substituteLatchesNext(spec, dst, &not_dst);
+//    BDD cinput_cube = spec->cinputCube();
+//    BDD uinput_cube = spec->uinputCube();
+//    return trans_bdd.ExistAbstract(cinput_cube & uinput_cube);
+//}
 
-
-static bool internalSolve(Cudd* mgr, BDDAIG* spec, const BDD* upre_init, 
-                          BDD* losing_region, BDD* losing_transitions,
-                          bool do_synth=false) {
-        //static int occ_counter = 1;
+static bool internalSolveExact(Cudd* mgr, BDDAIG* spec, const BDD* upre_init, 
+                               BDD* losing_region, BDD* losing_transitions,
+                               bool do_synth=false) {
+    //static int occ_counter = 1;
     dbgMsg("Computing fixpoint of UPRE.");
-        //cout << "Visited " << occ_counter++ << endl;
+    //cout << "Visited " << occ_counter++ << endl;
     bool includes_init = false;
     unsigned cnt = 0;
     BDD bad_transitions;
     BDD init_state = spec->initState();
     BDD error_states;
-    if (upre_init != NULL) {
+    if (upre_init != NULL)
         error_states = *upre_init;
-    } else {
+    else
         error_states = spec->errorStates();
-    }
     BDD prev_error = ~mgr->bddOne();
     includes_init = ((init_state & error_states) != ~mgr->bddOne());
     while (!includes_init && error_states != prev_error) {
@@ -443,87 +547,18 @@ static bool internalSolve(Cudd* mgr, BDDAIG* spec, const BDD* upre_init,
     return !includes_init;
 }
 
-// THIS IS A TEST internalSolve in which we guess strategies for adam
-static bool internalSolve2(Cudd* mgr, BDDAIG* spec, const BDD* upre_init, 
+static bool internalSolve(Cudd* mgr, BDDAIG* spec, const BDD* upre_init, 
                           BDD* losing_region, BDD* losing_transitions,
                           bool do_synth=false) {
-    bool includes_init = false;
-    BDD bad_transitions;
-    BDD init_state = spec->initState();
-    BDD error_states;
-    BDD error_prime;
-    if (upre_init != NULL) {
-        error_states = *upre_init;
-    } else {
-        error_states = spec->errorStates();
-    }
-    BDD original_error = error_states;
-    BDD prev_error = ~mgr->bddOne();
-    BDD cinput_cube = spec->cinputCube();
+    // if the caller does not care about the losing region or losing
+    // transitions, then we can use abstraction! given that the use_abs flag was
+    // set
+    if (settings.use_abs && (losing_region == NULL) && (losing_transitions == NULL))
+        return internalSolveAbstract(mgr, spec, upre_init, do_synth);
 
-    do {
-        error_prime = error_states;
-        BDD old_strats = ~mgr->bddOne();
-        do {
-            error_states = error_prime;
-            // compute one step of pre
-            pre(spec, error_states, bad_transitions);
-            // obtain one strategy for Adam from bad_transitions
-            BDD proj_bad = bad_transitions.ExistAbstract(cinput_cube);
-            vector<pair<unsigned, BDD>> strat_adam = synthAlgoAdam(mgr, spec, proj_bad & ~old_strats,
-                                                                   ~error_states);
-            // compute the full strategy and save the strategy as already tried
-            BDD full_strat = mgr->bddOne();
-            for (vector<pair<unsigned, BDD>>::iterator i = strat_adam.begin();
-                 i != strat_adam.end(); i++) {
-                BDD cur_var = mgr->bddVar((*i).first);
-                BDD cur_bdd = (*i).second;
-                full_strat &= (~cur_var | cur_bdd) & (cur_var | ~cur_bdd);
-            }
-            old_strats |= full_strat;
-            // use the strategy to simplify next functions
-            BDDAIG local_spec(*spec, strat_adam);
-            // compute the fixpoint of upre on the local game
-            dbgMsg("Computing fixpoint on local spec");
-            BDD prev_error = ~mgr->bddOne();
-            includes_init = ((init_state & error_prime) != ~mgr->bddOne());
-            unsigned cnt = 0;
-            while (!includes_init && error_prime != prev_error) {
-                prev_error = error_prime;
-                error_prime = prev_error | upre(&local_spec, prev_error, bad_transitions);
-                assert((error_states & error_prime) == error_states);
-                assert((original_error & error_prime) == original_error);
-                includes_init = ((init_state & error_prime) != ~mgr->bddOne());
-                cnt++;
-            }
-            if (!includes_init)
-                dbgMsg("Iterations before fixpoint: " + to_string(cnt));
-            // if error_prime is now bigger than error_states, this will be repeated
-        } while (!includes_init && error_prime != error_states);
-        if (!includes_init) {
-            // we now do one step of the real upre on the real spec to check for
-            // fixpoint convergence
-            dbgMsg("Making a real upre step");
-            error_states = error_prime | upre(spec, error_prime, bad_transitions);
-            assert((error_prime & error_states) == error_prime);
-            assert((original_error & error_states) == original_error);
-            // if this makes error_states bigger than error_prime we will repeat the
-            // whole thing
-            includes_init = ((init_state & error_states) != ~mgr->bddOne());
-        }
-    } while (!includes_init && error_prime != error_states);
-
-    if (!includes_init && do_synth && settings.out_file != NULL) {
-        dbgMsg("Starting synthesis, acquiring lock on synth mutex");
-        if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
-        finalizeSynth(mgr, spec, 
-                      synthAlgo(mgr, spec, ~bad_transitions, ~error_states));
-        if (settings.win_region_out_file != NULL) {
-            dbgMsg("Starting output of winning region");
-            outputWinRegion(mgr, spec, ~error_states);
-        }
-    }
-    return !includes_init;
+    // otherwise, just use the exact version
+    return internalSolveExact(mgr, spec, upre_init, losing_region,
+                              losing_transitions, do_synth);
 }
 
 bool solve(AIG* spec_base, Cudd_ReorderingType reordering) {
@@ -678,58 +713,57 @@ bool compSolve2(AIG* spec_base) {
     double mean_cinp_size = total_cinp_size / subgame_results.size();
     double cinp_factor = 0.5 * mean_bdd_size / mean_cinp_size;
     while (subgame_results.size() >= 2) {
-      // Get the pair min_i,min_j that minimizes the score
-      // The score is defined as: 
-      // b.countNode() + cinp_factor * cinp_union.size()
-      // where b is the disjunction of the error functions, and cinp_union
-      // is the union of the cinputs of the subgames.
-      int min_i, min_j; // the indices of the selected games
-      list<subgame_info>::iterator min_it, min_jt; // iterators to selected games
-      double best_score = DBL_MAX;  // the score of the selected pair
-      BDD joint_err; // the disjunction of the error function of the pair
-      set<unsigned> joint_cinp; // union of the cinp dependencies
-      list<subgame_info>::iterator it, jt;
-      int i, j;
-      for (i = 0, it = subgame_results.begin(); 
-          it != subgame_results.end(); i++, it++){
-        jt = it;
-        jt++;
-        j = i + 1;
-        for (; jt != subgame_results.end(); j++, jt++){
-          BDD b = it->first | jt->first;
-          set<unsigned> cinp_union;
-          set_union(it->second.begin(), it->second.end(), 
-              jt->second.begin(), jt->second.end(),
-              inserter(cinp_union,cinp_union.begin()));
-          double score = b.nodeCount() + cinp_factor * cinp_union.size();
-          if (score < best_score){
-            min_i = i;
-            min_j = j;
-            min_it = it;
-            min_jt = jt;
-            joint_err = b;
-            joint_cinp = cinp_union;
-            best_score = score;
-          }
+        // Get the pair min_i,min_j that minimizes the score
+        // The score is defined as: 
+        // b.countNode() + cinp_factor * cinp_union.size()
+        // where b is the disjunction of the error functions, and cinp_union
+        // is the union of the cinputs of the subgames.
+        int min_i, min_j; // the indices of the selected games
+        list<subgame_info>::iterator min_it, min_jt; // iterators to selected games
+        double best_score = DBL_MAX;  // the score of the selected pair
+        BDD joint_err; // the disjunction of the error function of the pair
+        set<unsigned> joint_cinp; // union of the cinp dependencies
+        list<subgame_info>::iterator it, jt;
+        int i, j;
+        for (i = 0, it = subgame_results.begin(); 
+             it != subgame_results.end(); i++, it++) {
+            jt = it;
+            jt++;
+            j = i + 1;
+            for (; jt != subgame_results.end(); j++, jt++) {
+                BDD b = it->first | jt->first;
+                set<unsigned> cinp_union;
+                set_union(it->second.begin(), it->second.end(), 
+                          jt->second.begin(), jt->second.end(),
+                          inserter(cinp_union,cinp_union.begin()));
+                double score = b.nodeCount() + cinp_factor * cinp_union.size();
+                if (score < best_score) {
+                    min_i = i;
+                    min_j = j;
+                    min_it = it;
+                    min_jt = jt;
+                    joint_err = b;
+                    joint_cinp = cinp_union;
+                    best_score = score;
+                }
+            }
         }
-      }
-      dbgMsg("Selected subgames " + to_string(min_i) + " and " + to_string(min_j));
-      set<unsigned> intersection;
-      set_intersection(min_it->second.begin(), min_it->second.end(),
-          min_jt->second.begin(), min_jt->second.end(), 
-          inserter(intersection, intersection.begin()));
-      BDD losing_transitions;
-      if (intersection.size() == 0){
-        losing_transitions = joint_err;
-      } else { 
-        BDDAIG subgame(spec, joint_err);
-        if (!internalSolve(&mgr, &subgame, NULL, NULL, &losing_transitions, false)){
-          return false;
+        dbgMsg("Selected subgames " + to_string(min_i) + " and " + to_string(min_j));
+        set<unsigned> intersection;
+        set_intersection(min_it->second.begin(), min_it->second.end(),
+                         min_jt->second.begin(), min_jt->second.end(), 
+                         inserter(intersection, intersection.begin()));
+        BDD losing_transitions;
+        if (intersection.size() == 0) {
+            losing_transitions = joint_err;
+        } else { 
+            BDDAIG subgame(spec, joint_err);
+            if (!internalSolve(&mgr, &subgame, NULL, NULL, &losing_transitions))
+                return false;
         }
-      }
-      subgame_results.erase(min_it);
-      subgame_results.erase(min_jt);
-      subgame_results.push_back(subgame_info(losing_transitions, joint_cinp));
+        subgame_results.erase(min_it);
+        subgame_results.erase(min_jt);
+        subgame_results.push_back(subgame_info(losing_transitions, joint_cinp));
     }
 
     assert(subgame_results.size() == 1);
@@ -824,7 +858,8 @@ bool compSolve3(AIG* spec_base) {
         addTime("localstep");
         if (global_lose == prev_lose) {
             dbgMsg("Global Upre");
-            global_lose = global_lose | upre(&spec, global_lose, global_losing_trans);
+            global_lose = global_lose | upre(&spec, global_lose,
+                                             global_losing_trans);
             addTime("globalstep");
         } else {
             dbgMsg("Skipping global Upre");
@@ -875,7 +910,9 @@ bool compSolve4(AIG* spec_base) {
         if (!internalSolve(&mgr, subgames[i], NULL, &losing_region,
                            &losing_transitions))
             return false;
-        subgame_results.push_back(subgame_info(~losing_region, ~losing_transitions & ~losing_region));
+        subgame_results.push_back(subgame_info(~losing_region,
+                                               (~losing_transitions &
+                                                ~losing_region)));
         global_win_strats &= ~losing_transitions & ~losing_region;
         global_lose |= losing_region;
     }
@@ -912,8 +949,10 @@ bool compSolve4(AIG* spec_base) {
                 BDD nu_local_win_strats = joint_safe_trans.ExistAbstract(spec.toCube(rem_latches));
                 
                 if (nu_local_win_strats != winning_strats) {
-                    dbgMsg("Even after getting rid of latches not present, this is new info!");
-                    assert((~nu_local_win_strats | ~winning_states) == ~nu_local_win_strats);
+                    dbgMsg("Even after getting rid of latches not present, "
+                           "this is new info!");
+                    assert((~nu_local_win_strats | ~winning_states) ==
+                           ~nu_local_win_strats);
                     assert((~nu_local_win_strats | winning_strats) == mgr.bddOne());
                     // now we should solve a new game with the complement of
                     // nu_ocal_safe_trans as the error signal function
@@ -937,7 +976,8 @@ bool compSolve4(AIG* spec_base) {
                     // if the winning strategy is no longer defined for the
                     // initial state we are already toasted
                     if ((init_state & global_win_strats) == mgr.bddZero()) {
-                        dbgMsg("The global w. strategy is no longer defined for the initial state");
+                        dbgMsg("The global w. strategy is no longer defined "
+                               "for the initial state");
                         return false;
                     }
                     global_lose |= tmp_lose;
@@ -952,7 +992,8 @@ bool compSolve4(AIG* spec_base) {
         addTime("localstep");
         if (!something_changed) {
             dbgMsg("Global Upre");
-            BDD nu_global_lose = global_lose | upre(&spec, global_lose, global_losing_trans);
+            BDD nu_global_lose = global_lose | upre(&spec, global_lose,
+                                                    global_losing_trans);
             global_win_strats = ~global_losing_trans & ~global_lose;
             addTime("globalstep");
             something_changed = (nu_global_lose != global_lose);
@@ -1069,7 +1110,8 @@ bool solveParallel() {
     for (int i = 0; i < 4; i++)
         kill(children[i], SIGKILL);
     if (!data->done) {
-        errMsg("Parallel solvers stopped unexpectedly. Synthesis/realizability test inconclusive");
+        errMsg("Parallel solvers stopped unexpectedly. "
+               "Synthesis/realizability test inconclusive");
         exit(55); // personal code for: "FUCK, children stopped unexpectedly"
     }
     // recover the answer

@@ -30,6 +30,7 @@
 
 struct settings_struct {
     bool use_trans;
+    bool use_abs;
     bool parallel;
     bool ordering_strategies;
     int comp_algo;

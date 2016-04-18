@@ -98,8 +98,7 @@ void AIG::removeErrorLatch() {
     this->latches.pop_back();
 }
 
-AIG::AIG() {
-    // default values for some local (for this instance) variables
+void AIG::defaultValues() {
     this->must_clean = true;
     this->created_error_fake_latch = false;
     this->spec = NULL;
@@ -108,20 +107,16 @@ AIG::AIG() {
         new std::unordered_map<unsigned,
                                std::pair<std::vector<unsigned>,
                                          std::vector<unsigned>>>();
+    this->spec = NULL;
+}
+
+AIG::AIG() {
+    this->defaultValues();
     this->spec = aiger_init();
 }
 
 AIG::AIG(const char* aiger_file_name, bool intro_error_latch) {
-    // default values for some local (for this instance) variables
-    this->must_clean = true;
-    this->created_error_fake_latch = false;
-    this->spec = NULL;
-    this->lit2deps_map = new std::unordered_map<unsigned, std::set<unsigned>>();
-    this->lit2ninputand_map =
-        new std::unordered_map<unsigned,
-                               std::pair<std::vector<unsigned>,
-                                         std::vector<unsigned>>>();
-    // start lodaing
+    this->defaultValues();
     this->spec = aiger_init();
     const char* err = aiger_open_and_read_from_file (spec, aiger_file_name);
     if (err) {
@@ -326,30 +321,29 @@ unsigned AIG::numLatches(){
     return latches.size();
 }
 
-BDDAIG::BDDAIG(const AIG &base, Cudd* local_mgr) : AIG(base) {
-    this->mgr = local_mgr;
+void BDDAIG::defaultValues() {
+    this->mgr = NULL;
     this->must_clean = true;
     this->lit2bdd_map = new std::unordered_map<unsigned, BDD>();
     this->bdd2deps_map = new std::unordered_map<unsigned long, std::set<unsigned>>();
     this->primed_latch_cube = NULL;
     this->cinput_cube = NULL;
     this->uinput_cube = NULL;
+    this->latch_cube = NULL;
     this->next_fun_compose_vec = NULL;
     this->trans_rel = NULL;
     this->short_error = NULL;
 }
 
-BDDAIG::BDDAIG(const BDDAIG &base, std::vector<std::pair<unsigned, BDD>> adam_strat) : AIG(base) {
+BDDAIG::BDDAIG(const AIG &base, Cudd* local_mgr) : AIG(base) {
+    this->defaultValues();
+    this->mgr = local_mgr;
+}
+
+BDDAIG::BDDAIG(const BDDAIG &base,
+               std::vector<std::pair<unsigned, BDD>> adam_strat) : AIG(base) {
+    this->defaultValues();
     this->mgr = base.mgr;
-    this->must_clean = true;
-    this->lit2bdd_map = new std::unordered_map<unsigned, BDD>();
-    this->bdd2deps_map = new std::unordered_map<unsigned long, std::set<unsigned>>();
-    this->primed_latch_cube = NULL;
-    this->cinput_cube = NULL;
-    this->uinput_cube = NULL;
-    this->next_fun_compose_vec = NULL;
-    this->trans_rel = NULL;
-    this->short_error = NULL;
 
     // compute the full strategy and make a cube for the u inputs
     BDD full_strat = mgr->bddOne();
@@ -407,6 +401,7 @@ BDDAIG::BDDAIG(const BDDAIG &base, BDD error) : AIG(base) {
     this->primed_latch_cube = NULL;
     this->cinput_cube = NULL;
     this->uinput_cube = NULL;
+    this->latch_cube = NULL;
     this->next_fun_compose_vec = NULL;
     this->trans_rel = NULL;
     this->short_error = new BDD(error);
@@ -536,6 +531,17 @@ BDD BDDAIG::cinputCube() {
         this->cinput_cube = new BDD(result);
     }
     return BDD(*this->cinput_cube);
+}
+
+BDD BDDAIG::latchCube() {
+    if (this->latch_cube == NULL) {
+        BDD result = this->mgr->bddOne();
+        for (std::vector<aiger_symbol*>::iterator i = this->latches.begin();
+             i != this->latches.end(); i++)
+            result &= this->mgr->bddVar((*i)->lit);
+        this->latch_cube = new BDD(result);
+    }
+    return BDD(*this->latch_cube);
 }
 
 BDD BDDAIG::uinputCube() {

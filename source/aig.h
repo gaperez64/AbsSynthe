@@ -57,6 +57,7 @@ class AIG {
                              std::unordered_set<unsigned>*);
         std::set<unsigned> getLitDeps(unsigned);
         static unsigned primeVar(unsigned lit) { return AIG::stripLit(lit) + 1; }
+        void defaultValues();
     public:
         void removeErrorLatch();
         static unsigned negateLit(unsigned lit) { return lit ^ 1; }
@@ -87,6 +88,7 @@ class BDDAIG : public AIG {
         bool must_clean;
     protected:
         Cudd* mgr;
+        BDD* latch_cube;
         BDD* primed_latch_cube;
         BDD* cinput_cube;
         BDD* uinput_cube;
@@ -99,6 +101,7 @@ class BDDAIG : public AIG {
         std::vector<BDD> mergeSomeSignals(BDD, std::vector<unsigned>*);
         bool isValidLatchBdd(BDD);
         bool isValidBdd(BDD);
+        void defaultValues();
     public:
         static BDD safeRestrict(BDD, BDD);
         std::set<unsigned> semanticDeps(BDD);
@@ -113,6 +116,7 @@ class BDDAIG : public AIG {
         BDD errorStates();
         BDD primeLatchesInBdd(BDD);
         BDD primedLatchCube();
+        BDD latchCube();
         BDD cinputCube();
         BDD uinputCube();
         BDD transRelBdd();

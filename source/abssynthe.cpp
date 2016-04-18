@@ -41,6 +41,7 @@ struct settings_struct settings;
 static struct option long_options[] = {
     {"verbosity", required_argument, NULL, 'v'},
     {"use_trans", no_argument, NULL, 't'},
+    {"use_abs", no_argument, NULL, 'a'},
     {"parallel", no_argument, NULL, 'p'},
     {"ordering_strategies", no_argument, NULL, 's'},
     {"help", no_argument, NULL, 'h'},
@@ -53,7 +54,7 @@ static struct option long_options[] = {
 void usage() {
     std::cout << ABSSYNTHE_VERSION << std::endl
 << "usage:" << std::endl
-<<"./abssynthe [-h] [-t] [-p] [-s] [-c {1,2,3,4}] [-v VERBOSE_LEVEL] [-o OUT_FILE] spec"
+<<"./abssynthe [-h] [-t] [-a] [-p] [-s] [-c {1,2,3,4}] [-v VERBOSE_LEVEL] [-o OUT_FILE] spec"
 << std::endl
 << "positional arguments:" << std::endl
 << "spec                               input specification in extended AIGER format"
@@ -62,6 +63,8 @@ void usage() {
 << "-h, --help                         show this help message and exit"
 << std::endl
 << "-t, --use_trans                    compute a transition relation"
+<< std::endl
+<< "-a, --use_abs                      use abstraction when possible"
 << std::endl
 << "-p, --parallel                     launch all solvers in parallel"
 << std::endl
@@ -105,7 +108,7 @@ void parse_arguments(int argc, char** argv) {
     int opt_key;
     int opt_index;
     while (true) {
-        opt_key = getopt_long(argc, argv, "v:tpsc:o:w:", long_options,
+        opt_key = getopt_long(argc, argv, "v:tapsc:o:w:", long_options,
                               &opt_index);
         if (opt_key == -1)
             break;
@@ -121,6 +124,10 @@ void parse_arguments(int argc, char** argv) {
             case 't':
                 logMsg("Using transition relation.");
                 settings.use_trans = true;
+                break;
+            case 'a':
+                logMsg("Using abstraction.");
+                settings.use_abs = true;
                 break;
             case 'p':
                 logMsg("Using parallel solvers.");
@@ -164,7 +171,7 @@ void parse_arguments(int argc, char** argv) {
     settings.spec_file = argv[0];
 }
 
-int main (int argc, char** argv) {
+int main(int argc, char** argv) {
     parse_arguments(argc, argv);
     // solve the synthesis problem
     bool result;
