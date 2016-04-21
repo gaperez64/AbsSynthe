@@ -124,93 +124,6 @@ static unsigned bdd2aig(Cudd* mgr, AIG* spec, BDD a_bdd,
     return res;
 }
 
-
-//static vector<pair<unsigned, BDD>> synthAlgoAdam(Cudd* mgr, BDDAIG* spec,
-//                                                 BDD non_det_strategy,
-//                                                 BDD care_set) {
-//    BDD strategy = non_det_strategy;
-//#ifndef NDEBUG
-//    spec->dump2dot(strategy, "strategy.dot");
-//    set<unsigned> deps = spec->semanticDeps(strategy);
-//    string litstring;
-//    for (set<unsigned>::iterator i = deps.begin(); i != deps.end(); i++)
-//        litstring += to_string(*i) + ", ";
-//    dbgMsg("Semantic deps of the non-det strat: " + litstring);
-//#endif
-//    vector<aiger_symbol*> u_inputs = spec->getUInputs();
-//    vector<unsigned> u_input_lits;
-//    vector<BDD> u_input_funs;
-//
-//    dbgMsg("non-det strategy BDD size: " +
-//           to_string(non_det_strategy.nodeCount()));
-//
-//    // as a first step, we compute a single bdd per controllable input
-//    for (vector<aiger_symbol*>::iterator i = u_inputs.begin();
-//         i != u_inputs.end(); i++) {
-//        BDD c = mgr->bddVar((*i)->lit);
-//        BDD others_cube = mgr->bddOne();
-//        unsigned others_count = 0;
-//        for (vector<aiger_symbol*>::iterator j = u_inputs.begin();
-//             j != u_inputs.end(); j++) {
-//            //dbgMsg("CInput " + to_string((*j)->lit));
-//            if ((*i)->lit == (*j)->lit)
-//                continue;
-//            others_cube &= mgr->bddVar((*j)->lit);
-//            //dbgMsg("Other cube has lit " + to_string((*j)->lit));
-//            others_count++;
-//        }
-//        BDD u_arena;
-//        if (others_count > 0)
-//            u_arena = strategy.ExistAbstract(others_cube);
-//        else {
-//            //dbgMsg("No need to abstract other cinputs");
-//            u_arena = strategy;
-//        }
-//#ifndef NDEBUG
-//        spec->dump2dot(u_arena, "u_arena.dot");
-//        spec->dump2dot(u_arena.Cofactor(c), "u_arena_true.dot");
-//#endif
-//        // pairs (x,u) in which c can be true
-//        BDD can_be_true = u_arena.Cofactor(c);
-//        //dbgMsg("Can be true BDD size: " + to_string(can_be_true.nodeCount()));
-//        // pairs (x,u) in which c can be false
-//        BDD can_be_false = u_arena.Cofactor(~c);
-//        //dbgMsg("Can be false BDD size: " + to_string(can_be_false.nodeCount()));
-//        BDD must_be_true = (~can_be_false) & can_be_true;
-//        //dbgMsg("Must be true BDD size: " + to_string(must_be_true.nodeCount()));
-//        BDD must_be_false = (~can_be_true) & can_be_false;
-//        //dbgMsg("Must be false BDD size: " + to_string(must_be_false.nodeCount()));
-//        BDD local_care_set = care_set & (must_be_true | must_be_false);
-//        // on care set: must_be_true.restrict(care_set) <-> must_be_true
-//        // or         ~(must_be_false).restrict(care_set) <-> ~must_be_false
-//        BDD opt1 = BDDAIG::safeRestrict(must_be_true, local_care_set);
-//        //dbgMsg("opt1 BDD size: " + to_string(opt1.nodeCount()));
-//        BDD opt2 = BDDAIG::safeRestrict(~must_be_false, local_care_set);
-//        //dbgMsg("opt2 BDD size: " + to_string(opt2.nodeCount()));
-//        BDD res;
-//        if (opt1.nodeCount() < opt2.nodeCount())
-//            res = opt1;
-//        else
-//            res = opt2;
-//        dbgMsg("Size of function for " + to_string(c.NodeReadIndex()) + " = " +
-//               to_string(res.nodeCount()));
-//        strategy &= (~c | res) & (~res | c);
-//        u_input_funs.push_back(res);
-//        u_input_lits.push_back((*i)->lit);
-//    }
-//
-//    vector<pair<unsigned, BDD>> result;
-//    vector<unsigned>::iterator i = u_input_lits.begin();
-//    vector<BDD>::iterator j = u_input_funs.begin();
-//    for (; i != u_input_lits.end();) {
-//        result.push_back(make_pair(*i, *j));
-//        i++;
-//        j++;
-//    }
-//
-//    return result;
-//}
-
 static vector<pair<unsigned, BDD>> synthAlgo(Cudd* mgr, BDDAIG* spec,
                                              BDD non_det_strategy, BDD care_set) {
     BDD strategy = non_det_strategy;
@@ -225,9 +138,10 @@ static vector<pair<unsigned, BDD>> synthAlgo(Cudd* mgr, BDDAIG* spec,
     vector<aiger_symbol*> c_inputs = spec->getCInputs();
     vector<unsigned> c_input_lits;
     vector<BDD> c_input_funs;
-
+#ifndef NDEBUG
     dbgMsg("non-det strategy BDD size: " +
            to_string(non_det_strategy.nodeCount()));
+#endif
 
     // as a first step, we compute a single bdd per controllable input
     for (vector<aiger_symbol*>::iterator i = c_inputs.begin();
@@ -277,8 +191,10 @@ static vector<pair<unsigned, BDD>> synthAlgo(Cudd* mgr, BDDAIG* spec,
             res = opt1;
         else
             res = opt2;
+#ifndef NDEBUG
         dbgMsg("Size of function for " + to_string(c.NodeReadIndex()) + " = " +
                to_string(res.nodeCount()));
+#endif
         strategy &= (~c | res) & (~res | c);
         c_input_funs.push_back(res);
         c_input_lits.push_back((*i)->lit);
@@ -516,6 +432,9 @@ static bool internalSolveExact(Cudd* mgr, BDDAIG* spec, const BDD* upre_init,
     while (!includes_init && error_states != prev_error) {
         prev_error = error_states;
         error_states = prev_error | upre(spec, prev_error, bad_transitions);
+#ifndef NDEBUG
+        dbgMsg("Error states BDD size = " + to_string(error_states.nodeCount()));
+#endif
         includes_init = ((init_state & error_states) != ~mgr->bddOne());
         cnt++;
     }
