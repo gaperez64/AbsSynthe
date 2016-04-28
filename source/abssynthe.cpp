@@ -48,6 +48,7 @@ static struct option long_options[] = {
     {"comp_algo", required_argument, NULL, 'c'},
     {"out_file", required_argument, NULL, 'o'},
     {"win_region", required_argument, NULL, 'w'},
+    {"ind_cert", required_argument, NULL, 'i'},
     {NULL, 0, NULL, 0}
 };
 
@@ -92,6 +93,13 @@ void usage() {
 << "                                   Output winning region file path. Same "
 << std::endl
 << "                                   file extension rules as for OUT_FILE."
+<< std::endl
+<< "-i IND_CERT_OUT_FILE, --ind_cert IND_CERT_OUT_FILE" << std::endl
+<< "                                   Output a certificate of the winning region "
+<< std::endl
+<< "                                   being inductive (in AIGER). Same "
+<< std::endl
+<< "                                   file extension rules as for OUT_FILE."
 << std::endl;
 }
 
@@ -108,7 +116,7 @@ void parse_arguments(int argc, char** argv) {
     int opt_key;
     int opt_index;
     while (true) {
-        opt_key = getopt_long(argc, argv, "v:tapsc:o:w:", long_options,
+        opt_key = getopt_long(argc, argv, "v:tapsc:o:w:i:", long_options,
                               &opt_index);
         if (opt_key == -1)
             break;
@@ -151,6 +159,9 @@ void parse_arguments(int argc, char** argv) {
                 break;
             case 'w':
                 settings.win_region_out_file = optarg;
+                break;
+            case 'i':
+                settings.ind_cert_out_file = optarg;
                 break;
             default:
                 usage();

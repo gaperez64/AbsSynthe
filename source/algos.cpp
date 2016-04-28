@@ -61,21 +61,13 @@ struct shared_data {
 static shared_data* data = NULL;
 
 
-static unsigned optimizedGate(AIG* spec, unsigned a_lit, unsigned b_lit) {
-    if (a_lit == 0 || b_lit == 0)
-        return 0;
-    if (a_lit == 1 && b_lit == 1)
-        return 1;
-    if (a_lit == 1)
-        return b_lit;
-    if (b_lit == 1)
-        return a_lit;
-    assert(a_lit > 1 && b_lit > 1);
-    unsigned a_and_b_lit = (spec->maxVar() + 1) * 2;
-    spec->addGate(a_and_b_lit, a_lit, b_lit);
-    return a_and_b_lit;
+static bool outputExpected() {
+    return settings.out_file != NULL ||
+        settings.win_region_out_file != NULL ||
+        settings.ind_cert_out_file != NULL;
 }
 
+// TODO: should this be part of the BDDAIG class?
 /* I'm going to play a dangerous game here...
  * Since Cudd keeps a unique table with DdNodes that are currently referrenced
  * and the BDD class is in fact a wrapper for a pointer to such a node, I will
@@ -109,11 +101,11 @@ static unsigned bdd2aig(Cudd* mgr, AIG* spec, BDD a_bdd,
      */
     unsigned then_lit = bdd2aig(mgr, spec, then_bdd, cache);
     unsigned else_lit = bdd2aig(mgr, spec, else_bdd, cache);
-    unsigned a_then_lit = optimizedGate(spec, a_lit, then_lit);
-    unsigned na_else_lit = optimizedGate(spec, AIG::negateLit(a_lit), else_lit);
+    unsigned a_then_lit = spec->optimizedGate(a_lit, then_lit);
+    unsigned na_else_lit = spec->optimizedGate(AIG::negateLit(a_lit), else_lit);
     unsigned n_a_then_lit = AIG::negateLit(a_then_lit);
     unsigned n_na_else_lit = AIG::negateLit(na_else_lit);
-    unsigned ite_lit = optimizedGate(spec, n_a_then_lit, n_na_else_lit);
+    unsigned ite_lit = spec->optimizedGate(n_a_then_lit, n_na_else_lit);
     unsigned res = AIG::negateLit(ite_lit);
 
     (*cache)[(unsigned long) a_bdd.getRegularNode()] = res;
@@ -214,9 +206,6 @@ static vector<pair<unsigned, BDD>> synthAlgo(Cudd* mgr, BDDAIG* spec,
 
 static void finalizeSynth(Cudd* mgr, BDDAIG* spec, 
                           vector<pair<unsigned, BDD>> result, AIG* original=NULL) {
-    // let us clean the AIG before we start introducing new stuff
-    // if we have a base spec we should clean in the base
-    spec->removeErrorLatch();
     // we now get rid of all controllable inputs in the aig spec by replacing
     // each one with an and computed using bdd2aig...
     // NOTE: because of the way bdd2aig is implemented, we must ensure that BDDs are
@@ -229,10 +218,12 @@ static void finalizeSynth(Cudd* mgr, BDDAIG* spec,
          i != result.end(); i++) {
         spec->input2gate(i->first, bdd2aig(mgr, spec, i->second, &cache));
         if (original != NULL)
-            cinputs.erase(remove(cinputs.begin(), cinputs.end(), i->first), cinputs.end());
+            cinputs.erase(remove(cinputs.begin(), cinputs.end(), i->first),
+                          cinputs.end());
     }
     if (original != NULL) {
-        for (vector<unsigned>::iterator i = cinputs.begin(); i != cinputs.end(); i++) {
+        for (vector<unsigned>::iterator i = cinputs.begin();
+             i != cinputs.end(); i++) {
             logMsg("Setting unused cinput " + to_string(*i));
             spec->input2gate(*i, bdd2aig(mgr, spec, ~mgr->bddOne() , &cache));
         }
@@ -241,23 +232,116 @@ static void finalizeSynth(Cudd* mgr, BDDAIG* spec,
     spec->writeToFile(settings.out_file);
 }
 
-static void outputWinRegion(Cudd* mgr, AIG* spec, BDD winning_region) {
-    // let us clean the AIG before we start introducing new stuff
-    spec->removeErrorLatch();
+static void outputWinRegion(Cudd* mgr, BDDAIG* spec, BDD winning_region) {
     // we will work on a clean spec
     AIG blank_spec;
     vector<aiger_symbol*> latches = spec->getLatches();
     unordered_map<unsigned long, unsigned> cache;
     dbgMsg("Adding latches to the new AIG instance.");
     for (vector<aiger_symbol*>::iterator i = latches.begin();
-             i != latches.end(); i++) {
-        string str( (*i)->name );
-        blank_spec.addInput((*i)->lit, NULL);// (*i)->name);
+         i != latches.end(); i++) {
+        //dbgMsg("Adding latch as input, lit = " + to_string((*i)->lit));
+        blank_spec.addInput((*i)->lit, (*i)->name);
     }
     blank_spec.addOutput(bdd2aig(mgr, &blank_spec,
                                  winning_region, &cache), "winning region");
     // Finally, we write the file
     blank_spec.writeToFile(settings.win_region_out_file);
+}
+
+static void outputIndCertificate(Cudd* mgr, BDDAIG* spec, BDD winning_region) {
+    // we will work on a clean spec
+    AIG blank_spec;
+    vector<aiger_symbol*> latches = spec->getLatches();
+    vector<aiger_symbol*> uinputs = spec->getUInputs();
+    vector<aiger_symbol*> cinputs = spec->getCInputs();
+    vector<BDD> original_latch;
+    unordered_map<unsigned long, unsigned> cache;
+    map<pair<unsigned, unsigned>, unsigned> copy_cache;
+    dbgMsg("Adding latches to the new AIG instance.");
+    for (vector<aiger_symbol*>::iterator i = latches.begin();
+         i != latches.end(); i++) {
+        //dbgMsg("Adding latch as input, lit = " + to_string((*i)->lit));
+        blank_spec.addInput((*i)->lit, (*i)->name);
+        original_latch.push_back(mgr->bddVar((*i)->lit));
+    }
+    dbgMsg("Adding uncontrollable inputs.");
+    for (vector<aiger_symbol*>::iterator i = uinputs.begin();
+         i != uinputs.end(); i++) {
+        blank_spec.addInput((*i)->lit, (*i)->name);
+    }
+    dbgMsg("Adding controllable inputs.");
+    for (vector<aiger_symbol*>::iterator i = cinputs.begin();
+         i != cinputs.end(); i++) {
+        blank_spec.addInput((*i)->lit, (*i)->name);
+    }
+    // for each latch we also need to add a boolean function to determine its
+    // next value...
+    // in the process we also make sure that there are no trivial latches
+    vector<unsigned> latch_next_lits;
+    dbgMsg("Adding latch next functions.");
+    BDD simple_winning_region = winning_region;
+    for (vector<aiger_symbol*>::iterator i = latches.begin();
+         i != latches.end(); i++) {
+        unsigned var = blank_spec.copyGateFromAux(spec, (*i)->next,
+                                                  &copy_cache);
+        latch_next_lits.push_back(var);
+    }
+    dbgMsg("Creating BDDs from the new and-gate lits");
+    vector<BDD> latch_next;
+    vector<BDD>::iterator l = original_latch.begin();
+    vector<BDD> clean_original_latch;
+    vector<unsigned>::iterator j = latch_next_lits.begin();
+    for (vector<aiger_symbol*>::iterator k = latches.begin();
+         k != latches.end(); k++) {
+        unsigned var = *j;
+        if (var == 1) {
+            dbgMsg("Positive cofactor of lit " + to_string((*k)->lit));
+            simple_winning_region =
+                simple_winning_region.Cofactor(mgr->bddVar((*k)->lit));
+        } else if (var == 0) {
+            dbgMsg("Negative cofactor of lit " + to_string((*k)->lit));
+            simple_winning_region =
+                simple_winning_region.Cofactor(~mgr->bddVar((*k)->lit));
+        } else {
+            BDD var_bdd = mgr->bddVar(*j);//AIG::stripLit(*j));
+            /*if (AIG::litIsNegated(*j)) {
+                dbgMsg("We have a negated lit!");
+                var_bdd = ~var_bdd;
+            }*/
+            latch_next.push_back(var_bdd);
+            clean_original_latch.push_back(*l);
+        }
+        j++;
+        l++;
+    }
+    // at this point we should have a max var smaller than that in the original
+    // spec because we only have as much logic as there
+    dbgMsg("max var so far = " + to_string(blank_spec.maxVar()));
+    dbgMsg("max var originally = " + to_string(spec->maxVar()));
+    assert(blank_spec.maxVar() <= spec->maxVar());
+    // we now take the winning region BDD and replace latches for the variables
+    // in latch_next, since we are changing BDDs we should flush the cache
+    dbgMsg("Swapping variables");
+    assert(clean_original_latch.size() == latch_next.size());
+    BDD primed_winning_region =
+        simple_winning_region.SwapVariables(clean_original_latch,
+                                            latch_next);
+    // we need to add a boolean function to determine if the latch config
+    // corresponds to a winning state
+    // IMPORTANT: no more BDD manipulation after this point since I am caching
+    // the numbering of the nodes to do the bdd 2 aig translation
+    unsigned w = bdd2aig(mgr, &blank_spec, winning_region, &cache);
+    dbgMsg("W = " + to_string(w));
+    dbgMsg("Creating the and for the output signal");
+    unsigned w_primed = bdd2aig(mgr, &blank_spec, primed_winning_region, &cache);
+    dbgMsg("W' = " + to_string(w_primed));
+    // we want W => W'(L<-f_l) so we will do ~(w & ~w)
+    blank_spec.addOutput(AIG::negateLit(
+                         blank_spec.optimizedGate(w, AIG::negateLit(w_primed))),
+                         "inductivity check");
+    // Finally, we write the file
+    blank_spec.writeToFile(settings.ind_cert_out_file);
 }
 
 static BDD substituteLatchesNext(BDDAIG* spec, BDD dst, BDD* care_region=NULL) {
@@ -382,11 +466,25 @@ static bool internalSolveAbstract(Cudd* mgr, BDDAIG* spec, const BDD* cpre_init,
     dbgMsg("Early exit? " + to_string(includes_init) + 
   	       ", after " + to_string(cnt) + " iterations.");
   
-    if (!includes_init && do_synth && settings.out_file != NULL) {
-        dbgMsg("Starting synthesis, acquiring lock on synth mutex");
+    if (!includes_init && do_synth && outputExpected()) {
+        dbgMsg("acquiring lock on synth mutex");
         if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
-        finalizeSynth(mgr, spec, 
-                      synthAlgo(mgr, spec, ~bad_transitions, ~error_states));
+        BDD clean_winning_region = (~error_states).Cofactor(~spec->errorStates());
+        // let us clean the AIG before we start introducing new stuff
+        spec->popErrorLatch();
+        if (settings.out_file != NULL) {
+            dbgMsg("Starting synthesis");
+            finalizeSynth(mgr, spec, 
+                          synthAlgo(mgr, spec, ~bad_transitions, ~error_states));
+        }
+        if (settings.win_region_out_file != NULL) {
+            dbgMsg("Starting output of winning region");
+            outputWinRegion(mgr, spec, clean_winning_region);
+        }
+        if (settings.ind_cert_out_file != NULL) {
+            dbgMsg("Starting output of inductive certificate");
+            outputIndCertificate(mgr, spec, clean_winning_region);
+        }
     }
     return !includes_init;
 }
@@ -432,9 +530,6 @@ static bool internalSolveExact(Cudd* mgr, BDDAIG* spec, const BDD* upre_init,
     while (!includes_init && error_states != prev_error) {
         prev_error = error_states;
         error_states = prev_error | upre(spec, prev_error, bad_transitions);
-#ifndef NDEBUG
-        dbgMsg("Error states BDD size = " + to_string(error_states.nodeCount()));
-#endif
         includes_init = ((init_state & error_states) != ~mgr->bddOne());
         cnt++;
     }
@@ -453,14 +548,25 @@ static bool internalSolveExact(Cudd* mgr, BDDAIG* spec, const BDD* upre_init,
     } 
     // if !includes_init == true, then ~bad_transitions is the set of all
     // good transitions for controller (Eve)
-    if (!includes_init && do_synth && settings.out_file != NULL) {
-        dbgMsg("Starting synthesis, acquiring lock on synth mutex");
+    if (!includes_init && do_synth && outputExpected()) {
+        dbgMsg("acquiring lock on synth mutex");
         if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
-        finalizeSynth(mgr, spec, 
-                      synthAlgo(mgr, spec, ~bad_transitions, ~error_states));
+        BDD clean_winning_region = (~error_states).Cofactor(~spec->errorStates());
+        // let us clean the AIG before we start introducing new stuff
+        spec->popErrorLatch();
+        if (settings.out_file != NULL) {
+            dbgMsg("Starting synthesis");
+            finalizeSynth(mgr, spec, 
+                          synthAlgo(mgr, spec, ~bad_transitions,
+                          ~error_states));
+        }
         if (settings.win_region_out_file != NULL) {
             dbgMsg("Starting output of winning region");
-            outputWinRegion(mgr, spec, ~error_states);
+            outputWinRegion(mgr, spec, clean_winning_region);
+        }
+        if (settings.ind_cert_out_file != NULL) {
+            dbgMsg("Starting output of inductive certificate");
+            outputIndCertificate(mgr, spec, clean_winning_region);
         }
     }
     return !includes_init;
@@ -535,7 +641,8 @@ bool compSolve1(AIG* spec_base) {
         // release cache memory and other stuff used in BDDAIG instances
         //cout << ("Not cinput independent\n");
         //cout.flush();
-        for (vector<BDDAIG*>::iterator i = subgames.begin(); i != subgames.end(); i++)
+        for (vector<BDDAIG*>::iterator i = subgames.begin();
+             i != subgames.end(); i++)
             delete *i;
         BDD losing_states = spec.errorStates();
         BDD losing_transitions = ~mgr.bddOne();
@@ -554,29 +661,34 @@ bool compSolve1(AIG* spec_base) {
 
         // if !includes_init == true, then ~bad_transitions is the set of all
         // good transitions for controller (Eve)
-        if (!includes_init && settings.out_file != NULL) {
-            dbgMsg("Starting synthesis, acquiring lock on synth mutex");
+        if (!includes_init && outputExpected()) {
+            dbgMsg("acquiring lock on synth mutex");
             if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
-            finalizeSynth(&mgr, &spec, 
-                          synthAlgo(&mgr, &spec, ~bad_transitions,
-                                    ~error_states),
-                          spec_base);
+            BDD clean_winning_region = (~error_states).Cofactor(~spec.errorStates());
+            // let us clean the AIG before we start introducing new stuff
+            spec.popErrorLatch();
+            if (settings.out_file != NULL) {
+                dbgMsg("Starting synthesis");
+                finalizeSynth(&mgr, &spec, 
+                              synthAlgo(&mgr, &spec, ~bad_transitions,
+                                        ~error_states),
+                              spec_base);
+            }
             if (settings.win_region_out_file != NULL) {
                 dbgMsg("Starting output of winning region");
-                outputWinRegion(&mgr, spec_base, ~error_states);
+                outputWinRegion(&mgr, &spec, clean_winning_region);
+            }
+            if (settings.ind_cert_out_file != NULL) {
+                dbgMsg("Starting output of inductive certificate");
+                outputIndCertificate(&mgr, &spec, clean_winning_region);
             }
         }
 
-    } else if (settings.out_file != NULL) {
-        // we have to output a strategy from the local non-deterministic
-        // strategies...
-        dbgMsg("Starting synthesis, acquiring lock on synth mutex");
-        //cout << ("Starting synthesis, acquiring lock on synth mutex\n");
-        //cout.flush();
+    } else if (outputExpected()) {
+        dbgMsg("acquiring lock on synth mutex");
         if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
         vector<pair<unsigned, BDD>> all_cinput_strats;
         vector<pair<BDD, BDD>>::iterator sg = subgame_results.begin();
-        // logMsg("Doing stuff");
         BDD global_lose = ~mgr.bddOne();
         for (vector<BDDAIG*>::iterator i = subgames.begin();
              i != subgames.end(); i++) {
@@ -589,10 +701,20 @@ bool compSolve1(AIG* spec_base) {
             sg++;
             delete *i;
         }
-        finalizeSynth(&mgr, &spec, all_cinput_strats, spec_base);
+        BDD clean_winning_region = (~global_lose).Cofactor(~spec.errorStates());
+        // let us clean the AIG before we start introducing new stuff
+        spec.popErrorLatch();
+        if (settings.out_file != NULL) {
+            dbgMsg("Starting synth");
+            finalizeSynth(&mgr, &spec, all_cinput_strats, spec_base);
+        }
         if (settings.win_region_out_file != NULL) {
             dbgMsg("Starting output of winning region");
-            outputWinRegion(&mgr, spec_base, ~global_lose);
+            outputWinRegion(&mgr, &spec, clean_winning_region);
+        }
+        if (settings.ind_cert_out_file != NULL) {
+            dbgMsg("Starting output of inductive certificate");
+            outputIndCertificate(&mgr, &spec, clean_winning_region);
         }
     }
 
@@ -687,18 +809,28 @@ bool compSolve2(AIG* spec_base) {
 
     assert(subgame_results.size() == 1);
     // Finally, we synth a circuit if required
-    if (settings.out_file != NULL) {
-        dbgMsg("Starting synthesis, acquiring lock on synth mutex");
+    if (outputExpected()) {
+        dbgMsg("acquiring lock on synth mutex");
         if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
-        finalizeSynth(&mgr, &spec, 
-                      synthAlgo(&mgr, &spec, ~subgame_results.back().first,
-                                mgr.bddOne()),
-                      spec_base);
+        BDD clean_winning_region =
+            (~subgame_results.back().first).Cofactor(~spec.errorStates());
+        // let us clean the AIG before we start introducing new stuff
+        spec.popErrorLatch();
+        if (settings.out_file != NULL) {
+            dbgMsg("Starting synthesis");
+            finalizeSynth(&mgr, &spec, 
+                          synthAlgo(&mgr, &spec, ~subgame_results.back().first,
+                                    mgr.bddOne()),
+                          spec_base);
+        }
         if (settings.win_region_out_file != NULL) {
             dbgMsg("Starting output of winning region");
-            outputWinRegion(&mgr, spec_base, ~subgame_results.back().first);
+            outputWinRegion(&mgr, &spec, clean_winning_region);
         }
-
+        if (settings.ind_cert_out_file != NULL) {
+            dbgMsg("Starting output of inductive certificate");
+            outputIndCertificate(&mgr, &spec, clean_winning_region);
+        }
     }
     return true;
 }
@@ -792,15 +924,25 @@ bool compSolve3(AIG* spec_base) {
 
     // if !includes_init == true, then ~bad_transitions is the set of all
     // good transitions for controller (Eve)
-    if (!includes_init && settings.out_file != NULL) {
-        dbgMsg("Starting synthesis, acquiring lock on synth mutex");
+    if (!includes_init && outputExpected()) {
+        dbgMsg("acquiring lock on synth mutex");
         if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
-        finalizeSynth(&mgr, &spec, 
-                      synthAlgo(&mgr, &spec, ~global_losing_trans, ~global_lose),
-                      spec_base);
+        BDD clean_winning_region = (~global_lose).Cofactor(~spec.errorStates());
+        // let us clean the AIG before we start introducing new stuff
+        spec.popErrorLatch();
+        if (settings.out_file != NULL) {
+            dbgMsg("Starting synthesis");
+            finalizeSynth(&mgr, &spec, 
+                          synthAlgo(&mgr, &spec, ~global_losing_trans, ~global_lose),
+                          spec_base);
+        }
         if (settings.win_region_out_file != NULL) {
             dbgMsg("Starting output of winning region");
-            outputWinRegion(&mgr, spec_base, ~global_lose);
+            outputWinRegion(&mgr, &spec, clean_winning_region);
+        }
+        if (settings.ind_cert_out_file != NULL) {
+            dbgMsg("Starting output of inductive certificate");
+            outputIndCertificate(&mgr, &spec, clean_winning_region);
         }
     }
 
@@ -865,7 +1007,8 @@ bool compSolve4(AIG* spec_base) {
                                latches_sg.begin(), latches_sg.end(), 
                                inserter(rem_latches, rem_latches.begin()));
                 BDD joint_safe_trans = winning_strats & global_win_strats;
-                BDD nu_local_win_strats = joint_safe_trans.ExistAbstract(spec.toCube(rem_latches));
+                BDD nu_local_win_strats =
+                    joint_safe_trans.ExistAbstract(spec.toCube(rem_latches));
                 
                 if (nu_local_win_strats != winning_strats) {
                     dbgMsg("Even after getting rid of latches not present, "
@@ -932,15 +1075,25 @@ bool compSolve4(AIG* spec_base) {
 
     // if !includes_init == true, then ~bad_transitions is the set of all
     // good transitions for controller (Eve)
-    if (settings.out_file != NULL) {
-        dbgMsg("Starting synthesis, acquiring lock on synth mutex");
+    if (outputExpected()) {
+        dbgMsg("acquiring lock on synth mutex");
         if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
-        finalizeSynth(&mgr, &spec, 
-                      synthAlgo(&mgr, &spec, global_win_strats, ~global_lose),
-                      spec_base);
+        BDD clean_winning_region = (~global_lose).Cofactor(~spec.errorStates());
+        // let us clean the AIG before we start introducing new stuff
+        spec.popErrorLatch();
+        if (settings.out_file != NULL) {
+            dbgMsg("Starting synthesis");
+            finalizeSynth(&mgr, &spec, 
+                          synthAlgo(&mgr, &spec, global_win_strats, ~global_lose),
+                          spec_base);
+        }
         if (settings.win_region_out_file != NULL) {
             dbgMsg("Starting output of winning region");
-            outputWinRegion(&mgr, spec_base, ~global_lose);
+            outputWinRegion(&mgr, &spec, clean_winning_region);
+        }
+        if (settings.ind_cert_out_file != NULL) {
+            dbgMsg("Starting output of inductive certificate");
+            outputIndCertificate(&mgr, &spec, clean_winning_region);
         }
     }
 

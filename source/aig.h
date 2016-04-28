@@ -29,6 +29,7 @@
 #include <vector>
 #include <set>
 #include <unordered_set>
+#include <map>
 #include <unordered_map>
 #include <cassert>
 
@@ -45,8 +46,8 @@ class AIG {
         std::vector<aiger_symbol*> c_inputs;
         std::vector<aiger_symbol*> u_inputs;
         aiger_symbol error_fake_latch;
-        bool created_error_fake_latch = false;
-        void introduceErrorLatch();
+        char error_fake_latch_name[6];
+        void pushErrorLatch();
         std::unordered_map<unsigned, std::set<unsigned>>* lit2deps_map;
         std::unordered_map<unsigned,
                            std::pair<std::vector<unsigned>,
@@ -59,7 +60,7 @@ class AIG {
         static unsigned primeVar(unsigned lit) { return AIG::stripLit(lit) + 1; }
         void defaultValues();
     public:
-        void removeErrorLatch();
+        void popErrorLatch();
         static unsigned negateLit(unsigned lit) { return lit ^ 1; }
         static bool litIsNegated(unsigned lit) { return (lit & 1) == 1; }
         static unsigned stripLit(unsigned lit) { return lit & ~1; }
@@ -81,6 +82,10 @@ class AIG {
         std::vector<unsigned> getCInputLits();
         std::vector<unsigned> getUInputLits();
         std::vector<unsigned> getLatchLits();
+        unsigned optimizedGate(unsigned, unsigned);
+        unsigned copyGateFromAux(const AIG*, unsigned,
+            std::map<std::pair<unsigned, unsigned>, unsigned>*);
+        unsigned copyGateFrom(const AIG*, unsigned);
 };
 
 class BDDAIG : public AIG {
@@ -99,8 +104,6 @@ class BDDAIG : public AIG {
         std::vector<BDD>* next_fun_compose_vec;
         BDD lit2bdd(unsigned);
         std::vector<BDD> mergeSomeSignals(BDD, std::vector<unsigned>*);
-        bool isValidLatchBdd(BDD);
-        bool isValidBdd(BDD);
         void defaultValues();
     public:
         static BDD safeRestrict(BDD, BDD);
@@ -124,7 +127,10 @@ class BDDAIG : public AIG {
         std::set<unsigned> getBddDeps(BDD);
         std::set<unsigned> getBddLatchDeps(BDD);
         std::vector<BDD> nextFunComposeVec(BDD*);
+        std::vector<BDD> getNextFunVec();
         std::vector<BDDAIG*> decompose();
+        bool isValidLatchBdd(BDD);
+        bool isValidBdd(BDD);
 };
 
 #endif
