@@ -60,6 +60,25 @@ void AIG::writeToFile(const char* aiger_file_name) {
     aiger_open_and_write_to_file(this->spec, aiger_file_name);
 }
 
+void AIG::writeToFileAsCnf(const char* dimacs_file_name, unsigned* c_lits,
+                           int c_lits_length) {
+    if (this->spec->num_latches) 
+        errMsg ("can not handle latches");
+    if (this->spec->num_bad) 
+        errMsg ("can not handle bad state properties (use 'aigmove')");
+    if (this->spec->num_constraints) 
+        errMsg ("can not handle environment constraints (use 'aigmove')");
+    if (!this->spec->num_outputs) errMsg ("no output");
+    if (this->spec->num_outputs > 1) errMsg ("more than one output");
+    if (this->spec->num_justice) wrnMsg ("ignoring justice properties");
+    if (this->spec->num_fairness) wrnMsg ("ignoring fairness constraints");
+    // the two boolean parameters, prtmap and pg, are used to control whether
+    // the output dimacs file has an initial comment block with the mapping from
+    // original lits to new variables and, the latter, to control whether
+    // non-referenced lits can be removed.
+    aiger2dimacs(this->spec, dimacs_file_name, 1, 0, c_lits, c_lits_length);
+}
+
 void AIG::addInput(unsigned lit, const char* name) {
     //dbgMsg("Just before adding an input");
     //dbgMsg("The max var = " + std::to_string(this->spec->maxvar));
@@ -146,7 +165,9 @@ unsigned AIG::copyGateFrom(const AIG* other, unsigned and_lit) {
     assert(other != NULL);
     // we now have to add referenced gates recursively
     std::map<std::pair<unsigned, unsigned>, unsigned> cache;
-    return copyGateFromAux(other, and_lit, &cache);
+    unsigned result = copyGateFromAux(other, and_lit, &cache);
+    dbgMsg("copied a gate into lit = " + std::to_string(result));
+    return result;
 }
 
 void AIG::input2gate(unsigned input, unsigned rh0) {
@@ -911,37 +932,13 @@ std::vector<BDD> BDDAIG::mergeSomeSignals(BDD cube, std::vector<unsigned>* origi
 
 std::set<unsigned> BDDAIG::semanticDeps(BDD b) {
     std::set<unsigned> result;
-#if true
     for (unsigned i = 0; ((int) i) < this->mgr->ReadSize(); i++) {
         BDD simpler_b = b.ExistAbstract(this->mgr->bddVar(i));
         if (b != simpler_b) {
             result.insert(i);
-            //dbgMsg("Depends on var " + std::to_string(i));
+            dbgMsg("Depends on var " + std::to_string(i));
         }
     }
-#endif
-#if false // previous code which fails for huge bdds
-    std::vector<DdNode*> waiting;
-    unsigned bdd_size = b.nodeCount();
-    dbgMsg("semanticDeps of BDD with node count: " + std::to_string(bdd_size));
-    waiting.push_back(b.getRegularNode());
-    int cnt = 0;
-    while (waiting.size() > 0) {
-        DdNode* node = waiting.back();
-        //dbgMsg(std::to_string(cnt++) + " variable " + std::to_string(node->index));
-        waiting.pop_back();
-        if (!Cudd_IsConstant(node)) {
-            result.insert((unsigned) node->index);
-            DdNode* child = Cudd_Regular(Cudd_T(node));
-            if (!Cudd_IsConstant(child))
-                waiting.push_back(child);
-            child = Cudd_Regular(Cudd_E(node));
-            if (!Cudd_IsConstant(child))
-                waiting.push_back(child);
-        }
-        assert(result.size() <= bdd_size);
-    }
-#endif
     return result;
 }
 

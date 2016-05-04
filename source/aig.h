@@ -75,6 +75,7 @@ class AIG {
         void addGate(unsigned, unsigned, unsigned);
         void input2gate(unsigned, unsigned);
         void writeToFile(const char*);
+        void writeToFileAsCnf(const char*, unsigned*, int);
         std::vector<aiger_symbol*> getLatches() { return this->latches; }
         std::vector<aiger_symbol*> getCInputs() { return this->c_inputs; }
         std::vector<aiger_symbol*> getUInputs() { return this->u_inputs; }

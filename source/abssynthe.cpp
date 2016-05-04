@@ -97,9 +97,7 @@ void usage() {
 << "-i IND_CERT_OUT_FILE, --ind_cert IND_CERT_OUT_FILE" << std::endl
 << "                                   Output a certificate of the winning region "
 << std::endl
-<< "                                   being inductive (in AIGER). Same "
-<< std::endl
-<< "                                   file extension rules as for OUT_FILE."
+<< "                                   being inductive (in QDIMACS)."
 << std::endl;
 }
 

@@ -49,7 +49,7 @@ void parseLogLevelString(const char* verb_string) {
 void dbgMsg(const char* message) { dbgMsg(string(message)); }
 void wrnMsg(const char* message) { wrnMsg(string(message)); }
 void logMsg(const char* message) { logMsg(string(message)); }
-void errMsg(const char* message) { errMsg(string(message)); }
+void errMsg(const char* message, int code) { errMsg(string(message), code); }
 
 void dbgMsg(string message) {
 #ifndef NDEBUG
@@ -68,8 +68,9 @@ void logMsg(string message) {
         cout << "[LOG] " << message << endl;
 }
 
-void errMsg(string message) {
+void errMsg(string message, int code) {
     cerr << "[ERR] " << message << endl;
+    exit(code);
 }
 
 clock_t lit2bdd_t;

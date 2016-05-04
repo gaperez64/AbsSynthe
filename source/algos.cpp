@@ -268,12 +268,16 @@ static void outputIndCertificate(Cudd* mgr, BDDAIG* spec, BDD winning_region) {
     dbgMsg("Adding uncontrollable inputs.");
     for (vector<aiger_symbol*>::iterator i = uinputs.begin();
          i != uinputs.end(); i++) {
+        dbgMsg("Adding uncontrollable input, lit = " + to_string((*i)->lit));
         blank_spec.addInput((*i)->lit, (*i)->name);
     }
     dbgMsg("Adding controllable inputs.");
+    unsigned c_lits[cinputs.size()];
+    int m = 0;
     for (vector<aiger_symbol*>::iterator i = cinputs.begin();
          i != cinputs.end(); i++) {
         blank_spec.addInput((*i)->lit, (*i)->name);
+        c_lits[m++] = (*i)->lit;
     }
     // for each latch we also need to add a boolean function to determine its
     // next value...
@@ -283,9 +287,12 @@ static void outputIndCertificate(Cudd* mgr, BDDAIG* spec, BDD winning_region) {
     BDD simple_winning_region = winning_region;
     for (vector<aiger_symbol*>::iterator i = latches.begin();
          i != latches.end(); i++) {
+        dbgMsg("working on function for latch " + to_string((*i)->lit));
         unsigned var = blank_spec.copyGateFromAux(spec, (*i)->next,
                                                   &copy_cache);
+        dbgMsg("copied a gate into lit = " + to_string(var));
         latch_next_lits.push_back(var);
+        //blank_spec.addOutput(var, NULL);
     }
     dbgMsg("Creating BDDs from the new and-gate lits");
     vector<BDD> latch_next;
@@ -304,11 +311,11 @@ static void outputIndCertificate(Cudd* mgr, BDDAIG* spec, BDD winning_region) {
             simple_winning_region =
                 simple_winning_region.Cofactor(~mgr->bddVar((*k)->lit));
         } else {
-            BDD var_bdd = mgr->bddVar(*j);//AIG::stripLit(*j));
-            /*if (AIG::litIsNegated(*j)) {
-                dbgMsg("We have a negated lit!");
-                var_bdd = ~var_bdd;
-            }*/
+            BDD var_bdd = mgr->bddVar(*j); //AIG::stripLit(*j));
+            //if (AIG::litIsNegated(*j)) {
+            //    dbgMsg("We have a negated lit!");
+            //    var_bdd = ~var_bdd;
+            //}
             latch_next.push_back(var_bdd);
             clean_original_latch.push_back(*l);
         }
@@ -324,24 +331,33 @@ static void outputIndCertificate(Cudd* mgr, BDDAIG* spec, BDD winning_region) {
     // in latch_next, since we are changing BDDs we should flush the cache
     dbgMsg("Swapping variables");
     assert(clean_original_latch.size() == latch_next.size());
+#ifndef NDEBUG
+    spec->semanticDeps(winning_region);
+#endif
     BDD primed_winning_region =
         simple_winning_region.SwapVariables(clean_original_latch,
                                             latch_next);
+#ifndef NDEBUG
+    spec->semanticDeps(primed_winning_region);
+#endif
     // we need to add a boolean function to determine if the latch config
     // corresponds to a winning state
     // IMPORTANT: no more BDD manipulation after this point since I am caching
     // the numbering of the nodes to do the bdd 2 aig translation
     unsigned w = bdd2aig(mgr, &blank_spec, winning_region, &cache);
     dbgMsg("W = " + to_string(w));
+    //blank_spec.addOutput(w, NULL);
     dbgMsg("Creating the and for the output signal");
     unsigned w_primed = bdd2aig(mgr, &blank_spec, primed_winning_region, &cache);
     dbgMsg("W' = " + to_string(w_primed));
-    // we want W => W'(L<-f_l) so we will do ~(w & ~w)
+    //blank_spec.addOutput(w_primed, NULL);
+    // we want W => W'(L<-f_l) so we will do ~(w & ~w')
     blank_spec.addOutput(AIG::negateLit(
                          blank_spec.optimizedGate(w, AIG::negateLit(w_primed))),
                          "inductivity check");
-    // Finally, we write the file
-    blank_spec.writeToFile(settings.ind_cert_out_file);
+    // Finally, we write the file as QDIMACS
+    blank_spec.writeToFileAsCnf(settings.ind_cert_out_file, c_lits, cinputs.size());
+    //blank_spec.writeToFile(settings.ind_cert_out_file);
 }
 
 static BDD substituteLatchesNext(BDDAIG* spec, BDD dst, BDD* care_region=NULL) {
@@ -552,6 +568,13 @@ static bool internalSolveExact(Cudd* mgr, BDDAIG* spec, const BDD* upre_init,
         dbgMsg("acquiring lock on synth mutex");
         if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
         BDD clean_winning_region = (~error_states).Cofactor(~spec->errorStates());
+#ifndef NDEBUG
+        // we can check that the bdd represents an inductive winning region as
+        // follows
+        assert(((~clean_winning_region |
+                 upre(spec, ~clean_winning_region, bad_transitions)) &
+                clean_winning_region) == ~mgr->bddOne());
+#endif
         // let us clean the AIG before we start introducing new stuff
         spec->popErrorLatch();
         if (settings.out_file != NULL) {
@@ -1130,8 +1153,8 @@ static void pWorker(AIG* spec_base, int solver) {
             result = solve(spec_base, CUDD_REORDER_WINDOW4);
             break;
         default:
+            result = 0;
             errMsg("Unknown solver algo: " + to_string(solver));
-            exit(1);
     }
     dbgMsg("We have an answer from parallel solver " + to_string(solver));
     data->result = result;
@@ -1183,8 +1206,8 @@ bool solveParallel() {
         kill(children[i], SIGKILL);
     if (!data->done) {
         errMsg("Parallel solvers stopped unexpectedly. "
-               "Synthesis/realizability test inconclusive");
-        exit(55); // personal code for: "FUCK, children stopped unexpectedly"
+               "Synthesis/realizability test inconclusive", 55);
+        // personal code for: "FUCK, children stopped unexpectedly"
     }
     // recover the answer
     bool result = data->result;
