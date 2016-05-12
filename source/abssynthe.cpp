@@ -41,7 +41,7 @@ struct settings_struct settings;
 static struct option long_options[] = {
     {"verbosity", required_argument, NULL, 'v'},
     {"use_trans", no_argument, NULL, 't'},
-    {"use_abs", no_argument, NULL, 'a'},
+    {"use_abs", optional_argument, NULL, 'a'},
     {"parallel", no_argument, NULL, 'p'},
     {"ordering_strategies", no_argument, NULL, 's'},
     {"help", no_argument, NULL, 'h'},
@@ -65,7 +65,11 @@ void usage() {
 << std::endl
 << "-t, --use_trans                    compute a transition relation"
 << std::endl
-<< "-a, --use_abs                      use abstraction when possible"
+<< "-a[THRESHOLD], --use_abs[THRESHOLD]"
+<< std::endl
+<< "                                   use abstraction when possible, and try"
+<< std::endl
+<< "                                   to keep BDD sizes below THRESHOLD"
 << std::endl
 << "-p, --parallel                     launch all solvers in parallel"
 << std::endl
@@ -114,7 +118,7 @@ void parse_arguments(int argc, char** argv) {
     int opt_key;
     int opt_index;
     while (true) {
-        opt_key = getopt_long(argc, argv, "v:tapsc:o:w:i:", long_options,
+        opt_key = getopt_long(argc, argv, "v:ta::psc:o:w:i:", long_options,
                               &opt_index);
         if (opt_key == -1)
             break;
@@ -134,6 +138,15 @@ void parse_arguments(int argc, char** argv) {
             case 'a':
                 logMsg("Using abstraction.");
                 settings.use_abs = true;
+                settings.abs_threshold = 0;
+                if (optarg) {
+                    settings.abs_threshold = atoi(optarg);
+                    if (settings.abs_threshold < 0)
+                        errMsg("Expected a non-negative integer as "
+                               "threshold");
+                    logMsg("Abstraction with threshold = " +
+                           std::to_string(settings.abs_threshold));
+                }
                 break;
             case 'p':
                 logMsg("Using parallel solvers.");
@@ -145,12 +158,9 @@ void parse_arguments(int argc, char** argv) {
                 break;
             case 'c':
                 settings.comp_algo = atoi(optarg);
-                if (settings.comp_algo < 1 || settings.comp_algo > 4) {
-                    errMsg(std::string("Expected comp_algo to be in {1,2,3,4} "
-                                       "instead of ") + optarg);
-                    usage();
-                    exit(1);
-                }
+                if (settings.comp_algo < 1 || settings.comp_algo > 4)
+                    errMsg("Expected comp_algo to be in {1,2,3,4} "
+                           "instead of " + std::string(optarg));
                 break;
             case 'o':
                 settings.out_file = optarg;
@@ -170,12 +180,8 @@ void parse_arguments(int argc, char** argv) {
     argv += optind;
     if (argc > 1) {
         errMsg("Too many arguments");
-        usage();
-        exit(1);
     } else if (argc != 1) {
         errMsg("Too few arguments");
-        usage();
-        exit(1);
     }
     settings.spec_file = argv[0];
 }

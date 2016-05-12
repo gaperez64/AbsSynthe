@@ -397,18 +397,21 @@ static BDD abstractSafeCpreAux(BDDAIG* spec, BDD safe, BDD untracked_actions,
     return temp_bdd.UnivAbstract(uinput_tracked_cube);
 }
 
-static pair<BDD,BDD> abstractSafeCpre(BDDAIG* spec, BDD safe,
-                                      BDD untracked_latches, BDD untracked_actions) {
-    BDD trans_bdd = substituteLatchesNext(spec, safe);
-    BDD trans_and_actions = trans_bdd.Restrict(untracked_actions);
+static BDD abstractSafeCpre(BDDAIG* spec, BDD safe,
+                            BDD untracked_latches,
+                            BDD untracked_actions,
+                            BDD &cache_trans_bdd,
+                            BDD &cache_non_absd_result) {
+    BDD care = ~safe;
+    cache_trans_bdd = substituteLatchesNext(spec, safe, &care);
     BDD cinput_tracked_cube = spec->cinputCube();
-    BDD temp_bdd = trans_and_actions.ExistAbstract(cinput_tracked_cube);
+    BDD temp_bdd = cache_trans_bdd.ExistAbstract(cinput_tracked_cube);
     BDD uinput_tracked_cube = spec->uinputCube().ExistAbstract(untracked_actions);
-    BDD results = temp_bdd.UnivAbstract(uinput_tracked_cube);
+    cache_non_absd_result = temp_bdd.UnivAbstract(uinput_tracked_cube);
     if (untracked_latches.IsZero())
-        return pair<BDD,BDD>(results, trans_bdd);
+        return cache_non_absd_result;
     else
-        return pair<BDD,BDD>(results.ExistAbstract(untracked_latches), trans_bdd);
+        return cache_non_absd_result;
 }
 
 static bool internalSolveAbstract(Cudd* mgr, BDDAIG* spec, const BDD* cpre_init,
@@ -421,7 +424,7 @@ static bool internalSolveAbstract(Cudd* mgr, BDDAIG* spec, const BDD* cpre_init,
         error_states = *cpre_init;
     else
         error_states = spec->errorStates();
-
+    BDD cache_trans, cache_non_absd_result;
     BDD tracked_latches = error_states.Support();
     BDD untracked_latches = spec->latchCube().ExistAbstract(tracked_latches);
     BDD untracked_actions = spec->uinputCube();
@@ -443,21 +446,23 @@ static bool internalSolveAbstract(Cudd* mgr, BDDAIG* spec, const BDD* cpre_init,
         int cnt2 = 0;
         includes_init = false;
         bool cont2 = true;
-        while(cont2 && ! includes_init) {
-  	        dbgMsg("Fixpoint step "+to_string(cnt2));
-  	        pair<BDD,BDD> res = abstractSafeCpre(spec, mayWin, untracked_latches,
-                                                 untracked_actions);
+        while (cont2 && ! includes_init) {
+  	        dbgMsg("Fixpoint step " + to_string(cnt2));
+  	        BDD res = abstractSafeCpre(spec, mayWin, untracked_latches,
+                                       untracked_actions,
+                                       cache_trans, cache_non_absd_result);
   	        BDD mayWin1 = mayWin;
-            mayWin = mayWin & res.first;
+            mayWin = mayWin & res;
             if (mayWin1 == mayWin) {
                 cont2 = false;
-                cache = res.second;
+                cache = cache_trans;
             }
             includes_init = (init_state & mayWin).IsZero();
             cnt2++;
         }
   
-        cache = ~abstractSafeCpreAux(spec,mayWin,untracked_actions,cache);
+        cache = ~abstractSafeCpreAux(spec, mayWin, untracked_actions, 
+                                     cache_trans);
         BDD mayLose = mayWin & cache;
   
         if (includes_init || mayLose.IsZero()) 
@@ -505,6 +510,110 @@ static bool internalSolveAbstract(Cudd* mgr, BDDAIG* spec, const BDD* cpre_init,
     return !includes_init;
 }
 
+static bool internalSolveAbstractBackAndForth(Cudd* mgr, BDDAIG* spec,
+                                              const BDD* cpre_init,
+                                              bool do_synth=false) {
+    int threshold = settings.abs_threshold;
+    unsigned cnt = 0;
+    dbgMsg("Internal solve abstract, threshold = " + to_string(threshold));
+    BDD init_state = spec->initState();
+    BDD error_states;
+    if (cpre_init != NULL)
+        error_states = *cpre_init;
+    else
+        error_states = spec->errorStates();
+    BDD mayWin = ~error_states;
+    BDD cache_trans_bdd;
+    BDD cache_non_abstracted_result;
+    BDD untracked_latches= spec->latchCube();
+    bool fixpoint = false;
+    bool abstract_algo = false;
+  
+    while ((!(init_state & mayWin).IsZero()) && (!fixpoint)) {
+        dbgMsg("Number of untracked latches = " + 
+               to_string(untracked_latches.SupportSize()));    
+        if (mayWin.nodeCount() < threshold) { 
+            abstract_algo = false;
+            dbgMsg("Algos.cpp: Size < Threshold ; Fixpoint step " + 
+                   to_string(++cnt) + " Bdd size : " +
+                   to_string(mayWin.nodeCount()));
+            BDD mayWin1 = mayWin & abstractSafeCpre(spec, mayWin,
+                                                    mgr->bddOne(),
+                                                    mgr->bddOne(),
+                                                    cache_trans_bdd,
+                                                    cache_non_abstracted_result);
+            fixpoint = (mayWin1 == mayWin);
+            mayWin = mayWin1;
+        } else {
+            dbgMsg("Algos.cpp: Threshold <= Size; Fixpoint step " +
+                   to_string(++cnt) + " Bdd size : " +
+                   to_string(mayWin.nodeCount()));
+            dbgMsg("Number of untracked latches = " +
+                   to_string(untracked_latches.SupportSize()));
+            if (!abstract_algo) { 
+                if(untracked_latches== spec->latchCube()) {
+                    BDD implicant = mayWin.LargestCube();
+                    untracked_latches = untracked_latches.
+                        ExistAbstract(implicant.Support());
+                }
+                mayWin = mayWin.ExistAbstract(untracked_latches);
+                abstract_algo = true;
+            }
+            BDD mayWin1 = mayWin & abstractSafeCpre(spec, mayWin,
+                                                    untracked_latches,
+                                                    mgr->bddOne(),
+                                                    cache_trans_bdd,
+                                                    cache_non_abstracted_result);
+            if (mayWin1 == mayWin) {
+                dbgMsg("Promoting");
+                BDD mayLose = mayWin & ~cache_non_abstracted_result;
+                BDD implicant = mayLose.LargestCube();
+                dbgMsg("Size of the implicant = " +
+                       to_string(implicant.SupportSize()));
+                BDD new_untracked = untracked_latches.
+                    ExistAbstract(implicant.Support());
+                dbgMsg("Number of newly untracked latches = " +
+                       to_string(new_untracked.SupportSize()));	  
+                if (new_untracked == untracked_latches) {
+                    dbgMsg("fixpoint");
+                    fixpoint = true;
+                } else
+                   untracked_latches = new_untracked;
+            }
+            mayWin = mayWin1;
+        }
+    }
+
+    BDD bad_transitions = ~abstractSafeCpreAux(spec, mayWin, 
+                                               mgr->bddOne(), cache_trans_bdd);
+
+    bool includes_init = (init_state & mayWin).IsZero();
+    dbgMsg("Early exit? " + to_string(includes_init) + 
+           ", after " + to_string(cnt) + " iterations.");
+
+    if (!includes_init && do_synth && outputExpected()) {
+        dbgMsg("acquiring lock on synth mutex");
+        if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
+        BDD clean_winning_region = (~mayWin).Cofactor(~spec->errorStates());
+        // let us clean the AIG before we start introducing new stuff
+        spec->popErrorLatch();
+        if (settings.out_file != NULL) {
+            dbgMsg("Starting synthesis");
+            finalizeSynth(mgr, spec, 
+                          synthAlgo(mgr, spec, ~bad_transitions, ~mayWin));
+        }
+        if (settings.win_region_out_file != NULL) {
+            dbgMsg("Starting output of winning region");
+            outputWinRegion(mgr, spec, clean_winning_region);
+        }
+        if (settings.ind_cert_out_file != NULL) {
+            dbgMsg("Starting output of inductive certificate");
+            outputIndCertificate(mgr, spec, clean_winning_region);
+        }
+    }
+    return !includes_init;
+}
+
 // NOTE: trans_bdd contains the set of all transitions going into bad
 // states after the upre step (the complement of all good transitions)
 static BDD upre(BDDAIG* spec, BDD dst, BDD &trans_bdd) {
@@ -515,16 +624,6 @@ static BDD upre(BDDAIG* spec, BDD dst, BDD &trans_bdd) {
     BDD temp_bdd = trans_bdd.UnivAbstract(cinput_cube);
     return temp_bdd.ExistAbstract(uinput_cube);
 }
-
-// NOTE: trans_bdd contains the set of all transitions going into bad
-// states after the upre step (the complement of all good transitions)
-//static BDD pre(BDDAIG* spec, BDD dst, BDD &trans_bdd) {
-//    BDD not_dst = ~dst;
-//    trans_bdd = substituteLatchesNext(spec, dst, &not_dst);
-//    BDD cinput_cube = spec->cinputCube();
-//    BDD uinput_cube = spec->uinputCube();
-//    return trans_bdd.ExistAbstract(cinput_cube & uinput_cube);
-//}
 
 static bool internalSolveExact(Cudd* mgr, BDDAIG* spec, const BDD* upre_init, 
                                BDD* losing_region, BDD* losing_transitions,
@@ -601,8 +700,16 @@ static bool internalSolve(Cudd* mgr, BDDAIG* spec, const BDD* upre_init,
     // if the caller does not care about the losing region or losing
     // transitions, then we can use abstraction! given that the use_abs flag was
     // set
-    if (settings.use_abs && (losing_region == NULL) && (losing_transitions == NULL))
-        return internalSolveAbstract(mgr, spec, upre_init, do_synth);
+    if (settings.use_abs &&
+        (losing_region == NULL) &&
+        (losing_transitions == NULL)) {
+
+        if (!settings.abs_threshold)
+            return internalSolveAbstract(mgr, spec, upre_init, do_synth);
+        else
+            return internalSolveAbstractBackAndForth(mgr, spec,
+                                                     upre_init, do_synth);
+    }
 
     // otherwise, just use the exact version
     return internalSolveExact(mgr, spec, upre_init, losing_region,

@@ -34,6 +34,7 @@ struct settings_struct {
     bool parallel;
     bool ordering_strategies;
     int comp_algo;
+    int abs_threshold;
     const char* spec_file;
     const char* out_file;
     const char* win_region_out_file;
