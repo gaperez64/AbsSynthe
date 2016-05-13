@@ -411,7 +411,7 @@ static BDD abstractSafeCpre(BDDAIG* spec, BDD safe,
     if (untracked_latches.IsZero())
         return cache_non_absd_result;
     else
-        return cache_non_absd_result;
+        return cache_non_absd_result.ExistAbstract(untracked_latches);
 }
 
 static bool internalSolveAbstract(Cudd* mgr, BDDAIG* spec, const BDD* cpre_init,
