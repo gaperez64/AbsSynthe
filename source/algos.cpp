@@ -471,14 +471,14 @@ static bool internalSolveAbstract(Cudd* mgr, BDDAIG* spec, const BDD* cpre_init,
             cache = mgr->bddOne();
             dbgMsg("Promoting");
             BDD implicant = mayLose.LargestCube();
-            dbgMsg("Size of the implicant = "+to_string(implicant.SupportSize()));
+            dbgMsg("Size of the implicant = " + to_string(implicant.SupportSize()));
   
             untracked_latches = untracked_latches.ExistAbstract(implicant.Support());
             BDD new_untracked = untracked_actions.ExistAbstract(implicant.Support());
-            mayWin = mayWin & ~ mayLose.ExistAbstract(untracked_actions)
-                                       .UnivAbstract(untracked_latches);
+            mayWin = mayWin & ~mayLose.ExistAbstract(untracked_actions)
+                                      .UnivAbstract(untracked_latches);
             untracked_actions = new_untracked;
-          cnt++;
+            cnt++;
         }
     }
     
