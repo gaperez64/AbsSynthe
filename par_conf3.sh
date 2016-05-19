@@ -1,11 +1,11 @@
 #!/bin/bash
 DIR=`dirname $0`/
 # $1 contains the input filename (the name of the AIGER-file).
-COMMAND="${DIR}binary/abssynthe -a2048 -c 1 $1 -o $1-result.aag"
+COMMAND="${DIR}binary/abssynthe -a -p -s $1"
 $COMMAND
 res=$?
 if [[ $res == 10 ]]; then
-    cat "$1-result.aag"
+    echo "REALIZABLE"
 else
     echo "UNREALIZABLE"
 fi

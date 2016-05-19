@@ -1239,13 +1239,18 @@ static void pWorker(AIG* spec_base, int solver) {
             result = solve(spec_base);
             break;
         case 1:
-            result = compSolve1(spec_base);
+            settings.use_abs = true;
+            result = solve(spec_base);
             break;
         case 2:
-            result = compSolve2(spec_base);
+            settings.use_abs = true;
+            settings.abs_threshold = 2048;
+            result = compSolve1(spec_base);
             break;
         case 3:
-            result = compSolve3(spec_base);
+            settings.use_abs = true;
+            settings.abs_threshold = 2048;
+            result = compSolve2(spec_base);
             break;
         case 4:
             result = solve(spec_base, CUDD_REORDER_SIFT);
