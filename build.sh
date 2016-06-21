@@ -7,5 +7,5 @@ make objlib
 cd ..
 make
 cd ..
-mkdir ${DIR}binary
+mkdir -p ${DIR}binary
 cp ${DIR}source/abssynthe ${DIR}binary/abssynthe

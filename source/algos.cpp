@@ -496,7 +496,7 @@ static bool internalSolveAbstract(Cudd* mgr, BDDAIG* spec, const BDD* cpre_init,
         if (settings.out_file != NULL) {
             dbgMsg("Starting synthesis");
             finalizeSynth(mgr, spec, 
-                          synthAlgo(mgr, spec, ~bad_transitions, mayWin));
+                          synthAlgo(mgr, spec, ~bad_transitions, clean_winning_region));
         }
         if (settings.win_region_out_file != NULL) {
             dbgMsg("Starting output of winning region");
@@ -670,8 +670,9 @@ static bool internalSolveExact(Cudd* mgr, BDDAIG* spec, const BDD* upre_init,
 #ifndef NDEBUG
         // we can check that the bdd represents an inductive winning region as
         // follows
+        BDD temp_bad_trans;
         assert(((~clean_winning_region |
-                 upre(spec, ~clean_winning_region, bad_transitions)) &
+                 upre(spec, ~clean_winning_region, temp_bad_trans)) &
                 clean_winning_region) == ~mgr->bddOne());
 #endif
         // let us clean the AIG before we start introducing new stuff
