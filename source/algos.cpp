@@ -427,7 +427,7 @@ static bool internalSolveAbstract(Cudd* mgr, BDDAIG* spec, const BDD* cpre_init,
     BDD cache_trans, cache_non_absd_result;
     BDD tracked_latches = error_states.Support();
     BDD untracked_latches = spec->latchCube().ExistAbstract(tracked_latches);
-    BDD untracked_actions = spec->uinputCube();
+    BDD untracked_actions = mgr->bddOne();//spec->uinputCube();
     bool includes_init = (init_state & error_states).IsZero();
   
     BDD mayWin = ~error_states;
@@ -490,13 +490,13 @@ static bool internalSolveAbstract(Cudd* mgr, BDDAIG* spec, const BDD* cpre_init,
     if (!includes_init && do_synth && outputExpected()) {
         dbgMsg("acquiring lock on synth mutex");
         if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
-        BDD clean_winning_region = (~error_states).Cofactor(~spec->errorStates());
+        BDD clean_winning_region = (mayWin).Cofactor(~spec->errorStates());
         // let us clean the AIG before we start introducing new stuff
         spec->popErrorLatch();
         if (settings.out_file != NULL) {
             dbgMsg("Starting synthesis");
             finalizeSynth(mgr, spec, 
-                          synthAlgo(mgr, spec, ~bad_transitions, ~error_states));
+                          synthAlgo(mgr, spec, ~bad_transitions, mayWin));
         }
         if (settings.win_region_out_file != NULL) {
             dbgMsg("Starting output of winning region");
@@ -594,13 +594,13 @@ static bool internalSolveAbstractBackAndForth(Cudd* mgr, BDDAIG* spec,
     if (!includes_init && do_synth && outputExpected()) {
         dbgMsg("acquiring lock on synth mutex");
         if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
-        BDD clean_winning_region = (~mayWin).Cofactor(~spec->errorStates());
+        BDD clean_winning_region = (mayWin).Cofactor(~spec->errorStates());
         // let us clean the AIG before we start introducing new stuff
         spec->popErrorLatch();
         if (settings.out_file != NULL) {
             dbgMsg("Starting synthesis");
             finalizeSynth(mgr, spec, 
-                          synthAlgo(mgr, spec, ~bad_transitions, ~mayWin));
+                          synthAlgo(mgr, spec, ~bad_transitions, mayWin));
         }
         if (settings.win_region_out_file != NULL) {
             dbgMsg("Starting output of winning region");
