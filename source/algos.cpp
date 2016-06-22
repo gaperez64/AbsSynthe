@@ -246,7 +246,9 @@ static void outputWinRegion(Cudd* mgr, BDDAIG* spec, BDD winning_region) {
     blank_spec.addOutput(bdd2aig(mgr, &blank_spec,
                                  winning_region, &cache), "winning region");
     // Finally, we write the file
+    dbgMsg("About to write the winning region");
     blank_spec.writeToFile(settings.win_region_out_file);
+    dbgMsg("Winning region done!");
 }
 
 static void outputIndCertificate(Cudd* mgr, BDDAIG* spec, BDD winning_region) {
@@ -482,7 +484,7 @@ static bool internalSolveAbstract(Cudd* mgr, BDDAIG* spec, const BDD* cpre_init,
         }
     }
     
-    BDD bad_transitions = cache; 
+    BDD bad_transitions = ~cache_trans; 
   
     dbgMsg("Early exit? " + to_string(includes_init) + 
   	       ", after " + to_string(cnt) + " iterations.");
@@ -584,8 +586,9 @@ static bool internalSolveAbstractBackAndForth(Cudd* mgr, BDDAIG* spec,
         }
     }
 
-    BDD bad_transitions = ~abstractSafeCpreAux(spec, mayWin, 
-                                               mgr->bddOne(), cache_trans_bdd);
+    BDD bad_transitions = ~cache_trans_bdd;
+                          //~abstractSafeCpreAux(spec, mayWin, 
+                          //                     mgr->bddOne(), cache_trans_bdd);
 
     bool includes_init = (init_state & mayWin).IsZero();
     dbgMsg("Early exit? " + to_string(includes_init) + 
@@ -600,7 +603,7 @@ static bool internalSolveAbstractBackAndForth(Cudd* mgr, BDDAIG* spec,
         if (settings.out_file != NULL) {
             dbgMsg("Starting synthesis");
             finalizeSynth(mgr, spec, 
-                          synthAlgo(mgr, spec, ~bad_transitions, mayWin));
+                          synthAlgo(mgr, spec, ~bad_transitions, clean_winning_region));
         }
         if (settings.win_region_out_file != NULL) {
             dbgMsg("Starting output of winning region");
@@ -704,6 +707,7 @@ static bool internalSolve(Cudd* mgr, BDDAIG* spec, const BDD* upre_init,
     if (settings.use_abs &&
         (losing_region == NULL) &&
         (losing_transitions == NULL)) {
+        dbgMsg("Using an internal abstract solver");
 
         if (!settings.abs_threshold)
             return internalSolveAbstract(mgr, spec, upre_init, do_synth);
@@ -818,6 +822,7 @@ bool compSolve1(AIG* spec_base) {
     } else if (outputExpected()) {
         dbgMsg("acquiring lock on synth mutex");
         if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
+        dbgMsg("Synthesis via comp 1");
         vector<pair<unsigned, BDD>> all_cinput_strats;
         vector<pair<BDD, BDD>>::iterator sg = subgame_results.begin();
         BDD global_lose = ~mgr.bddOne();
@@ -943,8 +948,12 @@ bool compSolve2(AIG* spec_base) {
     if (outputExpected()) {
         dbgMsg("acquiring lock on synth mutex");
         if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
+        dbgMsg("synthesis via comp 2");
         BDD clean_winning_region =
             (~subgame_results.back().first).Cofactor(~spec.errorStates());
+        clean_winning_region = clean_winning_region
+                                           .ExistAbstract(spec.cinputCube() &
+                                                          spec.uinputCube());
         // let us clean the AIG before we start introducing new stuff
         spec.popErrorLatch();
         if (settings.out_file != NULL) {
@@ -1251,7 +1260,7 @@ static void pWorker(AIG* spec_base, int solver) {
         case 3:
             settings.use_abs = true;
             settings.abs_threshold = 2048;
-            result = compSolve2(spec_base);
+            result = solve(spec_base);
             break;
         case 4:
             result = solve(spec_base, CUDD_REORDER_SIFT);
