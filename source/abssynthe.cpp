@@ -55,7 +55,8 @@ static struct option long_options[] = {
 void usage() {
     std::cout << ABSSYNTHE_VERSION << std::endl
 << "usage:" << std::endl
-<<"./abssynthe [-h] [-t] [-a] [-p] [-s] [-c {1,2,3,4}] [-v VERBOSE_LEVEL] [-o OUT_FILE] spec"
+<<"./abssynthe [-h] [-t] [-a] [-p] [-s] [-c {1,2,3,4}] "
+<<"[-v VERBOSE_LEVEL] [-o OUT_FILE] spec"
 << std::endl
 << "positional arguments:" << std::endl
 << "spec                               input specification in extended AIGER format"
@@ -101,7 +102,7 @@ void usage() {
 << "-i IND_CERT_OUT_FILE, --ind_cert IND_CERT_OUT_FILE" << std::endl
 << "                                   Output a certificate of the winning region "
 << std::endl
-<< "                                   being inductive (in QDIMACS)."
+<< "                                   being inductive (.aig .aag or .qdimacs)."
 << std::endl;
 }
 

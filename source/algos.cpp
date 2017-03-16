@@ -357,9 +357,17 @@ static void outputIndCertificate(Cudd* mgr, BDDAIG* spec, BDD winning_region) {
     blank_spec.addOutput(AIG::negateLit(
                          blank_spec.optimizedGate(w, AIG::negateLit(w_primed))),
                          "inductivity check");
-    // Finally, we write the file as QDIMACS
-    blank_spec.writeToFileAsCnf(settings.ind_cert_out_file, c_lits, cinputs.size());
-    //blank_spec.writeToFile(settings.ind_cert_out_file);
+    // output certificate in different formats
+    string file_string(settings.ind_cert_out_file);
+    string file_ext = file_string.substr(file_string.find_last_of(".") + 1);
+    if (file_ext == "qdimacs") {
+        blank_spec.writeToFileAsCnf(settings.ind_cert_out_file, c_lits,
+                                    cinputs.size());
+    } else if ((file_ext == "aig") || (file_ext == "aag")) {
+        blank_spec.writeToFile(settings.ind_cert_out_file);
+    } else {
+        errMsg("Inductive certificate file extension not known");
+    }
 }
 
 static BDD substituteLatchesNext(BDDAIG* spec, BDD dst, BDD* care_region=NULL) {
@@ -498,7 +506,8 @@ static bool internalSolveAbstract(Cudd* mgr, BDDAIG* spec, const BDD* cpre_init,
         if (settings.out_file != NULL) {
             dbgMsg("Starting synthesis");
             finalizeSynth(mgr, spec, 
-                          synthAlgo(mgr, spec, ~bad_transitions, clean_winning_region));
+                          synthAlgo(mgr, spec, ~bad_transitions,
+                                    clean_winning_region));
         }
         if (settings.win_region_out_file != NULL) {
             dbgMsg("Starting output of winning region");
@@ -603,7 +612,8 @@ static bool internalSolveAbstractBackAndForth(Cudd* mgr, BDDAIG* spec,
         if (settings.out_file != NULL) {
             dbgMsg("Starting synthesis");
             finalizeSynth(mgr, spec, 
-                          synthAlgo(mgr, spec, ~bad_transitions, clean_winning_region));
+                          synthAlgo(mgr, spec, ~bad_transitions,
+                                    clean_winning_region));
         }
         if (settings.win_region_out_file != NULL) {
             dbgMsg("Starting output of winning region");
@@ -963,7 +973,7 @@ bool compSolve2(AIG* spec_base) {
                                     mgr.bddOne()),
                           spec_base);
         }
-        // WARNING: it seems that synthesizing and generating a winning region
+        // TODO: it seems that synthesizing and generating a winning region
         // at the same time is not possible with this buggy code!
         if (settings.win_region_out_file != NULL) {
             dbgMsg("Starting output of winning region");
