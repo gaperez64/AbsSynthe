@@ -963,6 +963,8 @@ bool compSolve2(AIG* spec_base) {
                                     mgr.bddOne()),
                           spec_base);
         }
+        // WARNING: it seems that synthesizing and generating a winning region
+        // at the same time is not possible with this buggy code!
         if (settings.win_region_out_file != NULL) {
             dbgMsg("Starting output of winning region");
             outputWinRegion(&mgr, &spec, clean_winning_region);
