@@ -39,7 +39,7 @@ struct settings_struct settings;
 
 
 static struct option long_options[] = {
-    {"verbosity", required_argument, NULL, 'v'},
+    {"verbose_level", required_argument, NULL, 'v'},
     {"use_trans", no_argument, NULL, 't'},
     {"use_abs", optional_argument, NULL, 'a'},
     {"parallel", no_argument, NULL, 'p'},
