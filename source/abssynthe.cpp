@@ -42,6 +42,7 @@ static struct option long_options[] = {
     {"verbose_level", required_argument, NULL, 'v'},
     {"use_trans", no_argument, NULL, 't'},
     {"use_abs", optional_argument, NULL, 'a'},
+    {"use_rsynth", optional_argument, NULL, 'r'},
     {"parallel", no_argument, NULL, 'p'},
     {"ordering_strategies", no_argument, NULL, 's'},
     {"help", no_argument, NULL, 'h'},
@@ -55,7 +56,7 @@ static struct option long_options[] = {
 void usage() {
     std::cout << ABSSYNTHE_VERSION << std::endl
 << "usage:" << std::endl
-<<"./abssynthe [-h] [-t] [-a] [-p] [-s] [-c {1,2,3,4}] "
+<<"./abssynthe [-h] [-t] [-a] [-r] [-p] [-s] [-c {1,2,3,4}] "
 <<"[-v VERBOSE_LEVEL] [-o OUT_FILE] spec"
 << std::endl
 << "positional arguments:" << std::endl
@@ -69,6 +70,10 @@ void usage() {
 << "-a[THRESHOLD], --use_abs[THRESHOLD]"
 << std::endl
 << "                                   use abstraction when possible, and try"
+<< std::endl
+<< "-r, --use_rsynth                   use RSynth's self-substitution"
+<< std::endl
+<< "                                   to generate output strategy"
 << std::endl
 << "                                   to keep BDD sizes below THRESHOLD"
 << std::endl
@@ -119,7 +124,7 @@ void parse_arguments(int argc, char** argv) {
     int opt_key;
     int opt_index;
     while (true) {
-        opt_key = getopt_long(argc, argv, "v:ta::psc:o:w:i:", long_options,
+        opt_key = getopt_long(argc, argv, "v:ta::prsc:o:w:i:", long_options,
                               &opt_index);
         if (opt_key == -1)
             break;
@@ -135,6 +140,10 @@ void parse_arguments(int argc, char** argv) {
             case 't':
                 logMsg("Using transition relation.");
                 settings.use_trans = true;
+                break;
+            case 'r':
+                logMsg("Using RSynth");
+                settings.use_rsynth = true;
                 break;
             case 'a':
                 logMsg("Using abstraction.");

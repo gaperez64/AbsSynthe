@@ -32,6 +32,7 @@
 #include <string>
 #include <algorithm>
 #include <iostream>
+#include <fstream>
 #include <ctime>
 #include <list>
 #include <set>
@@ -174,10 +175,18 @@ static vector<pair<unsigned, BDD>> synthAlgo(Cudd* mgr, BDDAIG* spec,
         BDD local_care_set = care_set & (must_be_true | must_be_false);
         // on care set: must_be_true.restrict(care_set) <-> must_be_true
         // or         ~(must_be_false).restrict(care_set) <-> ~must_be_false
-        BDD opt1 = BDDAIG::safeRestrict(must_be_true, local_care_set);
-        //dbgMsg("opt1 BDD size: " + to_string(opt1.nodeCount()));
-        BDD opt2 = BDDAIG::safeRestrict(~must_be_false, local_care_set);
-        //dbgMsg("opt2 BDD size: " + to_string(opt2.nodeCount()));
+        BDD opt1;
+        BDD opt2;
+        if (settings.use_rsynth) {
+            // TODO: self-substitute using can_be_true and not can_be_false
+            opt1 = BDDAIG::safeRestrict(can_be_true, local_care_set);
+            opt2 = BDDAIG::safeRestrict(~can_be_false, local_care_set);
+        } else {
+            opt1 = BDDAIG::safeRestrict(must_be_true, local_care_set);
+            //dbgMsg("opt1 BDD size: " + to_string(opt1.nodeCount()));
+            opt2 = BDDAIG::safeRestrict(~must_be_false, local_care_set);
+            //dbgMsg("opt2 BDD size: " + to_string(opt2.nodeCount()));
+        }
         BDD res;
         if (opt1.nodeCount() < opt2.nodeCount())
             res = opt1;
@@ -187,7 +196,8 @@ static vector<pair<unsigned, BDD>> synthAlgo(Cudd* mgr, BDDAIG* spec,
         dbgMsg("Size of function for " + to_string(c.NodeReadIndex()) + " = " +
                to_string(res.nodeCount()));
 #endif
-        strategy &= (~c | res) & (~res | c);
+        //strategy &= (~c | res) & (~res | c);
+        strategy = strategy.Compose(res, (*i)->lit);
         c_input_funs.push_back(res);
         c_input_lits.push_back((*i)->lit);
     }
