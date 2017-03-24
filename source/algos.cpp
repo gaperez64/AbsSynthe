@@ -175,23 +175,26 @@ static vector<pair<unsigned, BDD>> synthAlgo(Cudd* mgr, BDDAIG* spec,
         BDD local_care_set = care_set & (must_be_true | must_be_false);
         // on care set: must_be_true.restrict(care_set) <-> must_be_true
         // or         ~(must_be_false).restrict(care_set) <-> ~must_be_false
-        BDD opt1;
-        BDD opt2;
-        if (settings.use_rsynth) {
-            // TODO: self-substitute using can_be_true and not can_be_false
-            opt1 = BDDAIG::safeRestrict(can_be_true, local_care_set);
-            opt2 = BDDAIG::safeRestrict(~can_be_false, local_care_set);
-        } else {
-            opt1 = BDDAIG::safeRestrict(must_be_true, local_care_set);
-            //dbgMsg("opt1 BDD size: " + to_string(opt1.nodeCount()));
-            opt2 = BDDAIG::safeRestrict(~must_be_false, local_care_set);
-            //dbgMsg("opt2 BDD size: " + to_string(opt2.nodeCount()));
-        }
+        BDD opt1 = BDDAIG::safeRestrict(must_be_true, local_care_set);
+        BDD opt2 = BDDAIG::safeRestrict(~must_be_false, local_care_set);
+        // choose the smallest
         BDD res;
         if (opt1.nodeCount() < opt2.nodeCount())
             res = opt1;
         else
             res = opt2;
+        // there are two other possibilities we could consider using a trick
+        // from Vardi's RSynth tool
+        if (settings.use_rsynth) {
+            // self-substitute using can_be_true and not can_be_false
+            opt1 = BDDAIG::safeRestrict(can_be_true, local_care_set);
+            opt2 = BDDAIG::safeRestrict(~can_be_false, local_care_set);
+            if (opt1.nodeCount() < opt2.nodeCount() &&
+                    opt1.nodeCount() < res.nodeCount())
+                res = opt1;
+            else if (opt2.nodeCount() < res.nodeCount())
+                res = opt2;
+        }
 #ifndef NDEBUG
         dbgMsg("Size of function for " + to_string(c.NodeReadIndex()) + " = " +
                to_string(res.nodeCount()));
