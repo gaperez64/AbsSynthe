@@ -34,6 +34,7 @@ struct settings_struct {
     bool use_rsynth;
     bool parallel;
     bool ordering_strategies;
+    bool final_reordering;
     int comp_algo;
     int n_folds;
     int abs_threshold;

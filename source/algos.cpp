@@ -221,6 +221,9 @@ static void finalizeSynth(Cudd* mgr, BDDAIG* spec,
                           vector<pair<unsigned, BDD>> result, AIG* original=NULL) {
     // we now get rid of all controllable inputs in the aig spec by replacing
     // each one with an and computed using bdd2aig...
+    if (settings.final_reordering) {
+        mgr->ReduceHeap(CUDD_REORDER_SIFT_CONVERGE, 0);
+    }
     // NOTE: because of the way bdd2aig is implemented, we must ensure that BDDs are
     // no longer operated on after this point!
     unordered_map<unsigned long, unsigned> cache;
@@ -230,6 +233,10 @@ static void finalizeSynth(Cudd* mgr, BDDAIG* spec,
     for (vector<pair<unsigned, BDD>>::iterator i = result.begin();
          i != result.end(); i++) {
         spec->input2gate(i->first, bdd2aig(mgr, spec, i->second, &cache));
+#ifndef NDEBUG
+        dbgMsg("final function BDD size: " +
+               to_string((i->second).nodeCount()));
+#endif
         if (original != NULL)
             cinputs.erase(remove(cinputs.begin(), cinputs.end(), i->first),
                           cinputs.end());

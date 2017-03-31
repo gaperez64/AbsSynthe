@@ -42,6 +42,7 @@ static struct option long_options[] = {
     {"verbose_level", required_argument, NULL, 'v'},
     {"use_trans", no_argument, NULL, 't'},
     {"use_abs", optional_argument, NULL, 'a'},
+    {"min_ordering", optional_argument, NULL, 'm'},
     {"use_rsynth", optional_argument, NULL, 'r'},
     {"parallel", no_argument, NULL, 'p'},
     {"ordering_strategies", no_argument, NULL, 's'},
@@ -57,8 +58,8 @@ static struct option long_options[] = {
 void usage() {
     std::cout << ABSSYNTHE_VERSION << std::endl
 << "usage:" << std::endl
-<<"./abssynthe [-h] [-t] [-a] [-r] [-p] [-s] [-c {1,2,3,4}] "
-<<"[-f N_FOLDS] [-v VERBOSE_LEVEL] [-o OUT_FILE] spec"
+<< "./abssynthe [-h] [-t] [-a] [-r] [-p] [-s] [-c {1,2,3,4}] "
+<< "[-f N_FOLDS] [-m] [-v VERBOSE_LEVEL] [-o OUT_FILE] spec"
 << std::endl
 << "positional arguments:" << std::endl
 << "spec                               input specification in extended AIGER format"
@@ -90,6 +91,10 @@ void usage() {
 << "-f N_FOLDS, --fold N_FOLDS         merge subgames with non-empty dependency"
 << std::endl
 << "                                   set (N_FOLDS rounds of folding)"
+<< std::endl
+<< "-m, --min_ordering                 manual reordering just before generating"
+<< std::endl
+<< "                                   output, to obtain a smaller circuit"
 << std::endl
 << "-v VERBOSE_LEVEL, --verbose_level VERBOSE_LEVEL" << std::endl
 << "                                   Verbose level string, i.e. (D)ebug,"
@@ -124,18 +129,25 @@ void parse_arguments(int argc, char** argv) {
     std::cout << std::endl;
 #endif
     // default values
-    settings.comp_algo = 0;
     settings.use_trans = false;
+    settings.use_abs = false;
+    settings.use_rsynth = false;
     settings.parallel = false;
     settings.ordering_strategies = false;
-    settings.out_file = NULL;
+    settings.final_reordering = false;
+    settings.comp_algo = 0;
+    settings.n_folds = 0;
+    settings.abs_threshold = 0;
     settings.spec_file = NULL;
+    settings.out_file = NULL;
+    settings.win_region_out_file = NULL;
+    settings.ind_cert_out_file = NULL;
 
     // read values from argv
     int opt_key;
     int opt_index;
     while (true) {
-        opt_key = getopt_long(argc, argv, "v:ta::prsc:f:o:w:i:", long_options,
+        opt_key = getopt_long(argc, argv, "v:ta::prsmc:f:o:w:i:", long_options,
                               &opt_index);
         if (opt_key == -1)
             break;
@@ -153,6 +165,9 @@ void parse_arguments(int argc, char** argv) {
                 break;
             case 'r':
                 settings.use_rsynth = true;
+                break;
+            case 'm':
+                settings.final_reordering = true;
                 break;
             case 'a':
                 settings.use_abs = true;
