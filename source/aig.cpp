@@ -52,6 +52,15 @@ static bool setInclusion(std::set<unsigned>* A, std::set<unsigned>* B) {
     return diff.size() == 0;
 }
 
+// A & B is non-empty
+static bool emptyIntersection(std::set<unsigned>* A,
+                              std::set<unsigned>* B) {
+    std::set<unsigned> intersection;
+    std::set_intersection(A->begin(), A->end(), B->begin(), B->end(),
+                          std::inserter(intersection, intersection.begin()));
+    return intersection.size() == 0;
+}
+
 unsigned AIG::maxVar() {
     return this->spec->maxvar;
 }
@@ -855,7 +864,9 @@ std::set<unsigned> BDDAIG::getBddLatchDeps(BDD b) {
     return depLatches;
 }
 
-std::vector<BDD> BDDAIG::mergeSomeSignals(BDD cube, std::vector<unsigned>* original) {
+std::vector<BDD> BDDAIG::mergeSomeSignals(BDD cube,
+                                          std::vector<unsigned>* original,
+                                          int n_folds) {
     logMsg(std::to_string(original->size()) + " sub-games originally");
     const std::set<unsigned> cube_deps = this->getBddDeps(cube);
 #if false
@@ -888,7 +899,7 @@ std::vector<BDD> BDDAIG::mergeSomeSignals(BDD cube, std::vector<unsigned>* origi
         std::vector<std::set<unsigned>>::iterator dep_it = dep_vector.begin();
         std::vector<BDD>::iterator bdd_it = bdd_vector.begin();
         bool found = false;
-        for (; dep_it != dep_vector.end();) {
+        while (dep_it != dep_vector.end()) {
             if (setInclusion(&deps, &(*dep_it))) {
                 //dbgMsg("this subgame is subsumed by some previous subgame");
                 (*bdd_it) &= this->lit2bdd(*i);
@@ -900,6 +911,9 @@ std::vector<BDD> BDDAIG::mergeSomeSignals(BDD cube, std::vector<unsigned>* origi
                 assert((*bdd_it) == ((*bdd_it) & this->lit2bdd(*i)));
                 // we also update the deps because the new one is bigger
                 (*dep_it) = deps;
+                // WARNING: this is a new idea, should we just not add the
+                // subsuming game in the end?
+                found = true;
             }
             dep_it++;
             bdd_it++;
@@ -909,10 +923,48 @@ std::vector<BDD> BDDAIG::mergeSomeSignals(BDD cube, std::vector<unsigned>* origi
             dep_vector.push_back(deps);
             bdd_vector.push_back(this->lit2bdd(*i));
         }
-
     }
 
     logMsg(std::to_string(dep_vector.size()) + " sub-games after incl. red.");
+    
+    /* We now try to `fold' some subgames depending on whether they share
+     * some variables from their dependencies already. We make this check
+     * so that we do not merge subgames that have nothing to do with each
+     * other
+     */
+    for (int i = 0; i < n_folds; i++) {
+        std::vector<std::set<unsigned>> new_dep_vector;
+        std::vector<BDD> new_bdd_vector;
+
+        std::vector<std::set<unsigned>>::iterator dep_it = dep_vector.begin();
+        std::vector<std::set<unsigned>>::iterator dep_next = std::next(dep_it);
+        std::vector<BDD>::iterator bdd_it = bdd_vector.begin();
+        std::vector<BDD>::iterator bdd_next = std::next(bdd_it);
+        while (dep_next != dep_vector.end()) {
+            if (!emptyIntersection(&(*dep_next), &(*dep_it))) {
+                std::set<unsigned> dep_union;
+                std::set_union(dep_it->begin(), dep_it->end(),
+                               dep_next->begin(), dep_next->end(),
+                               std::inserter(dep_union, dep_union.begin()));
+                new_dep_vector.push_back(dep_union);
+                new_bdd_vector.push_back((*bdd_it) & (*bdd_next));
+            } else {
+                new_dep_vector.push_back(*dep_it);
+                new_dep_vector.push_back(*dep_next);
+                new_bdd_vector.push_back(*bdd_it);
+                new_bdd_vector.push_back(*bdd_next);
+            }
+            dep_it += 2;
+            bdd_it += 2;
+            if (dep_it == dep_vector.end())
+                break;
+            dep_next += 2;
+            bdd_next += 2;
+        }
+        dep_vector = new_dep_vector;
+        bdd_vector = new_bdd_vector;
+    }
+    logMsg(std::to_string(dep_vector.size()) + " sub-games after folding.");
     
     // as a last step, we should take NOT x AND cube, for each bdd
     std::vector<BDD> bdd_vector_with_cube;
@@ -922,10 +974,14 @@ std::vector<BDD> BDDAIG::mergeSomeSignals(BDD cube, std::vector<unsigned>* origi
     }
     /*
     dbgMsg("- Summary of Execution Times -");
-    std::cout << "lit2bdd: " << (getAccTime("lit2bdd") / (double)CLOCKS_PER_SEC) << "\n";
-    std::cout << "getLitDeps: " << (getAccTime("getLitDeps") / (double)CLOCKS_PER_SEC) << "\n";
-    std::cout << "getBddDeps: " << (getAccTime("getBddDeps") / (double)CLOCKS_PER_SEC) << "\n";
-    std::cout << "intersect: " << (getAccTime("intersect") / (double)CLOCKS_PER_SEC) << "\n";
+    std::cout << "lit2bdd: "
+              << (getAccTime("lit2bdd") / (double)CLOCKS_PER_SEC) << "\n";
+    std::cout << "getLitDeps: "
+              << (getAccTime("getLitDeps") / (double)CLOCKS_PER_SEC) << "\n";
+    std::cout << "getBddDeps: "
+              << (getAccTime("getBddDeps") / (double)CLOCKS_PER_SEC) << "\n";
+    std::cout << "intersect: "
+              << (getAccTime("intersect") / (double)CLOCKS_PER_SEC) << "\n";
     */
     return bdd_vector_with_cube;
 }
@@ -942,14 +998,14 @@ std::set<unsigned> BDDAIG::semanticDeps(BDD b) {
     return result;
 }
 
-std::vector<BDDAIG*> BDDAIG::decompose() {
+std::vector<BDDAIG*> BDDAIG::decompose(int n_folds) {
     std::vector<BDDAIG*> result;
     if (AIG::litIsNegated(this->error_fake_latch.next)) {
         logMsg("Decomposition possible (BIG OR case)");
         std::vector<unsigned> A, B;
         this->getNInputAnd(AIG::stripLit(this->error_fake_latch.next), &A, &B);
         std::vector<BDD> clean_signals = this->mergeSomeSignals(this->mgr->bddOne(),
-                                                                &A);
+                                                                &A, n_folds);
         for (std::vector<BDD>::iterator i = clean_signals.begin();
              i != clean_signals.end(); i++) {
             result.push_back(new BDDAIG(*this, *i));
@@ -985,7 +1041,7 @@ std::vector<BDDAIG*> BDDAIG::decompose() {
                     and_leaves_cube &= this->lit2bdd(*i);
             }
             std::vector<BDD> clean_signals = this->mergeSomeSignals(and_leaves_cube,
-                                                                    &C);
+                                                                    &C, n_folds);
             for (std::vector<BDD>::iterator i = clean_signals.begin();
                  i != clean_signals.end(); i++) {
                 result.push_back(new BDDAIG(*this, *i));

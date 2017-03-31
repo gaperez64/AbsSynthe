@@ -104,7 +104,7 @@ class BDDAIG : public AIG {
         std::unordered_map<unsigned long, std::set<unsigned>>* bdd2deps_map;
         std::vector<BDD>* next_fun_compose_vec;
         BDD lit2bdd(unsigned);
-        std::vector<BDD> mergeSomeSignals(BDD, std::vector<unsigned>*);
+        std::vector<BDD> mergeSomeSignals(BDD, std::vector<unsigned>*, int);
         void defaultValues();
     public:
         static BDD safeRestrict(BDD, BDD);
@@ -129,7 +129,7 @@ class BDDAIG : public AIG {
         std::set<unsigned> getBddLatchDeps(BDD);
         std::vector<BDD> nextFunComposeVec(BDD*);
         std::vector<BDD> getNextFunVec();
-        std::vector<BDDAIG*> decompose();
+        std::vector<BDDAIG*> decompose(int);
         bool isValidLatchBdd(BDD);
         bool isValidBdd(BDD);
 };

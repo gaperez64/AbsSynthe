@@ -47,6 +47,7 @@ static struct option long_options[] = {
     {"ordering_strategies", no_argument, NULL, 's'},
     {"help", no_argument, NULL, 'h'},
     {"comp_algo", required_argument, NULL, 'c'},
+    {"fold", required_argument, NULL, 'f'},
     {"out_file", required_argument, NULL, 'o'},
     {"win_region", required_argument, NULL, 'w'},
     {"ind_cert", required_argument, NULL, 'i'},
@@ -57,7 +58,7 @@ void usage() {
     std::cout << ABSSYNTHE_VERSION << std::endl
 << "usage:" << std::endl
 <<"./abssynthe [-h] [-t] [-a] [-r] [-p] [-s] [-c {1,2,3,4}] "
-<<"[-v VERBOSE_LEVEL] [-o OUT_FILE] spec"
+<<"[-f N_FOLDS] [-v VERBOSE_LEVEL] [-o OUT_FILE] spec"
 << std::endl
 << "positional arguments:" << std::endl
 << "spec                               input specification in extended AIGER format"
@@ -71,11 +72,11 @@ void usage() {
 << std::endl
 << "                                   use abstraction when possible, and try"
 << std::endl
+<< "                                   to keep BDD sizes below THRESHOLD"
+<< std::endl
 << "-r, --use_rsynth                   use RSynth's self-substitution"
 << std::endl
 << "                                   to generate output strategy"
-<< std::endl
-<< "                                   to keep BDD sizes below THRESHOLD"
 << std::endl
 << "-p, --parallel                     launch all solvers in parallel"
 << std::endl
@@ -85,6 +86,10 @@ void usage() {
 << std::endl
 << "-c {1,2,3,4}, --comp_algo {1,2,3,4}" << std::endl
 << "                                   choice of compositional algorithm"
+<< std::endl
+<< "-f N_FOLDS, --fold N_FOLDS         merge subgames with non-empty dependency"
+<< std::endl
+<< "                                   set (N_FOLDS rounds of folding)"
 << std::endl
 << "-v VERBOSE_LEVEL, --verbose_level VERBOSE_LEVEL" << std::endl
 << "                                   Verbose level string, i.e. (D)ebug,"
@@ -112,6 +117,12 @@ void usage() {
 }
 
 void parse_arguments(int argc, char** argv) {
+#ifndef NDEBUG
+    std::cout << "AbsSynthe called: ";
+    for (int i = 0; i < argc; i++)
+        std::cout << argv[i] << " ";
+    std::cout << std::endl;
+#endif
     // default values
     settings.comp_algo = 0;
     settings.use_trans = false;
@@ -124,7 +135,7 @@ void parse_arguments(int argc, char** argv) {
     int opt_key;
     int opt_index;
     while (true) {
-        opt_key = getopt_long(argc, argv, "v:ta::prsc:o:w:i:", long_options,
+        opt_key = getopt_long(argc, argv, "v:ta::prsc:f:o:w:i:", long_options,
                               &opt_index);
         if (opt_key == -1)
             break;
@@ -138,15 +149,12 @@ void parse_arguments(int argc, char** argv) {
                 parseLogLevelString(optarg);
                 break;
             case 't':
-                logMsg("Using transition relation.");
                 settings.use_trans = true;
                 break;
             case 'r':
-                logMsg("Using RSynth");
                 settings.use_rsynth = true;
                 break;
             case 'a':
-                logMsg("Using abstraction.");
                 settings.use_abs = true;
                 settings.abs_threshold = 0;
                 if (optarg) {
@@ -154,16 +162,12 @@ void parse_arguments(int argc, char** argv) {
                     if (settings.abs_threshold < 0)
                         errMsg("Expected a non-negative integer as "
                                "threshold");
-                    logMsg("Abstraction with threshold = " +
-                           std::to_string(settings.abs_threshold));
                 }
                 break;
             case 'p':
-                logMsg("Using parallel solvers.");
                 settings.parallel = true;
                 break;
             case 's':
-                logMsg("Parallel solvers with different reordering strategies.");
                 settings.ordering_strategies = true;
                 break;
             case 'c':
@@ -171,6 +175,11 @@ void parse_arguments(int argc, char** argv) {
                 if (settings.comp_algo < 1 || settings.comp_algo > 4)
                     errMsg("Expected comp_algo to be in {1,2,3,4} "
                            "instead of " + std::string(optarg));
+                break;
+            case 'f':
+                settings.n_folds = atoi(optarg);
+                if (settings.comp_algo < 1)
+                    errMsg("Expected number of desired folds to be at least 1.");
                 break;
             case 'o':
                 settings.out_file = optarg;

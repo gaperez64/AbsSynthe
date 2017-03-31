@@ -755,7 +755,7 @@ bool compSolve1(AIG* spec_base) {
     Cudd mgr(0, 0);
     mgr.AutodynEnable(CUDD_REORDER_SIFT);
     BDDAIG spec(*spec_base, &mgr);
-    vector<BDDAIG*> subgames = spec.decompose();
+    vector<BDDAIG*> subgames = spec.decompose(settings.n_folds);
     unsigned gamecount = 0;
     if (subgames.size() == 0) return internalSolve(&mgr, &spec, NULL, NULL,
                                                    NULL, true);
@@ -885,7 +885,7 @@ bool compSolve2(AIG* spec_base) {
     Cudd mgr(0, 0);
     mgr.AutodynEnable(CUDD_REORDER_SIFT);
     BDDAIG spec(*spec_base, &mgr);
-    vector<BDDAIG*> subgames = spec.decompose();
+    vector<BDDAIG*> subgames = spec.decompose(settings.n_folds);
     if (subgames.size() == 0) return internalSolve(&mgr, &spec, NULL, NULL,
                                                    NULL, true);
     // Solving now the subgames
@@ -1005,7 +1005,7 @@ bool compSolve3(AIG* spec_base) {
     Cudd mgr(0, 0);
     mgr.AutodynEnable(CUDD_REORDER_SIFT);
     BDDAIG spec(*spec_base, &mgr);
-    vector<BDDAIG*> subgames = spec.decompose();
+    vector<BDDAIG*> subgames = spec.decompose(settings.n_folds);
     if (subgames.size() == 0) return internalSolve(&mgr, &spec, NULL, NULL, NULL,
                                                    true);
     // Solving now the subgames
@@ -1119,7 +1119,7 @@ bool compSolve4(AIG* spec_base) {
     Cudd mgr(0, 0);
     mgr.AutodynEnable(CUDD_REORDER_SIFT);
     BDDAIG spec(*spec_base, &mgr);
-    vector<BDDAIG*> subgames = spec.decompose();
+    vector<BDDAIG*> subgames = spec.decompose(settings.n_folds);
     if (subgames.size() == 0) return internalSolve(&mgr, &spec, NULL, NULL, NULL,
                                                    true);
     // Solving now the subgames
