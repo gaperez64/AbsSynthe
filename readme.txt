@@ -1,9 +1,10 @@
 Swiss AbsSynthe - is the native version of the AbsSynthe tool, used to
 synthesize controllers from succinct safety specifications.
 
-Authors = Romain Brenguier, Ocan Sankur, Guillermo A. Perez, Jean-Francois Raskin
+Authors = Nicolas Basset, Romain Brenguier,
+          Ocan Sankur, Guillermo A. Perez, Jean-Francois Raskin
 Insitute = Universite Libre de Bruxelles
-Version = 2.0
+Version = 3.0
 
 Some dependencies:
 The tool uses a simple version of the aiger library developed by the team of
@@ -12,6 +13,19 @@ slightly modified versions of the aiger.c, aigtocnf.c, and aiger.h files.
 
 We also make use of the cudd BDD library (version 2.5.1) included in the source
 sub-folder.
+
+UPDATES v3.0
+============
+Besides bug fixing, this version includes options for
+- a forced reordering just before generating the output circuit (so as
+  to minimize the size of the BDDs on which the circuit is based)
+- a way of reducing the number of subgames for the compositional algorithms
+  based on the idea that subgames that do not depend on the same variables
+  may be easy to solve but do not give much information; hence, we combine
+  them into more complicated games which are (hopefully) more instructive
+  regarding the realizability of the global game
+- generation of the winning refion being inductively invariant in AIGER
+  (previously available only in QDIMACS format)
 
 UPDATES v2.0
 ============

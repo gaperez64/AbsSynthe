@@ -54,12 +54,21 @@ static struct {
     }
 } bdd_pair_compare;
 
+// TODO: the two structures below should go somewhere else... maybe this
+// whole thing should be a class? The thing is: they should be set and
+// cleaned before and after using this library.
 struct shared_data {
     bool done;
     bool result;
     pthread_mutex_t synth_mutex;
 };
+// TODO: this is never cleaned after usage
 static shared_data* data = NULL;
+
+struct synthesis_data {
+    vector<pair<unsigned, BDD>> c_functions;
+};
+static synthesis_data synth_data;
 
 
 static bool outputExpected() {
@@ -217,8 +226,8 @@ static vector<pair<unsigned, BDD>> synthAlgo(Cudd* mgr, BDDAIG* spec,
     return result;
 }
 
-static void finalizeSynth(Cudd* mgr, BDDAIG* spec, 
-                          vector<pair<unsigned, BDD>> result, AIG* original=NULL) {
+static void finalizeSynth(Cudd* mgr, AIG* spec,
+                          vector<pair<unsigned, BDD>> result=synth_data.c_functions) {
     // we now get rid of all controllable inputs in the aig spec by replacing
     // each one with an and computed using bdd2aig...
     if (settings.final_reordering) {
@@ -227,9 +236,7 @@ static void finalizeSynth(Cudd* mgr, BDDAIG* spec,
     // NOTE: because of the way bdd2aig is implemented, we must ensure that BDDs are
     // no longer operated on after this point!
     unordered_map<unsigned long, unsigned> cache;
-    vector<unsigned> cinputs;
-    if (original != NULL)
-        cinputs = original->getCInputLits();
+    vector<unsigned> cinputs = spec->getCInputLits();
     for (vector<pair<unsigned, BDD>>::iterator i = result.begin();
          i != result.end(); i++) {
         spec->input2gate(i->first, bdd2aig(mgr, spec, i->second, &cache));
@@ -237,19 +244,18 @@ static void finalizeSynth(Cudd* mgr, BDDAIG* spec,
         dbgMsg("final function BDD size: " +
                to_string((i->second).nodeCount()));
 #endif
-        if (original != NULL)
-            cinputs.erase(remove(cinputs.begin(), cinputs.end(), i->first),
-                          cinputs.end());
+        cinputs.erase(remove(cinputs.begin(), cinputs.end(), i->first),
+                      cinputs.end());
     }
-    if (original != NULL) {
-        for (vector<unsigned>::iterator i = cinputs.begin();
-             i != cinputs.end(); i++) {
-            logMsg("Setting unused cinput " + to_string(*i));
-            spec->input2gate(*i, bdd2aig(mgr, spec, ~mgr->bddOne() , &cache));
-        }
+    for (vector<unsigned>::iterator i = cinputs.begin();
+         i != cinputs.end(); i++) {
+        logMsg("Setting unused cinput " + to_string(*i));
+        spec->input2gate(*i, bdd2aig(mgr, spec, ~mgr->bddOne() , &cache));
     }
     // Finally, we write the modified spec to file
     spec->writeToFile(settings.out_file);
+    // Cleaning
+    synth_data.c_functions.clear();
 }
 
 static void outputWinRegion(Cudd* mgr, BDDAIG* spec, BDD winning_region) {
@@ -525,9 +531,9 @@ static bool internalSolveAbstract(Cudd* mgr, BDDAIG* spec, const BDD* cpre_init,
         spec->popErrorLatch();
         if (settings.out_file != NULL) {
             dbgMsg("Starting synthesis");
-            finalizeSynth(mgr, spec, 
-                          synthAlgo(mgr, spec, ~bad_transitions,
-                                    clean_winning_region));
+            synth_data.c_functions = synthAlgo(mgr, spec,
+                                               ~bad_transitions,
+                                               clean_winning_region);
         }
         if (settings.win_region_out_file != NULL) {
             dbgMsg("Starting output of winning region");
@@ -631,9 +637,9 @@ static bool internalSolveAbstractBackAndForth(Cudd* mgr, BDDAIG* spec,
         spec->popErrorLatch();
         if (settings.out_file != NULL) {
             dbgMsg("Starting synthesis");
-            finalizeSynth(mgr, spec, 
-                          synthAlgo(mgr, spec, ~bad_transitions,
-                                    clean_winning_region));
+            synth_data.c_functions = synthAlgo(mgr, spec,
+                                               ~bad_transitions,
+                                               clean_winning_region);
         }
         if (settings.win_region_out_file != NULL) {
             dbgMsg("Starting output of winning region");
@@ -712,9 +718,9 @@ static bool internalSolveExact(Cudd* mgr, BDDAIG* spec, const BDD* upre_init,
         spec->popErrorLatch();
         if (settings.out_file != NULL) {
             dbgMsg("Starting synthesis");
-            finalizeSynth(mgr, spec, 
-                          synthAlgo(mgr, spec, ~bad_transitions,
-                          ~error_states));
+            synth_data.c_functions = synthAlgo(mgr, spec,
+                                               ~bad_transitions,
+                                               ~error_states);
         }
         if (settings.win_region_out_file != NULL) {
             dbgMsg("Starting output of winning region");
@@ -732,7 +738,7 @@ static bool internalSolve(Cudd* mgr, BDDAIG* spec, const BDD* upre_init,
                           BDD* losing_region, BDD* losing_transitions,
                           bool do_synth=false) {
     // if the caller does not care about the losing region or losing
-    // transitions, then we can use abstraction! given that the use_abs flag was
+    // transitions, then we can use abstraction if the use_abs flag was
     // set
     if (settings.use_abs &&
         (losing_region == NULL) &&
@@ -754,8 +760,18 @@ static bool internalSolve(Cudd* mgr, BDDAIG* spec, const BDD* upre_init,
 bool solve(AIG* spec_base, Cudd_ReorderingType reordering) {
     Cudd mgr(0, 0);
     mgr.AutodynEnable(reordering);
+    bool result;
+    // we want spec to get garbage collected before we finalize
+    // the synthesis step
+    {
     BDDAIG spec(*spec_base, &mgr);
-    return internalSolve(&mgr, &spec, NULL, NULL, NULL, true);
+    result = internalSolve(&mgr, &spec, NULL, NULL, NULL, true);
+    }
+    if (result && settings.out_file != NULL) {
+        dbgMsg("Starting circuit generation");
+        finalizeSynth(&mgr, spec_base);
+    }
+    return result;
 }
 
 bool compSolve1(AIG* spec_base) {
@@ -834,10 +850,9 @@ bool compSolve1(AIG* spec_base) {
             spec.popErrorLatch();
             if (settings.out_file != NULL) {
                 dbgMsg("Starting synthesis");
-                finalizeSynth(&mgr, &spec, 
+                finalizeSynth(&mgr, spec_base, 
                               synthAlgo(&mgr, &spec, ~bad_transitions,
-                                        ~error_states),
-                              spec_base);
+                                        ~error_states));
             }
             if (settings.win_region_out_file != NULL) {
                 dbgMsg("Starting output of winning region");
@@ -872,7 +887,7 @@ bool compSolve1(AIG* spec_base) {
         spec.popErrorLatch();
         if (settings.out_file != NULL) {
             dbgMsg("Starting synth");
-            finalizeSynth(&mgr, &spec, all_cinput_strats, spec_base);
+            finalizeSynth(&mgr, spec_base, all_cinput_strats);
         }
         if (settings.win_region_out_file != NULL) {
             dbgMsg("Starting output of winning region");
@@ -988,10 +1003,9 @@ bool compSolve2(AIG* spec_base) {
         spec.popErrorLatch();
         if (settings.out_file != NULL) {
             dbgMsg("Starting synthesis");
-            finalizeSynth(&mgr, &spec, 
+            finalizeSynth(&mgr, spec_base, 
                           synthAlgo(&mgr, &spec, ~subgame_results.back().first,
-                                    mgr.bddOne()),
-                          spec_base);
+                                    mgr.bddOne()));
         }
         // TODO: it seems that synthesizing and generating a winning region
         // at the same time is not possible with this buggy code!
@@ -1104,9 +1118,9 @@ bool compSolve3(AIG* spec_base) {
         spec.popErrorLatch();
         if (settings.out_file != NULL) {
             dbgMsg("Starting synthesis");
-            finalizeSynth(&mgr, &spec, 
-                          synthAlgo(&mgr, &spec, ~global_losing_trans, ~global_lose),
-                          spec_base);
+            finalizeSynth(&mgr, spec_base, 
+                          synthAlgo(&mgr, &spec,
+                                    ~global_losing_trans, ~global_lose));
         }
         if (settings.win_region_out_file != NULL) {
             dbgMsg("Starting output of winning region");
@@ -1255,9 +1269,9 @@ bool compSolve4(AIG* spec_base) {
         spec.popErrorLatch();
         if (settings.out_file != NULL) {
             dbgMsg("Starting synthesis");
-            finalizeSynth(&mgr, &spec, 
-                          synthAlgo(&mgr, &spec, global_win_strats, ~global_lose),
-                          spec_base);
+            finalizeSynth(&mgr, spec_base, 
+                          synthAlgo(&mgr, &spec, global_win_strats,
+                                    ~global_lose));
         }
         if (settings.win_region_out_file != NULL) {
             dbgMsg("Starting output of winning region");

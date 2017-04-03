@@ -284,7 +284,7 @@ AIG::AIG(const AIG &other) {
 
 AIG::~AIG() {
     if (this->must_clean) {
-        dbgMsg("Cleaning!");
+        dbgMsg("AIG cleaning!");
         this->cleanCaches();
         aiger_reset(this->spec);
     }
@@ -575,6 +575,7 @@ BDDAIG::~BDDAIG() {
         delete this->short_error;
     
     if (this->must_clean) {
+        dbgMsg("BDDAIG cleaning!");
         delete this->lit2bdd_map;
         delete this->bdd2deps_map;
     }
