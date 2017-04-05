@@ -962,6 +962,13 @@ std::vector<BDD> BDDAIG::mergeSomeSignals(BDD cube,
             dep_next += 2;
             bdd_next += 2;
         }
+        // if dep_it is not dep_vector.end() and yet we're here, the number of
+        // subgames was odd and we need to add the last game back into the list
+        if (dep_it != dep_vector.end()) {
+            new_dep_vector.push_back(*dep_it);
+            new_bdd_vector.push_back(*bdd_it);
+        }
+        // now we update our vectors/lists
         dep_vector = new_dep_vector;
         bdd_vector = new_bdd_vector;
     }
