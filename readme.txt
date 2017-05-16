@@ -4,7 +4,7 @@ synthesize controllers from succinct safety specifications.
 Authors = Nicolas Basset, Romain Brenguier,
           Ocan Sankur, Guillermo A. Perez, Jean-Francois Raskin
 Insitute = Universite Libre de Bruxelles
-Version = 3.0
+Version = 2.1
 
 Some dependencies:
 The tool uses a simple version of the aiger library developed by the team of
@@ -14,7 +14,7 @@ slightly modified versions of the aiger.c, aigtocnf.c, and aiger.h files.
 We also make use of the cudd BDD library (version 2.5.1) included in the source
 sub-folder.
 
-UPDATES v3.0
+UPDATES v2.1
 ============
 Besides bug fixing, this version includes options for
 - a forced reordering just before generating the output circuit (so as
