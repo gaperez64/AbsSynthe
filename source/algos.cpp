@@ -227,7 +227,8 @@ static vector<pair<unsigned, BDD>> synthAlgo(Cudd* mgr, BDDAIG* spec,
 }
 
 static void finalizeSynth(Cudd* mgr, AIG* spec,
-                          vector<pair<unsigned, BDD>> result=synth_data.c_functions) {
+                          vector<pair<unsigned, BDD>> result=
+                          synth_data.c_functions) {
     // we now get rid of all controllable inputs in the aig spec by replacing
     // each one with an and computed using bdd2aig...
     if (settings.final_reordering) {
@@ -757,30 +758,10 @@ static bool internalSolve(Cudd* mgr, BDDAIG* spec, const BDD* upre_init,
                               losing_transitions, do_synth);
 }
 
-bool solve(AIG* spec_base, Cudd_ReorderingType reordering) {
-    Cudd mgr(0, 0);
-    mgr.AutodynEnable(reordering);
-    bool result;
-    // we want spec to get garbage collected before we finalize
-    // the synthesis step
-    {
-    BDDAIG spec(*spec_base, &mgr);
-    result = internalSolve(&mgr, &spec, NULL, NULL, NULL, true);
-    }
-    if (result && settings.out_file != NULL) {
-        dbgMsg("Starting circuit generation");
-        finalizeSynth(&mgr, spec_base);
-    }
-    return result;
-}
-
-bool compSolve1(AIG* spec_base) {
-    Cudd mgr(0, 0);
-    mgr.AutodynEnable(CUDD_REORDER_SIFT);
-    BDDAIG spec(*spec_base, &mgr);
-    vector<BDDAIG*> subgames = spec.decompose(settings.n_folds);
+static bool compSolve1(Cudd* mgr, BDDAIG* spec) {
+    vector<BDDAIG*> subgames = spec->decompose(settings.n_folds);
     unsigned gamecount = 0;
-    if (subgames.size() == 0) return internalSolve(&mgr, &spec, NULL, NULL,
+    if (subgames.size() == 0) return internalSolve(mgr, spec, NULL, NULL,
                                                    NULL, true);
     vector<pair<BDD,BDD> > subgame_results;
     for (vector<BDDAIG*>::iterator i = subgames.begin(); i != subgames.end(); i++) {
@@ -789,7 +770,7 @@ bool compSolve1(AIG* spec_base) {
         BDD bad_transitions;
         dbgMsg("Solving subgame " + to_string(gamecount) + " (" +
                to_string((*i)->numLatches()) + " latches)");
-        if (!internalSolve(&mgr, *i, NULL, &error_states, &bad_transitions)) {
+        if (!internalSolve(mgr, *i, NULL, &error_states, &bad_transitions)) {
             return false;
         } else {
             subgame_results.push_back(pair<BDD,BDD>(error_states,
@@ -825,8 +806,8 @@ bool compSolve1(AIG* spec_base) {
         for (vector<BDDAIG*>::iterator i = subgames.begin();
              i != subgames.end(); i++)
             delete *i;
-        BDD losing_states = spec.errorStates();
-        BDD losing_transitions = ~mgr.bddOne();
+        BDD losing_states = spec->errorStates();
+        BDD losing_transitions = ~mgr->bddOne();
         vector<pair<BDD, BDD> >::iterator sg = subgame_results.begin();
         sort(subgame_results.begin(), subgame_results.end(), bdd_pair_compare);
         for (sg = subgame_results.begin(); sg != subgame_results.end(); sg++) {
@@ -835,9 +816,9 @@ bool compSolve1(AIG* spec_base) {
         }
         dbgMsg("Solving the aggregated game");
         // TODO: try out using losing_states instead of losing_transition here
-        BDDAIG aggregated_game(spec, losing_transitions);
+        BDDAIG aggregated_game(*spec, losing_transitions);
         BDD error_states;
-        includes_init = !internalSolve(&mgr, &aggregated_game, &losing_states,
+        includes_init = !internalSolve(mgr, &aggregated_game, &losing_states,
                                        &error_states, &bad_transitions);
 
         // if !includes_init == true, then ~bad_transitions is the set of all
@@ -845,22 +826,23 @@ bool compSolve1(AIG* spec_base) {
         if (!includes_init && outputExpected()) {
             dbgMsg("acquiring lock on synth mutex");
             if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
-            BDD clean_winning_region = (~error_states).Cofactor(~spec.errorStates());
+            BDD clean_winning_region = (~error_states).Cofactor(
+                    ~spec->errorStates());
             // let us clean the AIG before we start introducing new stuff
-            spec.popErrorLatch();
+            spec->popErrorLatch();
             if (settings.out_file != NULL) {
                 dbgMsg("Starting synthesis");
-                finalizeSynth(&mgr, spec_base, 
-                              synthAlgo(&mgr, &spec, ~bad_transitions,
-                                        ~error_states));
+                synth_data.c_functions = synthAlgo(mgr, spec,
+                                                   ~bad_transitions,
+                                                   ~error_states);
             }
             if (settings.win_region_out_file != NULL) {
                 dbgMsg("Starting output of winning region");
-                outputWinRegion(&mgr, &spec, clean_winning_region);
+                outputWinRegion(mgr, spec, clean_winning_region);
             }
             if (settings.ind_cert_out_file != NULL) {
                 dbgMsg("Starting output of inductive certificate");
-                outputIndCertificate(&mgr, &spec, clean_winning_region);
+                outputIndCertificate(mgr, spec, clean_winning_region);
             }
         }
 
@@ -870,11 +852,11 @@ bool compSolve1(AIG* spec_base) {
         dbgMsg("Synthesis via comp 1");
         vector<pair<unsigned, BDD>> all_cinput_strats;
         vector<pair<BDD, BDD>>::iterator sg = subgame_results.begin();
-        BDD global_lose = ~mgr.bddOne();
+        BDD global_lose = ~mgr->bddOne();
         for (vector<BDDAIG*>::iterator i = subgames.begin();
              i != subgames.end(); i++) {
             vector<pair<unsigned, BDD>> temp;
-            temp = synthAlgo(&mgr, *i, ~sg->second, ~sg->first);
+            temp = synthAlgo(mgr, *i, ~sg->second, ~sg->first);
             global_lose |= sg->first;
             // logMsg("Found " + to_string(temp.size()) + " cinputs here");
             all_cinput_strats.insert(all_cinput_strats.end(), 
@@ -882,33 +864,30 @@ bool compSolve1(AIG* spec_base) {
             sg++;
             delete *i;
         }
-        BDD clean_winning_region = (~global_lose).Cofactor(~spec.errorStates());
+        BDD clean_winning_region = (~global_lose).Cofactor(~spec->errorStates());
         // let us clean the AIG before we start introducing new stuff
-        spec.popErrorLatch();
+        spec->popErrorLatch();
         if (settings.out_file != NULL) {
             dbgMsg("Starting synth");
-            finalizeSynth(&mgr, spec_base, all_cinput_strats);
+            synth_data.c_functions = all_cinput_strats;
         }
         if (settings.win_region_out_file != NULL) {
             dbgMsg("Starting output of winning region");
-            outputWinRegion(&mgr, &spec, clean_winning_region);
+            outputWinRegion(mgr, spec, clean_winning_region);
         }
         if (settings.ind_cert_out_file != NULL) {
             dbgMsg("Starting output of inductive certificate");
-            outputIndCertificate(&mgr, &spec, clean_winning_region);
+            outputIndCertificate(mgr, spec, clean_winning_region);
         }
     }
 
     return !includes_init;
 }
 
-bool compSolve2(AIG* spec_base) {
+static bool compSolve2(Cudd* mgr, BDDAIG* spec) {
     typedef pair<BDD, set<unsigned>> subgame_info;
-    Cudd mgr(0, 0);
-    mgr.AutodynEnable(CUDD_REORDER_SIFT);
-    BDDAIG spec(*spec_base, &mgr);
-    vector<BDDAIG*> subgames = spec.decompose(settings.n_folds);
-    if (subgames.size() == 0) return internalSolve(&mgr, &spec, NULL, NULL,
+    vector<BDDAIG*> subgames = spec->decompose(settings.n_folds);
+    if (subgames.size() == 0) return internalSolve(mgr, spec, NULL, NULL,
                                                    NULL, true);
     // Solving now the subgames
     BDD losing_transitions;
@@ -921,7 +900,7 @@ bool compSolve2(AIG* spec_base) {
         gamecount++;
         dbgMsg("Solving subgame " + to_string(gamecount) + " (" +
                to_string((*i)->numLatches()) + " latches)");
-        if (!internalSolve(&mgr, *i, NULL, NULL, &losing_transitions))
+        if (!internalSolve(mgr, *i, NULL, NULL, &losing_transitions))
             return false;
         vector<unsigned> cinput_vect = (*i)->getCInputLits();
         set<unsigned> cinput_set(cinput_vect.begin(), cinput_vect.end());
@@ -979,8 +958,8 @@ bool compSolve2(AIG* spec_base) {
         if (intersection.size() == 0) {
             losing_transitions = joint_err;
         } else { 
-            BDDAIG subgame(spec, joint_err);
-            if (!internalSolve(&mgr, &subgame, NULL, NULL, &losing_transitions))
+            BDDAIG subgame(*spec, joint_err);
+            if (!internalSolve(mgr, &subgame, NULL, NULL, &losing_transitions))
                 return false;
         }
         subgame_results.erase(min_it);
@@ -995,50 +974,47 @@ bool compSolve2(AIG* spec_base) {
         if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
         dbgMsg("synthesis via comp 2");
         BDD clean_winning_region =
-            (~subgame_results.back().first).Cofactor(~spec.errorStates());
+            (~subgame_results.back().first).Cofactor(~spec->errorStates());
         clean_winning_region = clean_winning_region
-                                           .ExistAbstract(spec.cinputCube() &
-                                                          spec.uinputCube());
+                                           .ExistAbstract(spec->cinputCube() &
+                                                          spec->uinputCube());
         // let us clean the AIG before we start introducing new stuff
-        spec.popErrorLatch();
+        spec->popErrorLatch();
         if (settings.out_file != NULL) {
             dbgMsg("Starting synthesis");
-            finalizeSynth(&mgr, spec_base, 
-                          synthAlgo(&mgr, &spec, ~subgame_results.back().first,
-                                    mgr.bddOne()));
+            synth_data.c_functions = synthAlgo(mgr, spec,
+                                               ~subgame_results.back().first,
+                                               mgr->bddOne());
         }
         // TODO: it seems that synthesizing and generating a winning region
         // at the same time is not possible with this buggy code!
         if (settings.win_region_out_file != NULL) {
             dbgMsg("Starting output of winning region");
-            outputWinRegion(&mgr, &spec, clean_winning_region);
+            outputWinRegion(mgr, spec, clean_winning_region);
         }
         if (settings.ind_cert_out_file != NULL) {
             dbgMsg("Starting output of inductive certificate");
-            outputIndCertificate(&mgr, &spec, clean_winning_region);
+            outputIndCertificate(mgr, spec, clean_winning_region);
         }
     }
     return true;
 }
 
-bool compSolve3(AIG* spec_base) {
+static bool compSolve3(Cudd* mgr, BDDAIG* spec) {
     typedef pair<BDD, BDD> subgame_info;
-    Cudd mgr(0, 0);
-    mgr.AutodynEnable(CUDD_REORDER_SIFT);
-    BDDAIG spec(*spec_base, &mgr);
-    vector<BDDAIG*> subgames = spec.decompose(settings.n_folds);
-    if (subgames.size() == 0) return internalSolve(&mgr, &spec, NULL, NULL, NULL,
+    vector<BDDAIG*> subgames = spec->decompose(settings.n_folds);
+    if (subgames.size() == 0) return internalSolve(mgr, spec, NULL, NULL, NULL,
                                                    true);
     // Solving now the subgames
     BDD losing_transitions;
     BDD losing_region;
-    BDD global_lose = mgr.bddZero();
+    BDD global_lose = mgr->bddZero();
     vector<subgame_info> subgame_results;
     for (unsigned i = 0; i < subgames.size(); i++) {
         // check if another thread has won the race
         dbgMsg("Solving subgame " + to_string(i) + " (" +
                to_string(subgames[i]->numLatches()) + " latches)");
-        if (!internalSolve(&mgr, subgames[i], NULL, &losing_region,
+        if (!internalSolve(mgr, subgames[i], NULL, &losing_region,
                            &losing_transitions))
             return false;
         subgame_results.push_back(subgame_info(~losing_region, ~losing_transitions));
@@ -1052,14 +1028,14 @@ bool compSolve3(AIG* spec_base) {
     dbgMsg("");
     dbgMsg("Now refining the aggregate game");
 
-    BDD prev_lose = mgr.bddOne();
+    BDD prev_lose = mgr->bddOne();
     BDD tmp_lose;
     BDD tmp_losing_trans;
     BDD global_losing_trans;
     int count = 1;
-    BDD init_state = spec.initState();
-    bool includes_init = ((init_state & global_lose) != ~mgr.bddOne());
-    vector<unsigned> latches_u = spec.getLatchLits();
+    BDD init_state = spec->initState();
+    bool includes_init = ((init_state & global_lose) != ~mgr->bddOne());
+    vector<unsigned> latches_u = spec->getLatchLits();
 
     while (!includes_init && prev_lose != global_lose) {
         prev_lose = global_lose;
@@ -1067,17 +1043,17 @@ bool compSolve3(AIG* spec_base) {
         for (unsigned i = 0; i < subgames.size(); i++) {
             BDDAIG* subgame = subgames[i];
             subgame_info &sg_info = subgame_results[i];
-            set<unsigned> latches_sg = spec.getBddLatchDeps(sg_info.second);
+            set<unsigned> latches_sg = spec->getBddLatchDeps(sg_info.second);
             set<unsigned> rem_latches;
             set_difference(latches_u.begin(), latches_u.end(), 
                            latches_sg.begin(), latches_sg.end(), 
                            inserter(rem_latches, rem_latches.begin()));
-            BDD local_lose = global_lose.UnivAbstract(spec.toCube(rem_latches));
+            BDD local_lose = global_lose.UnivAbstract(spec->toCube(rem_latches));
             BDD &local_win_over = sg_info.first;
             // if local_lose intersects local_win_over
-            if ((local_lose & local_win_over) != ~mgr.bddOne()) {
+            if ((local_lose & local_win_over) != ~mgr->bddOne()) {
                 dbgMsg("\tActually refining subgame " + to_string(i));
-                if (!internalSolve(&mgr, subgame, &local_lose, &tmp_lose,
+                if (!internalSolve(mgr, subgame, &local_lose, &tmp_lose,
                                    &tmp_losing_trans))
                     return false;
                 // subgames[i] = new BDDAIG(*subgame, tmp_losing_trans);
@@ -1095,13 +1071,13 @@ bool compSolve3(AIG* spec_base) {
         addTime("localstep");
         if (global_lose == prev_lose) {
             dbgMsg("Global Upre");
-            global_lose = global_lose | upre(&spec, global_lose,
+            global_lose = global_lose | upre(spec, global_lose,
                                              global_losing_trans);
             addTime("globalstep");
         } else {
             dbgMsg("Skipping global Upre");
         }
-        includes_init = ((init_state & global_lose) != ~mgr.bddOne());
+        includes_init = ((init_state & global_lose) != ~mgr->bddOne());
     }
   
     // release memory of current subgames
@@ -1113,48 +1089,44 @@ bool compSolve3(AIG* spec_base) {
     if (!includes_init && outputExpected()) {
         dbgMsg("acquiring lock on synth mutex");
         if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
-        BDD clean_winning_region = (~global_lose).Cofactor(~spec.errorStates());
+        BDD clean_winning_region = (~global_lose).Cofactor(~spec->errorStates());
         // let us clean the AIG before we start introducing new stuff
-        spec.popErrorLatch();
+        spec->popErrorLatch();
         if (settings.out_file != NULL) {
             dbgMsg("Starting synthesis");
-            finalizeSynth(&mgr, spec_base, 
-                          synthAlgo(&mgr, &spec,
-                                    ~global_losing_trans, ~global_lose));
+            synth_data.c_functions = synthAlgo(mgr, spec, ~global_losing_trans,
+                                               ~global_lose);
         }
         if (settings.win_region_out_file != NULL) {
             dbgMsg("Starting output of winning region");
-            outputWinRegion(&mgr, &spec, clean_winning_region);
+            outputWinRegion(mgr, spec, clean_winning_region);
         }
         if (settings.ind_cert_out_file != NULL) {
             dbgMsg("Starting output of inductive certificate");
-            outputIndCertificate(&mgr, &spec, clean_winning_region);
+            outputIndCertificate(mgr, spec, clean_winning_region);
         }
     }
 
     return !includes_init;
 }
 
-bool compSolve4(AIG* spec_base) {
+static bool compSolve4(Cudd* mgr, BDDAIG* spec) {
     typedef pair<BDD, BDD> subgame_info;
-    Cudd mgr(0, 0);
-    mgr.AutodynEnable(CUDD_REORDER_SIFT);
-    BDDAIG spec(*spec_base, &mgr);
-    vector<BDDAIG*> subgames = spec.decompose(settings.n_folds);
-    if (subgames.size() == 0) return internalSolve(&mgr, &spec, NULL, NULL, NULL,
+    vector<BDDAIG*> subgames = spec->decompose(settings.n_folds);
+    if (subgames.size() == 0) return internalSolve(mgr, spec, NULL, NULL, NULL,
                                                    true);
     // Solving now the subgames
     BDD losing_transitions;
     BDD losing_region;
-    BDD global_win_strats = mgr.bddOne();
-    BDD global_lose = mgr.bddZero();
+    BDD global_win_strats = mgr->bddOne();
+    BDD global_lose = mgr->bddZero();
     BDD global_losing_trans;
     vector<subgame_info> subgame_results;
     for (unsigned i = 0; i < subgames.size(); i++) {
         // check if another thread has won the race
         dbgMsg("Solving subgame " + to_string(i) + " (" +
                to_string(subgames[i]->numLatches()) + " latches)");
-        if (!internalSolve(&mgr, subgames[i], NULL, &losing_region,
+        if (!internalSolve(mgr, subgames[i], NULL, &losing_region,
                            &losing_transitions))
             return false;
         subgame_results.push_back(subgame_info(~losing_region,
@@ -1171,9 +1143,9 @@ bool compSolve4(AIG* spec_base) {
     BDD tmp_losing_trans;
     BDD tmp_lose;
     int count = 1;
-    vector<unsigned> latches_u = spec.getLatchLits();
+    vector<unsigned> latches_u = spec->getLatchLits();
     bool something_changed = true;
-    BDD init_state = spec.initState();
+    BDD init_state = spec->initState();
 
     while (something_changed) {
         something_changed = false;
@@ -1185,33 +1157,33 @@ bool compSolve4(AIG* spec_base) {
             BDD &winning_strats = sg_info.second;
             // if safe actions locally and globally do not coincide
             if ((winning_strats & global_win_strats) != winning_strats) {
-                assert((~global_win_strats | winning_strats) == mgr.bddOne());
+                assert((~global_win_strats | winning_strats) == mgr->bddOne());
                 dbgMsg("Local and global safe actions are not the same");
-                set<unsigned> latches_sg = spec.getBddLatchDeps(sg_info.second);
+                set<unsigned> latches_sg = spec->getBddLatchDeps(sg_info.second);
                 set<unsigned> rem_latches;
                 set_difference(latches_u.begin(), latches_u.end(), 
                                latches_sg.begin(), latches_sg.end(), 
                                inserter(rem_latches, rem_latches.begin()));
                 BDD joint_safe_trans = winning_strats & global_win_strats;
                 BDD nu_local_win_strats =
-                    joint_safe_trans.ExistAbstract(spec.toCube(rem_latches));
+                    joint_safe_trans.ExistAbstract(spec->toCube(rem_latches));
                 
                 if (nu_local_win_strats != winning_strats) {
                     dbgMsg("Even after getting rid of latches not present, "
                            "this is new info!");
                     assert((~nu_local_win_strats | ~winning_states) ==
                            ~nu_local_win_strats);
-                    assert((~nu_local_win_strats | winning_strats) == mgr.bddOne());
+                    assert((~nu_local_win_strats | winning_strats) == mgr->bddOne());
                     // now we should solve a new game with the complement of
                     // nu_ocal_safe_trans as the error signal function
                     something_changed = true;
                     dbgMsg("\tActually refining subgame " + to_string(i));
                     BDDAIG* old_sg = subgame;
-                    subgames[i] = new BDDAIG(spec, ~nu_local_win_strats);
+                    subgames[i] = new BDDAIG(*spec, ~nu_local_win_strats);
                     delete old_sg;
                     subgame = subgames[i];
                     BDD local_lose = ~winning_states;
-                    if (!internalSolve(&mgr, subgame, &local_lose, &tmp_lose,
+                    if (!internalSolve(mgr, subgame, &local_lose, &tmp_lose,
                                        &tmp_losing_trans)) {
                         dbgMsg("RETURNED FALSE!");
                         return false;
@@ -1223,7 +1195,7 @@ bool compSolve4(AIG* spec_base) {
                     global_win_strats &= ~tmp_losing_trans & ~tmp_lose;
                     // if the winning strategy is no longer defined for the
                     // initial state we are already toasted
-                    if ((init_state & global_win_strats) == mgr.bddZero()) {
+                    if ((init_state & global_win_strats) == mgr->bddZero()) {
                         dbgMsg("The global w. strategy is no longer defined "
                                "for the initial state");
                         return false;
@@ -1240,7 +1212,7 @@ bool compSolve4(AIG* spec_base) {
         addTime("localstep");
         if (!something_changed) {
             dbgMsg("Global Upre");
-            BDD nu_global_lose = global_lose | upre(&spec, global_lose,
+            BDD nu_global_lose = global_lose | upre(spec, global_lose,
                                                     global_losing_trans);
             global_win_strats = ~global_losing_trans & ~global_lose;
             addTime("globalstep");
@@ -1249,7 +1221,7 @@ bool compSolve4(AIG* spec_base) {
         } else {
             dbgMsg("Skipping global Upre");
         }
-        if ((init_state & global_lose) != ~mgr.bddOne()) {
+        if ((init_state & global_lose) != ~mgr->bddOne()) {
             dbgMsg("The global step revealed we lose.");
             return false;
         }
@@ -1264,26 +1236,53 @@ bool compSolve4(AIG* spec_base) {
     if (outputExpected()) {
         dbgMsg("acquiring lock on synth mutex");
         if (data != NULL) pthread_mutex_lock(&data->synth_mutex);
-        BDD clean_winning_region = (~global_lose).Cofactor(~spec.errorStates());
+        BDD clean_winning_region = (~global_lose).Cofactor(~spec->errorStates());
         // let us clean the AIG before we start introducing new stuff
-        spec.popErrorLatch();
+        spec->popErrorLatch();
         if (settings.out_file != NULL) {
             dbgMsg("Starting synthesis");
-            finalizeSynth(&mgr, spec_base, 
-                          synthAlgo(&mgr, &spec, global_win_strats,
-                                    ~global_lose));
+            synth_data.c_functions = synthAlgo(mgr, spec, global_win_strats,
+                                               ~global_lose);
         }
         if (settings.win_region_out_file != NULL) {
             dbgMsg("Starting output of winning region");
-            outputWinRegion(&mgr, &spec, clean_winning_region);
+            outputWinRegion(mgr, spec, clean_winning_region);
         }
         if (settings.ind_cert_out_file != NULL) {
             dbgMsg("Starting output of inductive certificate");
-            outputIndCertificate(&mgr, &spec, clean_winning_region);
+            outputIndCertificate(mgr, spec, clean_winning_region);
         }
     }
 
     return true;
+}
+
+bool solve(AIG* spec_base, Cudd_ReorderingType reordering) {
+    Cudd mgr(0, 0);
+    mgr.AutodynEnable(reordering);
+    bool result;
+    // we want spec to get garbage collected before we finalize
+    // the synthesis step
+    {
+        BDDAIG spec(*spec_base, &mgr);
+        if (settings.comp_algo == 1) {
+                result = compSolve1(&mgr, &spec);
+        } else if (settings.comp_algo == 2){
+                result = compSolve2(&mgr, &spec);
+        } else if (settings.comp_algo == 3){
+                result = compSolve3(&mgr, &spec);
+        } else if (settings.comp_algo == 4){
+                result = compSolve4(&mgr, &spec);
+        } else { // traditional fixpoint computation
+            result = internalSolve(&mgr, &spec, NULL, NULL, NULL, true);
+        }
+    }
+    // deal with the synthesis step if needed
+    if (result && settings.out_file != NULL) {
+        dbgMsg("Starting circuit generation");
+        finalizeSynth(&mgr, spec_base);
+    }
+    return result;
 }
 
 static void pWorker(AIG* spec_base, int solver) {
@@ -1301,7 +1300,8 @@ static void pWorker(AIG* spec_base, int solver) {
         case 2:
             settings.use_abs = true;
             settings.abs_threshold = 2048;
-            result = compSolve1(spec_base);
+            settings.comp_algo = 1;
+            result = solve(spec_base);
             break;
         case 3:
             settings.use_abs = true;

@@ -229,17 +229,7 @@ int main(int argc, char** argv) {
     } else {
         // try to open the spec now
         AIG aig(settings.spec_file);
-        if (settings.comp_algo == 1) {
-                result = compSolve1(&aig);
-        } else if (settings.comp_algo == 2){
-                result = compSolve2(&aig);
-        } else if (settings.comp_algo == 3){
-                result = compSolve3(&aig);
-        } else if (settings.comp_algo == 4){
-                result = compSolve4(&aig);
-        } else { // traditional fixpoint computation
-                result = solve(&aig);
-        }
+        result = solve(&aig);
     }
     // return the realizability test result
     logMsg("Realizable? " + std::to_string(result));
