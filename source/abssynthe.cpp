@@ -151,9 +151,9 @@ void parse_arguments(int argc, char** argv) {
                               &opt_index);
         if (opt_key == -1)
             break;
+        if (long_options[opt_index].flag != NULL)
+            break;
         switch (opt_key) {
-            if (long_options[opt_index].flag != NULL)
-                break;
             case 'h':
                 usage();
                 exit(0);
