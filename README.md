@@ -2,8 +2,9 @@
 This is the _native_ version of the AbsSynthe tool, used to
 synthesize controllers from succinct safety specifications.
 
-* Contributors = Nicolas Basset, Romain Brenguier, Ocan Sankur, Jean-Francois Raskin 
-* Version = 2.1
+* Version: 2.1
+* Maintainer: Guillermo A. Perez (University of Antwerp)
+* Contributors: Nicolas Basset, Romain Brenguier, Ocan Sankur, Jean-Francois Raskin 
 
 ## Building
 We provide a building script for your convenience, but you may have to

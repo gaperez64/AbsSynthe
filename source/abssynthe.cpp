@@ -31,7 +31,7 @@
 #include "logging.h"
 #include "aig.h"
 
-const char* ABSSYNTHE_VERSION = "Swiss-Abssynthe 2.0";
+const char* ABSSYNTHE_VERSION = "Swiss-Abssynthe 2.1";
 const int EXIT_STATUS_REALIZABLE = 10;
 const int EXIT_STATUS_UNREALIZABLE = 20;
 
