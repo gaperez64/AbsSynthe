@@ -2,9 +2,7 @@
 This is the _native_ version of the AbsSynthe tool, used to
 synthesize controllers from succinct safety specifications.
 
-* Authors = Nicolas Basset, Romain Brenguier,
-          Ocan Sankur, Guillermo A. Perez, Jean-Francois Raskin 
-* Insitute = Universite Libre de Bruxelles
+* Contributors = Nicolas Basset, Romain Brenguier, Ocan Sankur, Jean-Francois Raskin 
 * Version = 2.1
 
 ## Building
@@ -18,6 +16,34 @@ slightly modified versions of the aiger.c, aigtocnf.c, and aiger.h files.
 
 We also make use of the cudd BDD library (version 2.5.1) included in the source
 sub-folder.
+
+# Citing
+
+If you use AbsSynthe for your academic purposes, please cite the original
+paper describing the tool:
+```
+@inproceedings{DBLP:journals/corr/BrenguierPRS14,
+  author    = {Romain Brenguier and
+               Guillermo A. P{\'{e}}rez and
+               Jean{-}Fran{\c{c}}ois Raskin and
+               Ocan Sankur},
+  editor    = {Krishnendu Chatterjee and
+               R{\"{u}}diger Ehlers and
+               Susmit Jha},
+  title     = {AbsSynthe: abstract synthesis from succinct safety specifications},
+  booktitle = {Proceedings 3rd Workshop on Synthesis, {SYNT} 2014, Vienna, Austria,
+               July 23-24, 2014},
+  series    = {{EPTCS}},
+  volume    = {157},
+  pages     = {100--116},
+  year      = {2014},
+  url       = {https://doi.org/10.4204/EPTCS.157.11},
+  doi       = {10.4204/EPTCS.157.11},
+  timestamp = {Fri, 02 Nov 2018 09:30:18 +0100},
+  biburl    = {https://dblp.org/rec/journals/corr/BrenguierPRS14.bib},
+  bibsource = {dblp computer science bibliography, https://dblp.org}
+}
+```
 
 # Changelog
 

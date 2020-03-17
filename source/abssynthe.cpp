@@ -145,13 +145,10 @@ void parse_arguments(int argc, char** argv) {
 
     // read values from argv
     int opt_key;
-    int opt_index;
+    int long_idx;
     while (true) {
-        opt_key = getopt_long(argc, argv, "v:ta::prsmc:f:o:w:i:", long_options,
-                              &opt_index);
+        opt_key = getopt_long(argc, argv, "v:ta::prsmc:f:o:w:i:", long_options, &long_idx);
         if (opt_key == -1)
-            break;
-        if (long_options[opt_index].flag != NULL)
             break;
         switch (opt_key) {
             case 'h':
