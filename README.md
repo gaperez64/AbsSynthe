@@ -7,6 +7,10 @@ synthesize controllers from succinct safety specifications.
 * Insitute = Universite Libre de Bruxelles
 * Version = 2.1
 
+## Building
+We provide a building script for your convenience, but you may have to
+customize it for your set up.
+
 ## Some dependencies:
 The tool uses a simple version of the aiger library developed by the team of
 Armin Biere (available at http://fmv.jku.at/aiger/). Specifically, we use
