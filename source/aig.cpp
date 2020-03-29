@@ -588,6 +588,7 @@ BDD BDDAIG::initState() {
         result &= ~this->mgr->bddVar((*i)->lit);
 #ifndef NDEBUG
     this->dump2dot(result, "init_state.dot");
+    dbgMsg("Valid initial bdd?");
 #endif
     assert(this->isValidLatchBdd(result));
     return result;
@@ -597,6 +598,7 @@ BDD BDDAIG::errorStates() {
     BDD result = this->mgr->bddVar(this->error_fake_latch.lit);
 #ifndef NDEBUG
     this->dump2dot(result, "error_states.dot");
+    dbgMsg("Valid error bdd?");
 #endif
     assert(this->isValidLatchBdd(result));
     return result;
@@ -741,36 +743,51 @@ std::vector<BDD> BDDAIG::getNextFunVec() {
 
 std::vector<BDD> BDDAIG::nextFunComposeVec(BDD* care_region=NULL) {
     if (this->next_fun_compose_vec == NULL) {
-        //dbgMsg("building and caching next_fun_compose_vec");
+#ifndef NDEBUG 
+        dbgMsg("building and caching next_fun_compose_vec");
+#endif
         this->next_fun_compose_vec = new std::vector<BDD>();
         // fill the vector with singleton bdds except for the latches
-        std::vector<aiger_symbol*>::iterator latch_it = this->latches.begin();
         for (unsigned i = 0; ((int) i) < this->mgr->ReadSize(); i++) {
-            if (latch_it != this->latches.end() && i == (*latch_it)->lit) {
-                // since we allow for short_error to override the next fun...
-                BDD next_fun;
-                if (i == this->error_fake_latch.lit &&
-                    this->short_error != NULL) {
-                    next_fun = *this->short_error; 
-                    //dbgMsg("Latch " + std::to_string(i) + " is the error latch");
-                } else if (this->short_error != NULL) { // simplify functions
-                    next_fun = this->lit2bdd((*latch_it)->next);
-                    next_fun = BDDAIG::safeRestrict(next_fun,
-                                                    ~(*this->short_error));
-                    //dbgMsg("Restricting next function of latch " +
-                    //std::to_string(i));
-                } else {
-                    next_fun = this->lit2bdd((*latch_it)->next);
-                    //dbgMsg("Taking the next function of latch " +
-                    //std::to_string(i));
+            bool found = false;
+            for (std::vector<aiger_symbol*>::iterator latch_it = this->latches.begin();
+                 latch_it != this->latches.end(); latch_it++) {
+                if (latch_it != this->latches.end() && i == (*latch_it)->lit) {
+                    // since we allow for short_error to override the next fun...
+                    BDD next_fun;
+                    if (i == this->error_fake_latch.lit &&
+                           this->short_error != NULL) {
+                        next_fun = *this->short_error;
+#ifndef NDEBUG
+                        dbgMsg("Latch " + std::to_string(i) + " is the error latch");
+#endif
+                    } else if (this->short_error != NULL) { // simplify functions
+                        next_fun = this->lit2bdd((*latch_it)->next);
+                        next_fun = BDDAIG::safeRestrict(next_fun,
+                                                        ~(*this->short_error));
+#ifndef NDEBUG
+                        dbgMsg("Restricting next function of latch " +
+                               std::to_string(i));
+#endif
+                    } else {
+                        next_fun = this->lit2bdd((*latch_it)->next);
+#ifndef NDEBUG
+                        dbgMsg("Taking the next function of latch " +
+                               std::to_string(i));
+#endif
+                    }
+                    this->next_fun_compose_vec->push_back(next_fun);
+                    found = true;
+                    break;
                 }
-                this->next_fun_compose_vec->push_back(next_fun);
-                latch_it++;
-            } else {
+            }
+            if (!found) {
                 this->next_fun_compose_vec->push_back(this->mgr->bddVar(i));
             }
         }
-        //dbgMsg("done with the next_fun_compose_vec");
+#ifndef NDEBUG
+        dbgMsg("done with the next_fun_compose_vec");
+#endif
     }
 
     std::vector<BDD> result = *this->next_fun_compose_vec;

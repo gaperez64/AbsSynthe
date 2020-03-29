@@ -290,7 +290,7 @@ static void outputIndCertificate(Cudd* mgr, BDDAIG* spec, BDD winning_region) {
     dbgMsg("Adding latches to the new AIG instance.");
     for (vector<aiger_symbol*>::iterator i = latches.begin();
          i != latches.end(); i++) {
-        //dbgMsg("Adding latch as input, lit = " + to_string((*i)->lit));
+        dbgMsg("Adding latch as input, lit = " + to_string((*i)->lit));
         blank_spec.addInput((*i)->lit, (*i)->name);
         original_latch.push_back(mgr->bddVar((*i)->lit));
     }
@@ -321,7 +321,6 @@ static void outputIndCertificate(Cudd* mgr, BDDAIG* spec, BDD winning_region) {
                                                   &copy_cache);
         dbgMsg("copied a gate into lit = " + to_string(var));
         latch_next_lits.push_back(var);
-        //blank_spec.addOutput(var, NULL);
     }
     dbgMsg("Creating BDDs from the new and-gate lits");
     vector<BDD> latch_next;
@@ -340,11 +339,7 @@ static void outputIndCertificate(Cudd* mgr, BDDAIG* spec, BDD winning_region) {
             simple_winning_region =
                 simple_winning_region.Cofactor(~mgr->bddVar((*k)->lit));
         } else {
-            BDD var_bdd = mgr->bddVar(*j); //AIG::stripLit(*j));
-            //if (AIG::litIsNegated(*j)) {
-            //    dbgMsg("We have a negated lit!");
-            //    var_bdd = ~var_bdd;
-            //}
+            BDD var_bdd = mgr->bddVar(*j);
             latch_next.push_back(var_bdd);
             clean_original_latch.push_back(*l);
         }
@@ -375,11 +370,9 @@ static void outputIndCertificate(Cudd* mgr, BDDAIG* spec, BDD winning_region) {
     // the numbering of the nodes to do the bdd 2 aig translation
     unsigned w = bdd2aig(mgr, &blank_spec, winning_region, &cache);
     dbgMsg("W = " + to_string(w));
-    //blank_spec.addOutput(w, NULL);
     dbgMsg("Creating the and for the output signal");
     unsigned w_primed = bdd2aig(mgr, &blank_spec, primed_winning_region, &cache);
     dbgMsg("W' = " + to_string(w_primed));
-    //blank_spec.addOutput(w_primed, NULL);
     // we want W => W'(L<-f_l) so we will do ~(w & ~w')
     blank_spec.addOutput(AIG::negateLit(
                          blank_spec.optimizedGate(w, AIG::negateLit(w_primed))),
@@ -410,16 +403,6 @@ static BDD substituteLatchesNext(BDDAIG* spec, BDD dst, BDD* care_region=NULL) {
     } else {
         vector<BDD> next_funs = spec->nextFunComposeVec(care_region);
         result = dst.VectorCompose(next_funs);
-#if false
-        BDD trans_rel_bdd = spec->transRelBdd();
-        BDD primed_dst = spec->primeLatchesInBdd(dst);
-        BDD primed_latch_cube = spec->primedLatchCube();
-        BDD result2 = trans_rel_bdd.AndAbstract(primed_dst,
-                                                primed_latch_cube);
-        if (result != result2) {
-            errMsg("Vector compose resulted in the wrong BDD");
-        }
-#endif
     }
     return result;
 }
@@ -623,8 +606,6 @@ static bool internalSolveAbstractBackAndForth(Cudd* mgr, BDDAIG* spec,
     }
 
     BDD bad_transitions = ~cache_trans_bdd;
-                          //~abstractSafeCpreAux(spec, mayWin, 
-                          //                     mgr->bddOne(), cache_trans_bdd);
 
     bool includes_init = (init_state & mayWin).IsZero();
     dbgMsg("Early exit? " + to_string(includes_init) + 
@@ -668,9 +649,7 @@ static BDD upre(BDDAIG* spec, BDD dst, BDD &trans_bdd) {
 static bool internalSolveExact(Cudd* mgr, BDDAIG* spec, const BDD* upre_init, 
                                BDD* losing_region, BDD* losing_transitions,
                                bool do_synth=false) {
-    //static int occ_counter = 1;
     dbgMsg("Computing fixpoint of UPRE.");
-    //cout << "Visited " << occ_counter++ << endl;
     bool includes_init = false;
     unsigned cnt = 0;
     BDD bad_transitions;
@@ -687,6 +666,10 @@ static bool internalSolveExact(Cudd* mgr, BDDAIG* spec, const BDD* upre_init,
         error_states = prev_error | upre(spec, prev_error, bad_transitions);
         includes_init = ((init_state & error_states) != ~mgr->bddOne());
         cnt++;
+#ifndef NDEBUG
+        string fname = "upre_error" + to_string(cnt) + ".dot";
+        spec->dump2dot(error_states, fname.c_str());
+#endif
     }
     
     dbgMsg("Early exit? " + to_string(includes_init) + 
@@ -1274,7 +1257,8 @@ bool solve(AIG* spec_base, Cudd_ReorderingType reordering) {
         } else if (settings.comp_algo == 4){
                 result = compSolve4(&mgr, &spec);
         } else { // traditional fixpoint computation
-            result = internalSolve(&mgr, &spec, NULL, NULL, NULL, true);
+            result = internalSolve(&mgr, &spec, NULL, NULL, NULL,
+                                   settings.out_file != NULL);
         }
     }
     // deal with the synthesis step if needed
