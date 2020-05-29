@@ -46,6 +46,13 @@ paper describing the tool:
 }
 ```
 
+# Frequently asked questions
+* What is the difference between the winning region and the inductive certificate that
+  AbsSynthe can generate?
+* **Answer**: The idea behind the winning region that AbsSynthe can output is outlined in the rules of the synthesis-competition website (http://www.syntcomp.org/rules/).
+For the winning region generation, I take a BDD representing the set of latch valuations (i.e. states) that are safe with respect to the specification. I then generate a new AIG file in which each latch becomes an input and the output of the encoded circuit has value 1 if and only if the given values for the latches correspond to a safe/winning state. Otherwise the value is 0. In AIGER terms, we started with a file whose input, latch, and output sets were I, L, O respectively. I create a new AIGER file with I', L', O' as new sets of inputs, latches, and outputs such that I' = L, O' = Win(I') and L' is empty.
+For the inductive certificate we go beyond just safe states and want to capture all the controllable-input valuations that make it so that the uncontrollable-input valuation does not take the system outside of the safe/winning region. Again, starting from the BDD for the safe latch valuations, one can use the transition relation of the system and intersect it with the winning region so as to obtain precisely the desired transitions and build an AIG for it. Latches and inputs both become inputs in the new circuit and its output is 1 if and only if the given values correspond to an uncontrollable-input valuation and a controllable-input valuation so that, from the chosen latch valuation, we reach again a safe latch valuation. In AIGER terms, we create a file with I', L', O' as new sets of inputs, latches, and outputs such that I' = I U L, O' = T(L,I,L'') ^ Win(L''), and L' is empty.
+
 # Changelog
 
 ## UPDATES v2.1
