@@ -114,6 +114,11 @@ void usage() {
 << std::endl
 << "                                   file extension rules as for OUT_FILE."
 << std::endl
+<< "-b BISIM_OUT_FILE, --bisim BISIM_OUT_FILE" << std::endl
+<< "                                   Output bisimulation relation. Same "
+<< std::endl
+<< "                                   file extension rules as for OUT_FILE."
+<< std::endl
 << "-i IND_CERT_OUT_FILE, --ind_cert IND_CERT_OUT_FILE" << std::endl
 << "                                   Output a certificate of the winning region "
 << std::endl
@@ -141,13 +146,14 @@ void parse_arguments(int argc, char** argv) {
     settings.spec_file = NULL;
     settings.out_file = NULL;
     settings.win_region_out_file = NULL;
+    settings.bisim_out_file = NULL;
     settings.ind_cert_out_file = NULL;
 
     // read values from argv
     int opt_key;
     int long_idx;
     while (true) {
-        opt_key = getopt_long(argc, argv, "v:ta::prsmc:f:o:w:i:", long_options, &long_idx);
+        opt_key = getopt_long(argc, argv, "v:ta::prsmc:f:o:w:b:i:", long_options, &long_idx);
         if (opt_key == -1)
             break;
         switch (opt_key) {
@@ -199,6 +205,9 @@ void parse_arguments(int argc, char** argv) {
             case 'w':
                 settings.win_region_out_file = optarg;
                 break;
+            case 'b':
+                settings.bisim_out_file = optarg;
+                break;
             case 'i':
                 settings.ind_cert_out_file = optarg;
                 break;
@@ -223,6 +232,10 @@ int main(int argc, char** argv) {
     bool result;
     if (settings.parallel) {
         result = solveParallel();
+    } else if (settings.bisim_out_file != NULL) {
+        AIG aig(settings.spec_file);
+        bisim(&aig);
+        exit(-1);
     } else {
         // try to open the spec now
         AIG aig(settings.spec_file);

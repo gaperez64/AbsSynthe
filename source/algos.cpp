@@ -1269,6 +1269,86 @@ bool solve(AIG* spec_base, Cudd_ReorderingType reordering) {
     return result;
 }
 
+static void computeBisimRel(Cudd* mgr, BDDAIG* spec) {
+    dbgMsg("Computing the coarsest bisimulation.");
+    // just to make sure the BDDs for the primed vars exist in the BDD table
+    // (this is necessary for the next instruction to do its job)
+    BDD primed_latch_cube = spec->primedLatchCube();
+    vector<BDD> next_funs = spec->nextFunComposeVec();
+    
+    // let's get to the actual bisimulation computation
+    unsigned cnt = 0;
+    BDD swapped_error = spec->primeLatchesInBdd(spec->errorStates());
+    BDD not_bisim = (spec->errorStates() & ~swapped_error) |
+                    (~spec->errorStates() & swapped_error);
+    BDD prev_not_bisim = mgr->bddOne();
+    while (not_bisim != prev_not_bisim) {
+#ifndef NDEBUG
+        dbgMsg("New iteration of the bisimulation relation computation");
+#endif
+        prev_not_bisim = not_bisim;
+        // we first get the predecessors of elements not in relation
+        BDD pred_not_bisim = (~not_bisim).VectorCompose(next_funs);
+        // we can now remove relations based on the absence of common
+        // transitions, note that since the circuit is deterministic,
+        // there is a single case!
+        BDD split_by_trans = pred_not_bisim.ExistAbstract(
+                spec->cinputCube() & spec->uinputCube());
+        // now we have the new elements known to be not in relation
+        not_bisim = prev_not_bisim | split_by_trans;
+        cnt++;
+#ifndef NDEBUG
+        spec->isValidBdd(not_bisim);
+        string fname = "bisim_iter" + to_string(cnt) + ".dot";
+        spec->dump2dot(not_bisim, fname.c_str());
+#endif
+    }
+    
+    dbgMsg("Computation succeeded after " + to_string(cnt) + " iterations.");
+
+    // now we can remove information depending on the fake latch
+    BDD clean_bisim_rel = (~not_bisim).Cofactor(~spec->errorStates());
+    // let us clean the AIG before we start introducing new stuff
+    spec->popErrorLatch();
+
+    // we are ready to output the bisimulation relation
+    AIG blank_spec;
+    vector<aiger_symbol*> latches = spec->getLatches();
+    unordered_map<unsigned long, unsigned> cache;
+    dbgMsg("Adding latches to the new AIG instance.");
+    vector<BDD> latch_bdds;
+    vector<BDD> primed_latch_bdds;
+    for (vector<aiger_symbol*>::iterator i = latches.begin();
+         i != latches.end(); i++) {
+        unsigned lit = (*i)->lit;
+#ifndef NDEBUG
+        dbgMsg("Adding latch as input, lit = " + to_string(lit));
+#endif
+        blank_spec.addInput(lit, (*i)->name);
+        unsigned fresh_lit = (spec->maxVar() + 1) * 2;
+#ifndef NDEBUG
+        dbgMsg("Adding primed latch as input, lit = " + to_string(fresh_lit));
+#endif
+        blank_spec.addInput(fresh_lit, (*i)->name);
+        latch_bdds.push_back(blank_spec.lit2bdd(lit));
+        primed_latch_bdds.push_back(blank_spec.lit2bdd(fresh_lit));
+    }
+    clean_bisim_rel = clean_bisim_rel.SwapVariables(latch_bdds, primed_latch_bdds);
+    blank_spec.addOutput(bdd2aig(mgr, &blank_spec,
+                                 clean_bisim_rel, &cache), "winning region");
+    // Finally, we write the file
+    dbgMsg("About to write the bisimulation relation");
+    blank_spec.writeToFile(settings.bisim_out_file);
+    dbgMsg("Bisimulation relation done!");
+}
+
+void bisim(AIG* spec_base, Cudd_ReorderingType reordering) {
+    Cudd mgr(0, 0);
+    mgr.AutodynEnable(reordering);
+    BDDAIG spec(*spec_base, &mgr);
+    computeBisimRel(&mgr, &spec);
+}
+
 static void pWorker(AIG* spec_base, int solver) {
     assert(data != NULL);
     bool result;

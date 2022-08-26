@@ -103,13 +103,13 @@ class BDDAIG : public AIG {
         std::unordered_map<unsigned, BDD>* lit2bdd_map;
         std::unordered_map<unsigned long, std::set<unsigned>>* bdd2deps_map;
         std::vector<BDD>* next_fun_compose_vec;
-        BDD lit2bdd(unsigned);
         std::vector<BDD> mergeSomeSignals(BDD, std::vector<unsigned>*, int);
         void defaultValues();
     public:
         static BDD safeRestrict(BDD, BDD);
         std::set<unsigned> semanticDeps(BDD);
         static unsigned primeVar(unsigned lit) { return AIG::stripLit(lit) + 1; }
+        BDD lit2bdd(unsigned);
 
         BDDAIG(const BDDAIG&, std::vector<std::pair<unsigned, BDD>>);
         BDDAIG(const AIG&, Cudd*);
@@ -127,7 +127,7 @@ class BDDAIG : public AIG {
         BDD toCube(std::set<unsigned>&);
         std::set<unsigned> getBddDeps(BDD);
         std::set<unsigned> getBddLatchDeps(BDD);
-        std::vector<BDD> nextFunComposeVec(BDD*);
+        std::vector<BDD> nextFunComposeVec(BDD* care_region=NULL);
         std::vector<BDD> getNextFunVec();
         std::vector<BDDAIG*> decompose(int);
         bool isValidLatchBdd(BDD);

@@ -741,7 +741,7 @@ std::vector<BDD> BDDAIG::getNextFunVec() {
     return result;
 }
 
-std::vector<BDD> BDDAIG::nextFunComposeVec(BDD* care_region=NULL) {
+std::vector<BDD> BDDAIG::nextFunComposeVec(BDD* care_region) {
     if (this->next_fun_compose_vec == NULL) {
 #ifndef NDEBUG 
         dbgMsg("building and caching next_fun_compose_vec");
@@ -752,9 +752,9 @@ std::vector<BDD> BDDAIG::nextFunComposeVec(BDD* care_region=NULL) {
             bool found = false;
             for (std::vector<aiger_symbol*>::iterator latch_it = this->latches.begin();
                  latch_it != this->latches.end(); latch_it++) {
-                if (latch_it != this->latches.end() && i == (*latch_it)->lit) {
+                BDD next_fun;
+                if (i == (*latch_it)->lit) {
                     // since we allow for short_error to override the next fun...
-                    BDD next_fun;
                     if (i == this->error_fake_latch.lit &&
                            this->short_error != NULL) {
                         next_fun = *this->short_error;
@@ -776,6 +776,15 @@ std::vector<BDD> BDDAIG::nextFunComposeVec(BDD* care_region=NULL) {
                                std::to_string(i));
 #endif
                     }
+                    this->next_fun_compose_vec->push_back(next_fun);
+                    found = true;
+                    break;
+                } else if (i == this->primeVar((*latch_it)->lit)) {
+                    next_fun = this->primeLatchesInBdd(this->lit2bdd((*latch_it)->next));
+#ifndef NDEBUG
+                    dbgMsg("Taking the next function of latch " +
+                           std::to_string(i));
+#endif
                     this->next_fun_compose_vec->push_back(next_fun);
                     found = true;
                     break;
@@ -1155,12 +1164,6 @@ bool BDDAIG::isValidBdd(BDD b) {
              i != vars_in_cone.end(); i++)
             litstring += std::to_string(*i) + ", ";
         dbgMsg(std::to_string(vars_in_cone.size()) + " Vars in bdd: " + litstring);
-        litstring.clear();
-        std::set<unsigned> all_deps = this->getBddDeps(*this->short_error);
-        for (std::set<unsigned>::iterator i = all_deps.begin();
-             i != all_deps.end(); i++)
-            litstring += std::to_string(*i) + ", ";
-        dbgMsg(std::to_string(vars_in_cone.size()) + " Vars in cone: " + litstring);
         litstring.clear();
         return false;
     } else {

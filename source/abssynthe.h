@@ -41,12 +41,14 @@ struct settings_struct {
     const char* spec_file;
     const char* out_file;
     const char* win_region_out_file;
+    const char* bisim_out_file;
     const char* ind_cert_out_file;
 };
 
 extern struct settings_struct settings;
 
 bool solve(AIG*,Cudd_ReorderingType reordering=CUDD_REORDER_SIFT);
+void bisim(AIG*,Cudd_ReorderingType reordering=CUDD_REORDER_SIFT);
 bool solveParallel();
 
 #endif
