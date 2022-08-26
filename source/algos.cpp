@@ -1315,6 +1315,7 @@ static void computeBisimRel(Cudd* mgr, BDDAIG* spec) {
     dbgMsg("Computation succeeded after " + to_string(cnt) + " iterations.");
 
     // let us clean the AIG before we start introducing new stuff
+    BDD clean_bisim_rel = ~not_bisim;
     spec->popErrorLatch();
 
     // we are ready to output the bisimulation relation
