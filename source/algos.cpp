@@ -1281,7 +1281,7 @@ static void computeBisimRel(Cudd* mgr, BDDAIG* spec) {
     BDD swapped_error = spec->primeLatchesInBdd(spec->errorStates());
     BDD not_bisim = (spec->errorStates() & ~swapped_error) |
                     (~spec->errorStates() & swapped_error);
-    BDD pred_not_bisim = not_bisim.VectorCompose(next_funs);
+    not_bisim = not_bisim.VectorCompose(next_funs);
 #ifndef NDEBUG
     spec->dump2dot(not_bisim, "bisim_iter0.dot");
 #endif
