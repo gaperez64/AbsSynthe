@@ -1281,6 +1281,9 @@ static void computeBisimRel(Cudd* mgr, BDDAIG* spec) {
     BDD swapped_error = spec->primeLatchesInBdd(spec->errorStates());
     BDD not_bisim = (spec->errorStates() & ~swapped_error) |
                     (~spec->errorStates() & swapped_error);
+#ifndef NDEBUG
+    spec->dump2dot(not_bisim, "bisim_iter0.dot");
+#endif
     BDD prev_not_bisim = mgr->bddOne();
     while (not_bisim != prev_not_bisim) {
 #ifndef NDEBUG
@@ -1288,7 +1291,11 @@ static void computeBisimRel(Cudd* mgr, BDDAIG* spec) {
 #endif
         prev_not_bisim = not_bisim;
         // we first get the predecessors of elements not in relation
-        BDD pred_not_bisim = (~not_bisim).VectorCompose(next_funs);
+        BDD pred_not_bisim = not_bisim.VectorCompose(next_funs);
+#ifndef NDEBUG
+        string fname = "pred_iter" + to_string(cnt) + ".dot";
+        spec->dump2dot(pred_not_bisim, fname.c_str());
+#endif
         // we can now remove relations based on the absence of common
         // transitions, note that since the circuit is deterministic,
         // there is a single case!
@@ -1299,7 +1306,7 @@ static void computeBisimRel(Cudd* mgr, BDDAIG* spec) {
         cnt++;
 #ifndef NDEBUG
         spec->isValidBdd(not_bisim);
-        string fname = "bisim_iter" + to_string(cnt) + ".dot";
+        fname = "bisim_iter" + to_string(cnt) + ".dot";
         spec->dump2dot(not_bisim, fname.c_str());
 #endif
     }
@@ -1336,7 +1343,7 @@ static void computeBisimRel(Cudd* mgr, BDDAIG* spec) {
     }
     clean_bisim_rel = clean_bisim_rel.SwapVariables(latch_bdds, primed_latch_bdds);
     blank_spec.addOutput(bdd2aig(mgr, &blank_spec,
-                                 clean_bisim_rel, &cache), "winning region");
+                                 clean_bisim_rel, &cache), "bisim relation indicator");
     // Finally, we write the file
     dbgMsg("About to write the bisimulation relation");
     blank_spec.writeToFile(settings.bisim_out_file);
