@@ -1,7 +1,7 @@
 #!/bin/bash
 DIR=`dirname $0`/
 cd ${DIR}source
-tar -zxvf cudd-2.5.1-mac.tar.gz
+tar -zxvf cudd-2.5.1.tar.gz
 cd cudd-2.5.1
 make objlib
 cd ..

@@ -89,8 +89,8 @@ void AIG::writeToFileAsCnf(const char* dimacs_file_name, unsigned* c_lits,
 }
 
 void AIG::addInput(unsigned lit, const char* name) {
-    //dbgMsg("Just before adding an input");
-    //dbgMsg("The max var = " + std::to_string(this->spec->maxvar));
+    // dbgMsg("Just before adding an input");
+    // dbgMsg("The max var = " + std::to_string(this->spec->maxvar));
     aiger_add_input(this->spec, lit, name);
 }
 
@@ -702,6 +702,8 @@ BDD BDDAIG::lit2bdd(unsigned lit) {
         (*cache)[lit] = result;
         (*cache)[AIG::negateLit(lit)] = ~result;
     }
+    // FIXME: is the cache ever NULL? at the beginning of the function we used
+    // it so that might be a null-pointer exception
     return result;
 }
 

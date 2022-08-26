@@ -19,3 +19,5 @@ abssynthe-dbg: $(HEADERS) $(SOURCES) $(CUDD_HDRS) $(CUDD_LIBS)
 	$(CXX) $(DBGFLAGS) $(SOURCES) $(CUDD_LIBS) -o abssynthe-dbg -I $(CUDD_HDRS)
 clean:
 	rm -f abssynthe
+all: abssynthe abssynthe-dbg
+.PHONY: all

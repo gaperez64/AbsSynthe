@@ -367,7 +367,7 @@ static void outputIndCertificate(Cudd* mgr, BDDAIG* spec, BDD winning_region) {
     // we need to add a boolean function to determine if the latch config
     // corresponds to a winning state
     // IMPORTANT: no more BDD manipulation after this point since I am caching
-    // the numbering of the nodes to do the bdd 2 aig translation
+    // the numbering of the nodes to do the bdd2aig translation
     unsigned w = bdd2aig(mgr, &blank_spec, winning_region, &cache);
     dbgMsg("W = " + to_string(w));
     dbgMsg("Creating the and for the output signal");
@@ -1315,9 +1315,10 @@ static void computeBisimRel(Cudd* mgr, BDDAIG* spec) {
     AIG blank_spec;
     vector<aiger_symbol*> latches = spec->getLatches();
     unordered_map<unsigned long, unsigned> cache;
-    dbgMsg("Adding latches to the new AIG instance.");
+    dbgMsg("Adding latches (now inputs) to the new AIG instance.");
     vector<BDD> latch_bdds;
     vector<BDD> primed_latch_bdds;
+    unsigned fresh_lit = (spec->maxVar() + 1) * 2;
     for (vector<aiger_symbol*>::iterator i = latches.begin();
          i != latches.end(); i++) {
         unsigned lit = (*i)->lit;
@@ -1325,13 +1326,13 @@ static void computeBisimRel(Cudd* mgr, BDDAIG* spec) {
         dbgMsg("Adding latch as input, lit = " + to_string(lit));
 #endif
         blank_spec.addInput(lit, (*i)->name);
-        unsigned fresh_lit = (spec->maxVar() + 1) * 2;
 #ifndef NDEBUG
         dbgMsg("Adding primed latch as input, lit = " + to_string(fresh_lit));
 #endif
         blank_spec.addInput(fresh_lit, (*i)->name);
-        latch_bdds.push_back(blank_spec.lit2bdd(lit));
-        primed_latch_bdds.push_back(blank_spec.lit2bdd(fresh_lit));
+        latch_bdds.push_back(mgr->bddVar(lit));
+        primed_latch_bdds.push_back(mgr->bddVar(fresh_lit));
+        fresh_lit += 2;
     }
     clean_bisim_rel = clean_bisim_rel.SwapVariables(latch_bdds, primed_latch_bdds);
     blank_spec.addOutput(bdd2aig(mgr, &blank_spec,
