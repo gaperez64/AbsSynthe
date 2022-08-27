@@ -1273,39 +1273,36 @@ static void computeBisimRel(Cudd* mgr, BDDAIG* spec) {
     dbgMsg("Computing the coarsest bisimulation.");
     // just to make sure the BDDs for the primed vars exist in the BDD table
     // (this is necessary for the next instruction to do its job)
-    BDD primed_latch_cube = spec->primedLatchCube();
-    vector<BDD> next_funs = spec->nextFunComposeVec();
+    const BDD primed_latch_cube = spec->primedLatchCube();
+    const vector<BDD> next_funs = spec->nextFunComposeVec();
     
     // let's get to the actual bisimulation computation
     unsigned cnt = 0;
-    BDD swapped_error = spec->primeLatchesInBdd(spec->errorStates());
+    const BDD swapped_error = spec->primeLatchesInBdd(spec->errorStates());
     BDD not_bisim = (spec->errorStates() & ~swapped_error) |
                     (~spec->errorStates() & swapped_error);
-    not_bisim = not_bisim.VectorCompose(next_funs);
 #ifndef NDEBUG
+    spec->isValidBdd(not_bisim);
     spec->dump2dot(not_bisim, "bisim_iter0.dot");
 #endif
     BDD prev_not_bisim = mgr->bddOne();
     while (not_bisim != prev_not_bisim) {
-#ifndef NDEBUG
-        dbgMsg("New iteration of the bisimulation relation computation");
-#endif
         prev_not_bisim = not_bisim;
         // we first get the predecessors of elements not in relation
         BDD pred_not_bisim = not_bisim.VectorCompose(next_funs);
-#ifndef NDEBUG
-        string fname = "pred_iter" + to_string(cnt) + ".dot";
-        spec->dump2dot(pred_not_bisim, fname.c_str());
-#endif
         // we can now remove relations based on the absence of common
         // transitions, note that since the circuit is deterministic,
         // there is a single case!
         BDD split_by_trans = pred_not_bisim.ExistAbstract(
                 spec->cinputCube() & spec->uinputCube());
         // now we have the new elements known to be not in relation
-        not_bisim = prev_not_bisim | split_by_trans;
+        not_bisim = not_bisim | split_by_trans;
         cnt++;
 #ifndef NDEBUG
+        dbgMsg("New iteration of the bisimulation relation computation");
+        spec->isValidBdd(pred_not_bisim);
+        string fname = "pred_iter" + to_string(cnt) + ".dot";
+        spec->dump2dot(pred_not_bisim, fname.c_str());
         spec->isValidBdd(not_bisim);
         fname = "bisim_iter" + to_string(cnt) + ".dot";
         spec->dump2dot(not_bisim, fname.c_str());
@@ -1315,8 +1312,18 @@ static void computeBisimRel(Cudd* mgr, BDDAIG* spec) {
     dbgMsg("Computation succeeded after " + to_string(cnt) + " iterations.");
 
     // let us clean the AIG before we start introducing new stuff
-    BDD clean_bisim_rel = ~not_bisim;
+    BDD bisim_rel = ~not_bisim;
+#ifndef NDEBUG
+    dbgMsg("Bisimulation-relation BDD");
+    spec->isValidBdd(bisim_rel);
+#endif
+    BDD clean_bisim_rel = bisim_rel.ExistAbstract(
+            spec->errorStates() & swapped_error);
     spec->popErrorLatch();
+#ifndef NDEBUG
+    dbgMsg("Cleaned the bisimulation-relation BDD");
+    spec->isValidBdd(clean_bisim_rel);
+#endif
 
     // we are ready to output the bisimulation relation
     AIG blank_spec;
@@ -1333,11 +1340,11 @@ static void computeBisimRel(Cudd* mgr, BDDAIG* spec) {
         dbgMsg("Adding latch as input, lit = " + to_string(lit));
 #endif
         blank_spec.addInput(lit, (*i)->name);
+        latch_bdds.push_back(spec->primeLatchesInBdd(mgr->bddVar(lit)));
 #ifndef NDEBUG
         dbgMsg("Adding primed latch as input, lit = " + to_string(fresh_lit));
 #endif
         blank_spec.addInput(fresh_lit, (*i)->name);
-        latch_bdds.push_back(mgr->bddVar(lit));
         primed_latch_bdds.push_back(mgr->bddVar(fresh_lit));
         fresh_lit += 2;
     }

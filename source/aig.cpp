@@ -774,6 +774,7 @@ std::vector<BDD> BDDAIG::nextFunComposeVec(BDD* care_region) {
                     } else {
                         next_fun = this->lit2bdd((*latch_it)->next);
 #ifndef NDEBUG
+                        this->isValidBdd(next_fun);
                         dbgMsg("Taking the next function of latch " +
                                std::to_string(i));
 #endif
@@ -784,7 +785,9 @@ std::vector<BDD> BDDAIG::nextFunComposeVec(BDD* care_region) {
                 } else if (i == this->primeVar((*latch_it)->lit)) {
                     next_fun = this->primeLatchesInBdd(this->lit2bdd((*latch_it)->next));
 #ifndef NDEBUG
-                    dbgMsg("Taking the next function of latch " +
+
+                    this->isValidBdd(next_fun);
+                    dbgMsg("Taking the next function of primed latch " +
                            std::to_string(i));
 #endif
                     this->next_fun_compose_vec->push_back(next_fun);
@@ -793,6 +796,7 @@ std::vector<BDD> BDDAIG::nextFunComposeVec(BDD* care_region) {
                 }
             }
             if (!found) {
+                dbgMsg("Variable " + std::to_string(i) + " not found, default added");
                 this->next_fun_compose_vec->push_back(this->mgr->bddVar(i));
             }
         }
@@ -1129,6 +1133,7 @@ bool BDDAIG::isValidLatchBdd(BDD b) {
 bool BDDAIG::isValidBdd(BDD b) {
 #ifndef NDEBUG
     std::set<unsigned> vars_in_cone = this->semanticDeps(b);
+    b.PrintMinterm();
     unsigned hits = 0;
     for (std::vector<aiger_symbol*>::iterator i = this->latches.begin();
          i != this->latches.end(); i++) {
