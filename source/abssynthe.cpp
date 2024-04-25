@@ -58,8 +58,7 @@ static struct option long_options[] = {
 void usage() {
     std::cout << ABSSYNTHE_VERSION << std::endl
 << "usage:" << std::endl
-<< "./abssynthe [-h] [-t] [-a] [-r] [-p] [-s] [-c {1,2,3,4}] "
-<< "[-f N_FOLDS] [-m] [-v VERBOSE_LEVEL] [-o OUT_FILE] spec"
+<< "./abssynthe [options] spec"
 << std::endl
 << "positional arguments:" << std::endl
 << "spec                               input specification in extended AIGER format"
@@ -114,10 +113,14 @@ void usage() {
 << std::endl
 << "                                   file extension rules as for OUT_FILE."
 << std::endl
+<< "                                   This will be ignored if -o is not present."
+<< std::endl
 << "-i IND_CERT_OUT_FILE, --ind_cert IND_CERT_OUT_FILE" << std::endl
 << "                                   Output a certificate of the winning region "
 << std::endl
 << "                                   being inductive (.aig .aag or .qdimacs)."
+<< std::endl
+<< "                                   This will also be ignored if -o is not present."
 << std::endl;
 }
 
