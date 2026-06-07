@@ -33,6 +33,7 @@
 #include <map>
 #include <unordered_map>
 #include <algorithm>
+#include <cstdio>
 #include <iterator>
 #include <iostream>
 #include <ctime>
@@ -180,7 +181,15 @@ unsigned AIG::copyGateFrom(const AIG* other, unsigned and_lit) {
 }
 
 void AIG::input2gate(unsigned input, unsigned rh0) {
+    aiger_symbol* symbol = aiger_is_input(this->spec, input);
+    std::string name = symbol && symbol->name ? symbol->name : "";
     aiger_redefine_input_as_and(this->spec, input, rh0, rh0);
+    if (!name.empty()) {
+        char comment[4096];
+        snprintf(comment, sizeof(comment), "controllable-gate %u %s", input,
+                 name.c_str());
+        aiger_add_comment(this->spec, comment);
+    }
     dbgMsg("Gated input " + std::to_string(input) + " with val = " +
            std::to_string(rh0));
 }
