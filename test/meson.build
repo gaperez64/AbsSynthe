@@ -74,6 +74,19 @@ test('gr1_synth_recurrence', gr1verify, args: [abssynthe, files('gr1_recur.aag')
 test('gr1_synth_fairness', gr1verify,
      args: [abssynthe, files('gr1_fair_real.aag')])
 
+# Multiple system Buchi goals: realizability uses the conjunction fixpoint
+# directly; synthesis degeneralizes the generalized-Buchi guarantee into one
+# goal via a mod-n justice counter, then extracts + model-checks the controller.
+test('gr1_multi_goal_realizable', expect,
+     args: ['10', abssynthe, files('gr1_two_goals.aag')])
+test('gr1_multi_goal_unrealizable', expect,
+     args: ['20', abssynthe, files('gr1_two_goals_unreal.aag')])
+test('gr1_synth_two_goals', gr1verify,
+     args: [abssynthe, files('gr1_two_goals.aag')])
+# Three goals exercise a 2-bit mod-3 counter (the wrap 2 -> 0).
+test('gr1_synth_three_goals', gr1verify,
+     args: [abssynthe, files('gr1_three_goals.aag')])
+
 # CLI / logging / ordering / rsynth paths.
 test('help', expect, args: ['0', abssynthe, '--help'])
 test('verbose', expect, args: ['10', abssynthe, '-v', '1', b_real])

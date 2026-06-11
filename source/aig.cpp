@@ -206,6 +206,98 @@ void AIG::popErrorLatch() {
     this->latches.pop_back();
 }
 
+void AIG::degeneralizeJustice() {
+    // Collect every system Buchi goal (all literals of all justice properties:
+    // the guarantee is /\_v GF goals[v]).
+    std::vector<unsigned> goals;
+    for (unsigned j = 0; j < this->spec->num_justice; j++)
+        for (unsigned k = 0; k < this->spec->justice[j].size; k++)
+            goals.push_back(this->spec->justice[j].lits[k]);
+    unsigned n = goals.size();
+    if (n <= 1)
+        return; // a single goal is handled directly by the GR(1) solver
+
+    // Standard generalized-Buchi -> Buchi degeneralization: a deterministic
+    // mod-n counter j (counter latches, reset 0) advances when the currently
+    // pursued goal goals[j] holds; the single new goal is the wrap step
+    // (j == n-1) && goals[n-1], so GF(new goal) <=> /\_v GF goals[v].
+    this->popErrorLatch(); // reclaim the phantom error latch's reserved lit
+
+    unsigned b = 0;
+    while ((1u << b) < n)
+        b++;
+
+    // Add the counter latches; their next functions are patched in below once
+    // the gates that reference them exist.
+    unsigned base_idx = this->spec->num_latches;
+    std::vector<unsigned> bit;
+    for (unsigned k = 0; k < b; k++) {
+        unsigned lit = (this->maxVar() + 1) * 2;
+        char name[32];
+        snprintf(name, sizeof(name), "gr1_counter_%u", k);
+        aiger_add_latch(this->spec, lit, 0, name); // placeholder next
+        bit.push_back(lit);
+    }
+
+    // Boolean gate helpers over AIG literals.
+    auto andG = [&](unsigned a, unsigned c) {
+        return this->optimizedGate(a, c);
+    };
+    auto orG = [&](unsigned a, unsigned c) {
+        return AIG::negateLit(
+            this->optimizedGate(AIG::negateLit(a), AIG::negateLit(c)));
+    };
+    // sel(v): minterm of the counter bits encoding the value v.
+    auto sel = [&](unsigned v) {
+        unsigned s = 1; // true
+        for (unsigned k = 0; k < b; k++)
+            s = andG(s, ((v >> k) & 1) ? bit[k] : AIG::negateLit(bit[k]));
+        return s;
+    };
+
+    // The currently pursued goal holds: \/_v sel(v) && goals[v].
+    unsigned jcur = 0; // false
+    for (unsigned v = 0; v < n; v++)
+        jcur = orG(jcur, andG(sel(v), goals[v]));
+
+    // Next counter value (mod n) when advancing, computed bit by bit, with the
+    // latch holding its value when not advancing:
+    //   next_k = (jcur && incrbit_k) || (!jcur && bit_k),
+    //   incrbit_k = \/_{v : bit k of ((v+1) mod n) set} sel(v).
+    for (unsigned k = 0; k < b; k++) {
+        unsigned incrbit = 0;
+        for (unsigned v = 0; v < n; v++)
+            if ((((v + 1) % n) >> k) & 1)
+                incrbit = orG(incrbit, sel(v));
+        unsigned next =
+            orG(andG(jcur, incrbit), andG(AIG::negateLit(jcur), bit[k]));
+        this->spec->latches[base_idx + k].next = next;
+    }
+
+    // The single degeneralized goal: the wrap step.
+    unsigned accept = andG(sel(n - 1), goals[n - 1]);
+
+    // Replace the justice records with the single accept goal.  Free the old
+    // per-property literal/name allocations and NULL them so aiger_reset (which
+    // null-checks) does not double-free; the default aiger allocator is
+    // malloc/free.
+    for (unsigned j = 0; j < this->spec->num_justice; j++) {
+        free(this->spec->justice[j].lits);
+        this->spec->justice[j].lits = NULL;
+        free(this->spec->justice[j].name);
+        this->spec->justice[j].name = NULL;
+    }
+    this->spec->num_justice = 0;
+    aiger_add_justice(this->spec, 1, &accept, "gr1_accept");
+
+    // Adding latches may have reallocated spec->latches, so rebuild the latch
+    // vector from scratch and restore the phantom error latch.
+    this->latches.clear();
+    for (unsigned i = 0; i < this->spec->num_latches; i++)
+        this->latches.push_back(this->spec->latches + i);
+    this->pushErrorLatch();
+}
+
 void AIG::defaultValues() {
     strcpy(this->error_fake_latch_name, "error");
     this->must_clean = true;

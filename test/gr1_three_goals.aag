@@ -1,0 +1,24 @@
+aag 6 3 3 1 0 0 0 3 0
+8
+10
+12
+2 8
+4 10
+6 12
+0
+1
+1
+1
+2
+4
+6
+i0 controllable_a
+i1 controllable_b
+i2 controllable_c
+l0 la
+l1 lb
+l2 lc
+o0 err
+j0 ga
+j1 gb
+j2 gc

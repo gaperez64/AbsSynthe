@@ -85,6 +85,18 @@ class AIG {
     // GR(1): number of AIGER justice properties (system Buchi goals).  > 0
     // selects the GR(1) solver over the plain safety solver.
     unsigned numJustice() { return this->spec->num_justice; }
+    // Total number of system Buchi goals: every literal of every justice
+    // property (the generalized-Buchi guarantee conjoins GF over all of them).
+    unsigned numJusticeGoals() {
+        unsigned total = 0;
+        for (unsigned j = 0; j < this->spec->num_justice; j++)
+            total += this->spec->justice[j].size;
+        return total;
+    }
+    // Degeneralize a generalized-Buchi guarantee (> 1 goal) into a single one
+    // by adding a deterministic mod-n justice counter, so the single-goal GR(1)
+    // strategy extraction applies.  No-op for <= 1 goal.
+    void degeneralizeJustice();
     std::vector<unsigned> getCInputLits();
     std::vector<unsigned> getUInputLits();
     std::vector<unsigned> getLatchLits();

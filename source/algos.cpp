@@ -1395,9 +1395,10 @@ static bool solveGR1(Cudd *mgr, BDDAIG *spec, bool do_synth) {
     if (!real || !do_synth)
         return real;
     if (sysJ.size() != 1) {
-        wrnMsg(
-            "GR(1) strategy for multiple Buchi goals needs a justice-counter "
-            "memory latch (Phase 2b-ii); reporting realizability only.");
+        // solve() degeneralizes multiple goals into one before synthesis, so
+        // this is a defensive guard rather than an expected path.
+        wrnMsg("GR(1) strategy expects a single (possibly degeneralized) Buchi "
+               "goal; reporting realizability only.");
         return real;
     }
     synth_data.c_functions =
@@ -1414,6 +1415,12 @@ bool solve(AIG *spec_base, Cudd_ReorderingType reordering) {
     // we want spec to get garbage collected before we finalize
     // the synthesis step
     {
+        // For multi-goal GR(1) synthesis, degeneralize the generalized-Buchi
+        // guarantee into a single goal (mod-n justice counter) so the
+        // single-goal strategy extraction applies.  Realizability alone does
+        // not need it (solveGR1's conjunction handles multiple goals directly).
+        if (settings.out_file != NULL && spec_base->numJusticeGoals() > 1)
+            spec_base->degeneralizeJustice();
         BDDAIG spec(*spec_base, &mgr);
         if (spec.numJustice() > 0) {
             is_gr1 = true;
