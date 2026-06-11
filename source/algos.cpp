@@ -27,6 +27,7 @@
 #include <sys/mman.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/prctl.h>
 #include <signal.h>
 #include <pthread.h>
 #include <string>
@@ -1522,6 +1523,9 @@ bool solveParallel() {
         if (kiddo) {
             children[i] = kiddo;
         } else {
+            // Ask the kernel to SIGKILL this worker if the parent dies (e.g. it
+            // is killed by a test timeout), so we never leak runaway solvers.
+            prctl(PR_SET_PDEATHSIG, SIGKILL);
             solver = i;
             AIG spec(settings.spec_file);
             if (ordering_strategies)
@@ -1531,22 +1535,32 @@ bool solveParallel() {
         }
     }
 
-    // the parent waits for one child to finish
+    // The parent waits for one worker to report completion via shared memory,
+    // reaping any worker that exits meanwhile (tracking which, so we never
+    // signal a since-recycled pid below).
     int status;
-    pid_t kiddo;
-    while (!data->done)
-        kiddo = wait(&status);
-    dbgMsg("Answer from process " + to_string(kiddo));
-    dbgMsg("With status " + to_string(status));
-    // then the parent kills all its children
-    for (int i = 0; i < 4; i++)
-        kill(children[i], SIGKILL);
+    bool reaped[4] = {false, false, false, false};
+    while (!data->done) {
+        pid_t kiddo = wait(&status);
+        if (kiddo == -1)
+            break; // no children left to wait on; avoid spinning on ECHILD
+        for (int i = 0; i < 4; i++)
+            if (children[i] == kiddo)
+                reaped[i] = true;
+    }
     if (!data->done) {
         errMsg("Parallel solvers stopped unexpectedly. "
                "Synthesis/realizability test inconclusive",
                55);
         // personal code for: "FUCK, children stopped unexpectedly"
     }
+    // Stop every still-running worker and reap it, so none is left as a zombie.
+    for (int i = 0; i < 4; i++)
+        if (!reaped[i])
+            kill(children[i], SIGKILL);
+    for (int i = 0; i < 4; i++)
+        if (!reaped[i])
+            waitpid(children[i], &status, 0);
     // recover the answer
     bool result = data->result;
 
