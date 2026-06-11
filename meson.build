@@ -9,30 +9,21 @@ project('abssynthe', 'c', 'cpp',
   ])
 
 src = meson.current_source_dir() / 'source'
+cudd = src / 'cudd-2.5.1'
 
 # CUDD 2.5.1 is vendored as a tarball with its own legacy build system; we do not
-# port it.  Extract it at configure time so its headers exist for
-# include_directories(), then build its static archives with a custom target.
-run_command('sh', '-c',
-  '[ -d "@0@/cudd-2.5.1" ] || tar -zxf "@0@/cudd-2.5.1.tar.gz" -C "@0@"'.format(src),
-  check: true)
+# port it.  Build it in place at configure time (extract + its own `make
+# objlib`, which assembles its include/ dir and static archives).  build-cudd.sh
+# is idempotent, so reconfigures are cheap.
+run_command(files('build-cudd.sh'), src, check: true)
 
-cudd_inc = include_directories('source/cudd-2.5.1/include')
-cudd_archives = ['libobj.a', 'libcudd.a', 'libmtr.a', 'libst.a', 'libutil.a',
-                 'libepd.a']
-cudd = custom_target('cudd',
-  output: cudd_archives,
-  command: [files('build-cudd.sh'), src, '@OUTDIR@'],
-  build_by_default: true)
-
-cudd_link = []
-foreach a : cudd_archives
-  cudd_link += meson.current_build_dir() / a
-endforeach
 cudd_dep = declare_dependency(
-  sources: cudd, # build-order dependency on the custom target
-  include_directories: cudd_inc,
-  link_args: cudd_link + ['-lm'])
+  include_directories: include_directories('source/cudd-2.5.1/include'),
+  # Link order mirrors source/Makefile.
+  link_args: [
+    cudd / 'obj/libobj.a', cudd / 'cudd/libcudd.a', cudd / 'mtr/libmtr.a',
+    cudd / 'st/libst.a', cudd / 'util/libutil.a', cudd / 'epd/libepd.a', '-lm',
+  ])
 
 threads = dependency('threads')
 
