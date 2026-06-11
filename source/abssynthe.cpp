@@ -26,6 +26,10 @@
 #include <string>
 #include <stdlib.h>
 #include <getopt.h>
+#ifdef __linux__
+#include <sys/prctl.h>
+#include <signal.h>
+#endif
 
 #include "abssynthe.h"
 #include "logging.h"
@@ -241,6 +245,11 @@ void parse_arguments(int argc, char **argv) {
 }
 
 int main(int argc, char **argv) {
+#ifdef __linux__
+    // Die if our spawner (e.g. tlsfcompose, or a test runner on a timeout) is
+    // killed, so we never linger as a runaway orphan burning CPU.
+    prctl(PR_SET_PDEATHSIG, SIGKILL);
+#endif
     parse_arguments(argc, argv);
     // solve the synthesis problem
     bool result;
