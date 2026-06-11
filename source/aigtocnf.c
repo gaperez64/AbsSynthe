@@ -22,6 +22,7 @@ IN THE SOFTWARE.
 
 #include "aiger.h"
 
+#include <stdbool.h>
 #include <string.h>
 #include <stdlib.h>
 #include <limits.h>
