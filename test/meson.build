@@ -66,6 +66,14 @@ test('gr1_fairness_unrealizable', expect,
      args: ['20', abssynthe, files('gr1_fair_unreal.aag')])
 test('gr1_unrealizable', expect, args: ['20', abssynthe, files('gr1_unreal.aag')])
 
+# GR(1) strategy extraction (single Buchi goal): synthesize a controller and
+# model-check it by re-solving the closed system (the controllable inputs become
+# gates, so the solver verifies the strategy against every environment).
+gr1verify = find_program('gr1verify.sh')
+test('gr1_synth_recurrence', gr1verify, args: [abssynthe, files('gr1_recur.aag')])
+test('gr1_synth_fairness', gr1verify,
+     args: [abssynthe, files('gr1_fair_real.aag')])
+
 # CLI / logging / ordering / rsynth paths.
 test('help', expect, args: ['0', abssynthe, '--help'])
 test('verbose', expect, args: ['10', abssynthe, '-v', '1', b_real])

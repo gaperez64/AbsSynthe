@@ -68,6 +68,9 @@ struct synthesis_data {
     vector<pair<unsigned, BDD>> c_functions;
 };
 static synthesis_data synth_data;
+// Set by solveGR1 when it has populated synth_data.c_functions with a GR(1)
+// strategy (single Buchi goal); tells solve() to finalize the circuit.
+static bool gr1_synth_done = false;
 
 static bool outputExpected() {
     return settings.out_file != NULL || settings.win_region_out_file != NULL ||
@@ -1262,15 +1265,90 @@ static BDD cpre(BDDAIG *spec, BDD dst) {
     return ~upre(spec, ~dst, dummy);
 }
 
-// GR(1) realizability (Piterman-Pnueli-Sa'ar) over the controllable
-// predecessor. The error output is an absorbing-bad latch, so safety is folded
-// in:
+// Non-deterministic GR(1) strategy relation for a single system Buchi goal
+// (the generalized-Buchi conjunction has exactly one set), built at the
+// converged winning region Z via the Piterman-Pnueli-Sa'ar rank construction.
+// Replaying the muY fixpoint at fixed Z stratifies Z into layers Y^1 <= Y^2 <=
+// ... ; a state's rank is the least layer it joins.  From a state at rank r the
+// system either (a) sits on the goal and resets toward any Z-successor, (b)
+// strictly drops the rank by forcing the successor into Y^{r-1}, or (c) waits
+// inside the inner nuX set while an environment fairness assumption Je_i is
+// unmet (the assumption, met infinitely often, eventually releases the wait).
+// Each branch keeps "for all uncontrollable, exists controllable", so the
+// relation is a legal input to synthAlgo.  Memory over the goal index is
+// unnecessary with a single goal (Phase 2b-ii adds a justice counter for the
+// multi-goal case).
+static BDD gr1NondetStrategy(Cudd *mgr, BDDAIG *spec, BDD Z, BDD goal,
+                             const std::vector<BDD> &envF) {
+    BDD one = mgr->bddOne();
+    BDD zero = ~one;
+    BDD cpreZ = cpre(spec, Z);
+    BDD goalpart = goal & cpreZ;
+
+    // Replay the muY layers (and, per layer, the inner nuX sets) at fixed Z.
+    std::vector<BDD> Ylayers;
+    std::vector<std::vector<BDD>> Xlayers; // Xlayers[r-1][i] for layer r >= 1
+    Ylayers.push_back(zero);
+    BDD Y = zero, Yprev = one;
+    while (Y != Yprev) {
+        Yprev = Y;
+        BDD start = goalpart | cpre(spec, Yprev);
+        std::vector<BDD> Xi;
+        BDD disj;
+        if (envF.empty()) {
+            disj = start;
+        } else {
+            disj = zero;
+            for (size_t i = 0; i < envF.size(); i++) {
+                BDD X = one, Xprev = zero;
+                while (X != Xprev) {
+                    Xprev = X;
+                    X = start | (~envF[i] & cpre(spec, X));
+                }
+                Xi.push_back(X);
+                disj = disj | X;
+            }
+        }
+        Y = disj;
+        Ylayers.push_back(Y);
+        Xlayers.push_back(Xi);
+    }
+
+    // Assemble the move relation rank by rank.
+    BDD nondet = zero;
+    for (size_t r = 1; r < Ylayers.size(); r++) {
+        BDD prevY = Ylayers[r - 1];
+        BDD frontier = Ylayers[r] & ~prevY;
+        // (a) Goal reached: any move staying in Z (the counter resets here).
+        BDD g = frontier & goalpart;
+        nondet = nondet | (g & substituteLatchesNext(spec, Z));
+        BDD rest = frontier & ~goalpart;
+        // (b) Rank descent: force the successor into the strictly lower layer.
+        BDD cprePrev = cpre(spec, prevY);
+        nondet =
+            nondet | (rest & cprePrev & substituteLatchesNext(spec, prevY));
+        // (c) Waiting on an unmet fairness assumption: stay inside its nuX set.
+        BDD waiters = rest & ~cprePrev;
+        for (size_t i = 0; i < envF.size(); i++) {
+            BDD Xri = Xlayers[r - 1][i];
+            BDD w = waiters & ~envF[i] & Xri;
+            nondet = nondet | (w & substituteLatchesNext(spec, Xri));
+        }
+    }
+    return nondet;
+}
+
+// GR(1) (Piterman-Pnueli-Sa'ar) over the controllable predecessor. The error
+// output is an absorbing-bad latch, so safety is folded in:
 //   Z = nuZ. /\_j muY. \/_i nuX. [ (Js_j & cpre Z) | cpre Y | (~Je_i & cpre X)
 //   ]
 // with system justice Js (sysJustice) and environment fairness Je
-// (envFairness). Realizable iff the initial state is in Z.  No strategy is
-// extracted yet (Phase 2b); this returns the verdict only.
-static bool solveGR1(Cudd *mgr, BDDAIG *spec) {
+// (envFairness). Realizable iff the initial state is in Z.  When do_synth is
+// set and there is a single Buchi goal, a memoryless rank-descent strategy is
+// extracted into synth_data.c_functions (see gr1NondetStrategy); multiple goals
+// need a justice-counter memory latch and are deferred (Phase 2b-ii).
+static bool solveGR1(Cudd *mgr, BDDAIG *spec, bool do_synth) {
+    gr1_synth_done = false;
     std::vector<BDD> sysJ = spec->sysJustice();
     std::vector<BDD> envF = spec->envFairness();
     BDD one = mgr->bddOne();
@@ -1312,7 +1390,20 @@ static bool solveGR1(Cudd *mgr, BDDAIG *spec) {
         }
         Z = conj & safe;
     }
-    return (spec->initState() & ~Z) == zero;
+
+    bool real = (spec->initState() & ~Z) == zero;
+    if (!real || !do_synth)
+        return real;
+    if (sysJ.size() != 1) {
+        wrnMsg(
+            "GR(1) strategy for multiple Buchi goals needs a justice-counter "
+            "memory latch (Phase 2b-ii); reporting realizability only.");
+        return real;
+    }
+    synth_data.c_functions =
+        synthAlgo(mgr, spec, gr1NondetStrategy(mgr, spec, Z, sysJ[0], envF), Z);
+    gr1_synth_done = true;
+    return real;
 }
 
 bool solve(AIG *spec_base, Cudd_ReorderingType reordering) {
@@ -1326,7 +1417,7 @@ bool solve(AIG *spec_base, Cudd_ReorderingType reordering) {
         BDDAIG spec(*spec_base, &mgr);
         if (spec.numJustice() > 0) {
             is_gr1 = true;
-            result = solveGR1(&mgr, &spec);
+            result = solveGR1(&mgr, &spec, settings.out_file != NULL);
         } else if (settings.comp_algo == 1) {
             result = compSolve1(&mgr, &spec);
         } else if (settings.comp_algo == 2) {
@@ -1342,10 +1433,12 @@ bool solve(AIG *spec_base, Cudd_ReorderingType reordering) {
     }
     // deal with the synthesis step if needed
     if (is_gr1) {
-        if (settings.out_file != NULL)
-            wrnMsg(
-                "GR(1) strategy synthesis is not implemented yet (Phase 2b); "
-                "reporting the realizability verdict only.");
+        if (gr1_synth_done) {
+            dbgMsg("Starting GR(1) circuit generation");
+            finalizeSynth(&mgr, spec_base);
+        }
+        // (a realizable multi-goal spec warns inside solveGR1; an unrealizable
+        // spec needs no strategy)
     } else if (result && settings.out_file != NULL) {
         dbgMsg("Starting circuit generation");
         finalizeSynth(&mgr, spec_base);
