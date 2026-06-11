@@ -1254,15 +1254,80 @@ static bool compSolve4(Cudd *mgr, BDDAIG *spec) {
     return true;
 }
 
+// Controllable predecessor: the states from which the system (controllable
+// inputs) can force the next state into `dst`.  upre(~dst) is the set from
+// which the environment can force leaving `dst`, so its complement is cpre.
+static BDD cpre(BDDAIG *spec, BDD dst) {
+    BDD dummy;
+    return ~upre(spec, ~dst, dummy);
+}
+
+// GR(1) realizability (Piterman-Pnueli-Sa'ar) over the controllable
+// predecessor. The error output is an absorbing-bad latch, so safety is folded
+// in:
+//   Z = nuZ. /\_j muY. \/_i nuX. [ (Js_j & cpre Z) | cpre Y | (~Je_i & cpre X)
+//   ]
+// with system justice Js (sysJustice) and environment fairness Je
+// (envFairness). Realizable iff the initial state is in Z.  No strategy is
+// extracted yet (Phase 2b); this returns the verdict only.
+static bool solveGR1(Cudd *mgr, BDDAIG *spec) {
+    std::vector<BDD> sysJ = spec->sysJustice();
+    std::vector<BDD> envF = spec->envFairness();
+    BDD one = mgr->bddOne();
+    BDD zero = ~one;
+    BDD safe = ~spec->errorStates();
+    dbgMsg("GR(1): " + to_string(sysJ.size()) + " justice goals, " +
+           to_string(envF.size()) + " fairness assumptions.");
+
+    BDD Z = one, Zprev = zero;
+    while (Z != Zprev) {
+        Zprev = Z;
+        BDD cpreZ = cpre(spec, Zprev);
+        BDD conj = one;
+        for (size_t j = 0; j < sysJ.size(); j++) {
+            BDD goal = sysJ[j] & cpreZ;
+            BDD Y = zero, Yprev = one;
+            while (Y != Yprev) {
+                Yprev = Y;
+                BDD start = goal | cpre(spec, Y);
+                BDD disj;
+                if (envF.empty()) {
+                    // No fairness: nuX.[start | (false & cpre X)] = start, so
+                    // the muY becomes the attractor to (Js_j & cpre Z).
+                    disj = start;
+                } else {
+                    disj = zero;
+                    for (size_t i = 0; i < envF.size(); i++) {
+                        BDD X = one, Xprev = zero;
+                        while (X != Xprev) {
+                            Xprev = X;
+                            X = start | (~envF[i] & cpre(spec, X));
+                        }
+                        disj = disj | X;
+                    }
+                }
+                Y = disj;
+            }
+            conj = conj & Y;
+        }
+        Z = conj & safe;
+    }
+    return (spec->initState() & ~Z) == zero;
+}
+
 bool solve(AIG *spec_base, Cudd_ReorderingType reordering) {
     Cudd mgr(0, 0);
     mgr.AutodynEnable(reordering);
     bool result;
+    bool is_gr1 = false;
     // we want spec to get garbage collected before we finalize
     // the synthesis step
     {
         BDDAIG spec(*spec_base, &mgr);
-        if (settings.comp_algo == 1) {
+        if (spec.numJustice() > 0) {
+            is_gr1 = true;
+            result = solveGR1(&mgr, &spec);
+        } else if (settings.comp_algo == 1) {
             result = compSolve1(&mgr, &spec);
         } else if (settings.comp_algo == 2) {
             result = compSolve2(&mgr, &spec);
@@ -1276,7 +1341,12 @@ bool solve(AIG *spec_base, Cudd_ReorderingType reordering) {
         }
     }
     // deal with the synthesis step if needed
-    if (result && settings.out_file != NULL) {
+    if (is_gr1) {
+        if (settings.out_file != NULL)
+            wrnMsg(
+                "GR(1) strategy synthesis is not implemented yet (Phase 2b); "
+                "reporting the realizability verdict only.");
+    } else if (result && settings.out_file != NULL) {
         dbgMsg("Starting circuit generation");
         finalizeSynth(&mgr, spec_base);
     }

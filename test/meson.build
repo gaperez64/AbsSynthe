@@ -56,6 +56,16 @@ test('synthesize_bench', synth, args: [abssynthe, b_real])
 test('win_region', outfile, args: [abssynthe, '-w', b_real])
 test('ind_cert', outfile, args: [abssynthe, '-i', b_real])
 
+# GR(1) realizability: AIGER justice (system Buchi goals) + fairness (env
+# assumptions) drive the GR(1) fixpoint instead of the plain safety solver.
+test('gr1_recurrence', expect, args: ['10', abssynthe, files('gr1_recur.aag')])
+# The fairness assumption is exactly what flips the verdict:
+test('gr1_fairness_realizable', expect,
+     args: ['10', abssynthe, files('gr1_fair_real.aag')])
+test('gr1_fairness_unrealizable', expect,
+     args: ['20', abssynthe, files('gr1_fair_unreal.aag')])
+test('gr1_unrealizable', expect, args: ['20', abssynthe, files('gr1_unreal.aag')])
+
 # CLI / logging / ordering / rsynth paths.
 test('help', expect, args: ['0', abssynthe, '--help'])
 test('verbose', expect, args: ['10', abssynthe, '-v', '1', b_real])

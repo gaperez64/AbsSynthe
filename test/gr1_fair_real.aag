@@ -1,0 +1,13 @@
+aag 3 2 0 1 1 0 0 1 1
+2
+4
+0
+1
+6
+2
+6 2 4
+i0 req
+i1 controllable_g
+o0 err
+j0 resp
+f0 fair_req

@@ -82,6 +82,9 @@ class AIG {
     std::vector<aiger_symbol *> getCInputs() { return this->c_inputs; }
     std::vector<aiger_symbol *> getUInputs() { return this->u_inputs; }
     unsigned numLatches();
+    // GR(1): number of AIGER justice properties (system Buchi goals).  > 0
+    // selects the GR(1) solver over the plain safety solver.
+    unsigned numJustice() { return this->spec->num_justice; }
     std::vector<unsigned> getCInputLits();
     std::vector<unsigned> getUInputLits();
     std::vector<unsigned> getLatchLits();
@@ -123,6 +126,11 @@ class BDDAIG : public AIG {
     void dump2dot(BDD, const char *);
     BDD initState();
     BDD errorStates();
+    // GR(1) Buchi sets as BDDs: the system justice goals (all literals of all
+    // justice properties, a generalized-Buchi conjunction) and the environment
+    // fairness assumptions.
+    std::vector<BDD> sysJustice();
+    std::vector<BDD> envFairness();
     BDD primeLatchesInBdd(BDD);
     BDD primedLatchCube();
     BDD latchCube();

@@ -602,6 +602,24 @@ BDD BDDAIG::errorStates() {
     return result;
 }
 
+std::vector<BDD> BDDAIG::sysJustice() {
+    // Each AIGER justice property is a generalized-Buchi set of literals (each
+    // must hold infinitely often); flatten them into one list of system goals
+    // since the GR(1) winning condition conjoins over all of them.
+    std::vector<BDD> result;
+    for (unsigned j = 0; j < this->spec->num_justice; j++)
+        for (unsigned k = 0; k < this->spec->justice[j].size; k++)
+            result.push_back(this->lit2bdd(this->spec->justice[j].lits[k]));
+    return result;
+}
+
+std::vector<BDD> BDDAIG::envFairness() {
+    std::vector<BDD> result;
+    for (unsigned i = 0; i < this->spec->num_fairness; i++)
+        result.push_back(this->lit2bdd(this->spec->fairness[i].lit));
+    return result;
+}
+
 BDD BDDAIG::primeLatchesInBdd(BDD original) {
     std::vector<BDD> latch_bdds, primed_latch_bdds;
     for (std::vector<aiger_symbol *>::iterator i = this->latches.begin();
