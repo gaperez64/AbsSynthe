@@ -1,0 +1,7 @@
+# LLVM style with the project's existing 4-space indent and 80 columns.
+# Vendored upstream files (aiger.c/.h, aigtocnf.c) and CUDD are not formatted.
+BasedOnStyle: LLVM
+Language: Cpp
+IndentWidth: 4
+ColumnLimit: 80
+SortIncludes: false

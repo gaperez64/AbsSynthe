@@ -1,0 +1,11 @@
+# Build artifacts
+/build-meson/
+/build-cov/
+/binary/
+/source/abssynthe
+/source/abssynthe-dbg
+/source/cudd-2.5.1/
+*.gcda
+*.gcno
+*.o
+*.dot

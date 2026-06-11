@@ -1,0 +1,22 @@
+# Static analysis for the AbsSynthe-authored C++ only. The vendored Biere
+# aiger.c/.h and aigtocnf.c and the CUDD library are excluded via
+# HeaderFilterRegex (we only analyse our own aig.h / abssynthe.h / logging.h).
+Checks: >
+  bugprone-*,
+  performance-*,
+  modernize-use-nullptr,
+  modernize-use-override,
+  readability-*,
+  -readability-identifier-length,
+  -readability-magic-numbers,
+  -readability-function-cognitive-complexity,
+  -readability-isolate-declaration,
+  -readability-identifier-naming,
+  -readability-braces-around-statements,
+  -readability-implicit-bool-conversion,
+  -readability-uppercase-literal-suffix,
+  -readability-named-parameter,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-narrowing-conversions,
+HeaderFilterRegex: 'source/(aig|abssynthe|logging)\.h$'
+WarningsAsErrors: ''

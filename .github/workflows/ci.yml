@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            meson ninja-build g++ gcc make gcovr valgrind clang-format clang-tidy
+
+      - name: Build (meson; builds vendored CUDD 2.5.1)
+        run: |
+          meson setup build
+          ninja -C build
+
+      - name: Test (verdicts, all solver modes, strategy, valgrind)
+        run: meson test -C build --print-errorlogs
+
+      - name: clang-format check (authored sources only)
+        run: |
+          clang-format --dry-run --Werror \
+            source/abssynthe.cpp source/abssynthe.h \
+            source/aig.cpp source/aig.h \
+            source/algos.cpp source/logging.cpp source/logging.h
+
+      - name: clang-tidy (informational; legacy findings tracked separately)
+        run: |
+          for f in abssynthe.cpp aig.cpp algos.cpp logging.cpp; do
+            clang-tidy -p build "source/$f" || true
+          done
+
+      - name: Coverage gate (>= 60% on the authored synthesis path)
+        run: |
+          # A research solver's abstraction-refinement / compositional sub-paths
+          # are input-dependent and not leanly coverable, so the bar is below
+          # tlsf-tools' 75%.  The vendored aiger.c/aigtocnf.c and CUDD are
+          # excluded.
+          meson setup build-cov -Db_coverage=true
+          meson test -C build-cov
+          summary=$(gcovr --root . --filter 'source/' \
+            --exclude '.*(aiger|aigtocnf)\.' --exclude '.*cudd.*' \
+            --print-summary 2>&1) || true
+          echo "$summary"
+          pct=$(echo "$summary" | grep -oE 'lines: [0-9.]+%' | grep -oE '[0-9.]+')
+          echo "line coverage: ${pct}%"
+          awk -v p="$pct" 'BEGIN{ if (p+0 < 60) { print "FAIL: coverage below 60%"; exit 1 } }'

@@ -7,8 +7,34 @@ synthesize controllers from succinct safety specifications.
 * Contributors: Nicolas Basset, Romain Brenguier, Ocan Sankur, Jean-Francois Raskin 
 
 ## Building
-We provide a building script for your convenience, but you may have to
-customize it for your set up.
+
+With [Meson](https://mesonbuild.com) (recommended; builds the vendored CUDD
+2.5.1 automatically and provides the test suite):
+
+```sh
+meson setup build
+ninja -C build              # -> build/abssynthe
+meson test -C build         # verdicts, all solver modes, strategy, valgrind
+```
+
+The legacy `build.sh` / `source/Makefile` still work as a fallback.
+
+### Tests, coverage, style
+
+`meson test` runs the suite in `test/`: verdict and strategy checks on minimal
+hand-written games plus a sample of public [SYNTCOMP](https://github.com/SYNTCOMP/benchmarks)
+safety benchmarks (CC-BY) exercised across every solver mode (default,
+abstraction `-a`, compositional `-c`, transition decomposition `-t`, parallel
+`-p`), and a valgrind memory check (run when `valgrind` is present).
+
+CI (`.github/workflows/ci.yml`) builds with meson, runs the suite, enforces
+`clang-format` (`.clang-format`) on the authored sources, runs `clang-tidy`
+(`.clang-tidy`, informational), and gates line coverage at **>= 60 %** of the
+authored synthesis code (the vendored `aiger.c`/`aigtocnf.c` and CUDD are
+excluded). The bar is below most projects' 75 % because a research solver's
+abstraction-refinement and compositional sub-paths are input-dependent and not
+coverable by a lean suite; raising it (and clearing the remaining clang-tidy
+findings) is incremental follow-up work.
 
 ## Some dependencies:
 The tool uses a simple version of the aiger library developed by the team of

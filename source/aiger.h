@@ -33,6 +33,10 @@ IN THE SOFTWARE.
 
 #include <stdio.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*------------------------------------------------------------------------*/
 
 #define AIGER_VERSION "1.9"
@@ -367,5 +371,9 @@ void aiger_remove_outputs(aiger*);
 /* Externalizing a method to translate aiger to cnf for a QBF solver.
  */
 int aiger2dimacs(aiger*, const char*, int, int, unsigned*, int);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
